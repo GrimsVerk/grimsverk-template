@@ -3,6 +3,11 @@
 
 _min_copier_version: "9.4.0"
 _subdirectory: template
+# Only files ending in `.jinja` are rendered; everything else is copied
+# verbatim. Set explicitly (it matches Copier's default) so that files
+# carrying literal brace-like text — e.g. docs/idea-to-design-doc.md — are
+# copied untouched rather than parsed as templates.
+_templates_suffix: .jinja
 
 project_name:
   type: str
