@@ -19,6 +19,23 @@ Supported languages:
 - `python` — uv-managed package, src layout, ruff + mypy + pytest
 - `swift-ios` — SwiftUI iOS app, XcodeGen-managed project, SwiftFormat + SwiftLint
 
+## Design-doc workflow
+
+Every generated project ships a design-doc kit under `docs/`. Open the
+project and run the `/design` slash command (or just point the agent at
+`docs/idea-to-design-doc.md`), rant your idea at it, answer its questions,
+and it writes the finished doc into `docs/DESIGN.md`. `docs/DESIGN.md` is
+the skeleton and single source of truth for the doc's shape.
+
+## Orchestration (optional Claude layer)
+
+Generated projects also carry a single-layer orchestration setup under
+`.claude/`: run `/orchestrate <task>` and the main session fans the work
+out to a few headless worker agents, each in its own git worktree, then
+merges the good branches. See `.claude/orchestration.md` in a generated
+project for the one-layer rule, sandbox defaults, and safety notes. Like
+the rest of `.claude/`, it is deletable without breaking the project.
+
 ## Updating generated projects
 
 Every generated project contains a `.copier-answers.yml` file. To pull in

@@ -1,6 +1,12 @@
 {
-  "_comment": "Optional Claude Code convenience layer — deleting the whole .claude/ directory leaves a fully functional project. Enforcement lives in pre-commit and CI; this hook only surfaces failures earlier, in-session, and the deny rules mirror the AGENTS.md branch discipline (no pushes to main, no force pushes, no history rewrites) for Claude Code sessions. Tradeoff: the hook runs after every file edit, so it is limited to fast operations{% if language == 'python' %} (format + quick test run){% else %} (format only — xcodebuild test is far too slow for a per-edit hook, so Swift tests run in CI and pre-push workflows instead){% endif %}.",
+  "_comment": "Optional Claude Code convenience layer — deleting the whole .claude/ directory leaves a fully functional project. Enforcement lives in pre-commit and CI; this hook only surfaces failures earlier, in-session, and the deny rules mirror the AGENTS.md branch discipline (no pushes to main, no force pushes, no history rewrites) for Claude Code sessions. Tradeoff: the hook runs after every file edit, so it is limited to fast operations{% if language == 'python' %} (format + quick test run){% else %} (format only — xcodebuild test is far too slow for a per-edit hook, so Swift tests run in CI and pre-push workflows instead){% endif %}. The allow list is a scoped allowlist for /orchestrate (headless workers + git worktree management); it does NOT switch the project into a full bypass mode.",
   "permissions": {
+    "allow": [
+      "Bash(.claude/scripts/spawn-worker.sh:*)",
+      "Bash(codex exec:*)",
+      "Bash(claude -p:*)",
+      "Bash(git worktree:*)"
+    ],
     "deny": [
       "Bash(git push origin main*)", "Bash(git push * main*)",
       "Bash(git push origin HEAD:main*)",
