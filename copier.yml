@@ -1,0 +1,46 @@
+# Copier configuration for the GrimsVerk project template.
+# Only the contents of `template/` are rendered into generated projects.
+
+_min_copier_version: "9.4.0"
+_subdirectory: template
+
+project_name:
+  type: str
+  help: Human-readable project name (e.g. "My App")
+
+project_slug:
+  type: str
+  help: Machine-friendly name, used for the repo, package, and paths
+  default: "{{ project_name | lower | replace(' ', '-') }}"
+
+language:
+  type: str
+  help: Primary language / platform
+  choices:
+    - python
+    - swift-ios
+
+description:
+  type: str
+  help: One-line project description
+  default: ""
+
+license:
+  type: str
+  help: License (SPDX identifier)
+  default: MIT
+  choices:
+    - MIT
+    - Apache-2.0
+    - GPL-3.0-or-later
+
+# Computed values — never asked, derived from the answers above.
+package_name:
+  type: str
+  when: false
+  default: "{{ project_slug | replace('-', '_') }}"
+
+app_name:
+  type: str
+  when: false
+  default: "{{ project_slug | replace('-', ' ') | title | replace(' ', '') }}"

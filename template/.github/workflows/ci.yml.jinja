@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+{% if language == 'python' -%}
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest
+{%- else -%}
+jobs:
+  test:
+    # iOS builds require Xcode, so this job must run on a macOS runner —
+    # Linux runners cannot build or test this target.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      # The .xcodeproj is generated, never committed; project.yml is the
+      # source of truth, so CI regenerates the project first.
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Run tests
+        # Unit tests for an iOS target need an iOS Simulator destination;
+        # the device name must exist in the runner image's simulator list.
+        # Signing is disabled — no provisioning is set up in CI.
+        run: >
+          xcodebuild test
+          -project {{ app_name }}.xcodeproj
+          -scheme {{ app_name }}
+          -destination 'platform=iOS Simulator,name=iPhone 16'
+          CODE_SIGNING_ALLOWED=NO
+{%- endif %}

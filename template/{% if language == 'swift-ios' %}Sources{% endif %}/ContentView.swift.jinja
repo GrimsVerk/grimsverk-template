@@ -1,0 +1,17 @@
+import SwiftUI
+
+struct ContentView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("{{ project_name }}")
+                .font(.largeTitle)
+{% if description %}            Text("{{ description }}")
+                .foregroundStyle(.secondary)
+{% endif %}        }
+        .padding()
+    }
+}
+
+#Preview {
+    ContentView()
+}

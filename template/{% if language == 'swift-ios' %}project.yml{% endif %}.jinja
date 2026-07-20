@@ -1,0 +1,31 @@
+# Human-readable Xcode project spec (XcodeGen). The .xcodeproj is generated
+# from this file with `xcodegen generate` and is never committed or hand-edited.
+name: {{ app_name }}
+options:
+  bundleIdPrefix: com.example # change before building for a device or distributing
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  {{ app_name }}:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+  {{ app_name }}Tests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: {{ app_name }}
+schemes:
+  {{ app_name }}:
+    build:
+      targets:
+        {{ app_name }}: all
+    test:
+      targets:
+        - {{ app_name }}Tests

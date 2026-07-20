@@ -1,0 +1,31 @@
+# {{ project_name }}
+
+{{ description }}
+
+Generated from [grimsverk-template](https://github.com/GrimsVerk/grimsverk-template);
+pull in template updates with `copier update --trust`.
+
+## Development
+{% if language == 'python' %}
+```sh
+uv sync                # install dependencies (creates .venv)
+uv run pytest          # run tests
+pre-commit install     # enable git-level checks (ruff, mypy, gitleaks)
+```
+{% else %}
+```sh
+brew install xcodegen swiftformat swiftlint
+xcodegen generate               # generate {{ app_name }}.xcodeproj from project.yml
+open {{ app_name }}.xcodeproj   # build & run in Xcode
+pre-commit install              # enable git-level checks (SwiftFormat, SwiftLint)
+```
+
+The `.xcodeproj` is generated from `project.yml` and is not committed —
+edit `project.yml`, never the generated project.
+{% endif %}
+## Repository setup (manual, once)
+
+Enable **branch protection on `main`** (require a pull request before
+merging). Coding agents work on a branch and open a PR; branch protection
+is what prevents self-merging, and it cannot be configured from inside
+this template.
