@@ -9,7 +9,8 @@
 #
 # The review agent gets fresh context (a one-shot headless run, not the author's
 # session) and only the diff as text — it has no ability to edit the code or the
-# PR. It should run a DIFFERENT model than the workers that wrote the change.
+# PR. That context isolation is the real independence; running a DIFFERENT model
+# than the workers is a nice-to-have (set REVIEW_MODEL), not required.
 #
 # Required env:
 #   BASE_SHA, HEAD_SHA   commits bounding the PR diff (base...head)

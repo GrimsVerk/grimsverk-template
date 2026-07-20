@@ -34,11 +34,13 @@ rubber-stamp, and no agent merges on its own judgment:
   read-only LLM reviews the PR diff against `AGENTS.md` and `docs/DESIGN.md`
   (design conformance, scope creep, soundness, security smells) and blocks on
   any blocking finding. It is an *added* check on top of CI, never a
-  replacement, and it runs a different engine/model than the code's author.
+  replacement. Its independence comes from **fresh context** (a one-shot
+  headless run, not the author's session) and being **read-only** — running a
+  *different* model than the author is a nice-to-have, not required.
 
 {% if auto_merge %}When both gates are green, the PR merges automatically via GitHub native
 auto-merge (armed by `.github/workflows/auto-merge.yml`, completed by GitHub
-when checks pass — squash merge).{% else %}Both gates run on every PR, but this project does **not** auto-merge: a human
+when checks pass — as a merge commit, preserving history).{% else %}Both gates run on every PR, but this project does **not** auto-merge: a human
 performs the final merge once the checks are green.{% endif %}
 
 ## Repository setup (manual, once)
@@ -53,12 +55,18 @@ them on the default branch (`main`):
 2. **Require review from Code Owners** (branch protection), so changes to the
    gate paths in `CODEOWNERS` need {{ code_owner }}'s approval even under
    auto-merge.
-3. **Review engine secret**: add `ANTHROPIC_API_KEY` (default engine `claude`)
-   — or `OPENAI_API_KEY` if you switch `REVIEW_ENGINE` to `codex` in
-   `review.yml` — under *Settings → Secrets and variables → Actions*. Without
-   it the review job fails closed and nothing merges.
+3. **Review engine credential** (a *subscription*, not a metered API key): the
+   review runs on your Claude Code subscription. Generate a token once with
+   `claude setup-token` and add it as the `CLAUDE_CODE_OAUTH_TOKEN` secret under
+   *Settings → Secrets and variables → Actions*. (A metered `ANTHROPIC_API_KEY`
+   also works, as a fallback, if you happen to have one.) Without a credential
+   the review job fails closed and nothing merges. *Codex engine: running the
+   gate on a ChatGPT/Codex subscription needs that CLI's login injected into CI
+   — not wired yet; see the comment in `review.yml`.*
 {% if auto_merge %}4. **Allow auto-merge** for the repo (*Settings → General → Pull Requests →
-   Allow auto-merge*). Without it, `auto-merge.yml` can't arm PRs.
+   Allow auto-merge*), and keep **Allow merge commits** enabled (the default) —
+   the PR lands as a merge commit. Without auto-merge enabled, `auto-merge.yml`
+   can't arm PRs.
 {% endif %}
 Coding agents work on a branch and open a PR into this pipeline; branch
 protection plus the required checks are what prevent self-merging.
@@ -66,11 +74,10 @@ protection plus the required checks are what prevent self-merging.
 ## Reverting a bad merge
 
 Because no human reads every change before it lands, fast rollback is the real
-safety net. Merges are squashed, so each landed change is a single commit on
-`main` — reverting one is one line:
+safety net. PRs land as merge commits, so reverting a whole bad PR is one line:
 
 ```sh
-git revert <sha> && git push        # <sha> = the squash commit of the bad merge
+git revert -m 1 <merge-sha> && git push   # <merge-sha> = the bad PR's merge commit
 ```
 
 `main` stays buildable/deployable at every commit (CI gates every push), so a

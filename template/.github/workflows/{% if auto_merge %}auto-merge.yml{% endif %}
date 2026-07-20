@@ -23,10 +23,13 @@ jobs:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      - name: Enable auto-merge (squash)
-        # Squash keeps the default branch a clean sequence of single commits, so
-        # `git revert <sha>` of a bad merge is trivial (see README revert recipe).
+      - name: Enable auto-merge (merge commit)
+        # Merge commit (not squash): it preserves the exact commits CI tested and
+        # the audit trail of what each agent did — worth more here than a flat
+        # history, since nothing is human-reviewed before it lands. Reverting a
+        # bad PR is still one line: `git revert -m 1 <merge-sha>` (see README).
+        # Needs "Allow merge commits" enabled on the repo (the default).
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: gh pr merge --auto --merge "$PR_URL"

@@ -64,8 +64,9 @@ no skipping or weakening checks to get green.
 its required checks go green — the **hard gate** (CI: format/lint{% if language == 'python' %}/type{% endif %}/tests,
 which is authoritative) plus a **soft gate** (`.github/workflows/review.yml`,
 an independent read-only LLM review of the diff against this file and
-`docs/DESIGN.md`). The soft gate is an added check, never a replacement for
-CI. No agent merges on its own judgment: opening the PR into this pipeline
+`docs/DESIGN.md`, run with fresh context — a different model than the author
+is a nice-to-have, not required). The soft gate is an added check, never a
+replacement for CI. No agent merges on its own judgment: opening the PR into this pipeline
 is where an agent's job ends, and the merge is triggered by check status,
 not by any agent — including a passing local review — deciding to merge.
 

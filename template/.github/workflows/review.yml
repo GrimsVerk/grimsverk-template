@@ -23,9 +23,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      # Install the configured review engine. Default is claude (a different
-      # vendor/model than the codex workers that write changes); switch REVIEW_ENGINE
-      # to codex to run the gate on that engine instead.
+      # Install the configured review engine. Default is claude; switch
+      # REVIEW_ENGINE to codex once that engine's CI auth is wired (see below).
       - name: Install review engine
         env:
           REVIEW_ENGINE: claude
@@ -37,13 +36,21 @@ jobs:
           esac
       - name: Headless review
         env:
-          # claude reads ANTHROPIC_API_KEY; codex reads OPENAI_API_KEY. Add the
-          # matching secret in the repo settings (see README, manual setup).
+          # Credentials come from a SUBSCRIPTION, not a metered API key.
+          # claude: run `claude setup-token` once and store the result as the
+          # CLAUDE_CODE_OAUTH_TOKEN secret (see README, manual setup). The metered
+          # ANTHROPIC_API_KEY is only a fallback if you happen to have one.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # codex (FUTURE — not wired yet): must also run on a ChatGPT/Codex
+          # SUBSCRIPTION, never a metered OPENAI_API_KEY. The Codex CLI keeps its
+          # login in ~/.codex/auth.json; to enable this path, add a step before
+          # this one that writes that file from a secret, then set REVIEW_ENGINE
+          # to codex. Left unwired until a codex subscription is in use.
           REVIEW_ENGINE: claude
-          # REVIEW_MODEL: pin a specific model here if you want; leave unset to
-          # use the engine default. Keep it a different model than the workers.
+          # REVIEW_MODEL is optional. A different model than the workers is a
+          # nice-to-have, not required — fresh context + read-only is the real
+          # independence. Leave empty to use the subscription's default model.
           REVIEW_MODEL: ""
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
