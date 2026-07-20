@@ -2,7 +2,8 @@
 
 A single layer of parallelism for Claude Code: the main session (the
 **orchestrator**) fans a task out to a few **worker** agents, each running
-headless in its own git worktree, then reviews and merges their branches.
+headless in its own git worktree, then assembles their branches into a single
+pull request. It does **not** merge — see "Handoff to the merge pipeline".
 
 This whole setup lives under `.claude/` — the deletable, Claude-Code-specific
 layer. Removing `.claude/` removes orchestration and leaves a fully functional
@@ -58,6 +59,18 @@ restricted `PATH` that omits `codex`/`claude` so those CLIs simply aren't
 reachable from inside a worker. This is deliberately **not** the default: it
 adds friction for the common, well-behaved case. Turn it on only when running
 untrusted or experimental worker prompts.
+
+## Handoff to the merge pipeline
+
+The orchestrator's job ends at **opening a PR**. Merging belongs to the
+pipeline, not to any agent: a PR merges when its required checks go green — the
+CI **hard gate** plus an independent **soft gate** (`.github/workflows/review.yml`,
+a read-only LLM review of the diff). The orchestrator's own local review is a
+pre-check to avoid wasting a CI run on obvious junk; it is never authorization
+to merge, and no agent runs `gh pr merge` on its own judgment. The reviewer
+that gates the PR is separate from whoever wrote or assembled the change — no
+single agent both reviews and merges. Workers must never touch the gate paths
+(CI, the review check, `CODEOWNERS`, pre-commit); those are human-owned.
 
 ## Safety
 

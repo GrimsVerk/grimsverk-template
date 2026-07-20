@@ -60,6 +60,23 @@ test suite on every commit and push, regardless of which tool or agent
 wrote the code. A failing gate is fixed, never bypassed: no `--no-verify`,
 no skipping or weakening checks to get green.
 
+**The merge pipeline.** Merges are mechanical: a pull request merges when
+its required checks go green — the **hard gate** (CI: format/lint{% if language == 'python' %}/type{% endif %}/tests,
+which is authoritative) plus a **soft gate** (`.github/workflows/review.yml`,
+an independent read-only LLM review of the diff against this file and
+`docs/DESIGN.md`, run with fresh context — a different model than the author
+is a nice-to-have, not required). The soft gate is an added check, never a
+replacement for CI. No agent merges on its own judgment: opening the PR into this pipeline
+is where an agent's job ends, and the merge is triggered by check status,
+not by any agent — including a passing local review — deciding to merge.
+
+**Gate paths are off-limits.** Never modify the things that check the code:
+CI workflows (`.github/workflows/`), the review check or its prompt
+(`.github/review-prompt.md`, `.github/scripts/review.sh`), the pre-commit
+config, or `CODEOWNERS`. These are human-owned and enforced by `CODEOWNERS`;
+a change to any of them requires human review even under auto-merge. Do not
+weaken, skip, or route around a gate to get green.
+
 ## Language-specific
 
 {% if language == 'python' -%}
