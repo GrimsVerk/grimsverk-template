@@ -39,6 +39,24 @@ license:
     - Apache-2.0
     - GPL-3.0-or-later
 
+auto_merge:
+  type: bool
+  help: >-
+    Auto-merge PRs when all required checks pass (CI + the LLM review gate)?
+    true for most repos; choose false for anything real people download or that
+    touches payments, secrets, or user data — those keep a human merge.
+  default: true
+
+code_owner:
+  type: str
+  help: >-
+    GitHub handle that owns the merge gates in CODEOWNERS (a user like @you or a
+    team like @org/team). Changes to CI, the review check, pre-commit, and
+    CODEOWNERS require this owner's review — even under auto-merge.
+  validator: >-
+    {% if not code_owner %}code_owner is required: the CODEOWNERS gate is
+    ignored by GitHub without a real @user or @org/team.{% endif %}
+
 # Computed values — never asked, derived from the answers above.
 package_name:
   type: str

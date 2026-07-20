@@ -1,0 +1,50 @@
+name: Review
+
+# Soft review gate. An independent, read-only LLM reviews the PR diff against
+# AGENTS.md and docs/DESIGN.md and exits non-zero on any blocking finding. Mark
+# the `review` job a REQUIRED status check so a red review blocks merge exactly
+# like a failing test — but it is layered ON TOP of CI (the hard gate), never a
+# replacement for it. Only runs on pull requests (it needs the base..head diff).
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the base and head commits are both present for the
+          # base...head diff the review agent reviews.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # Install the configured review engine. Default is claude (a different
+      # vendor/model than the codex workers that write changes); switch REVIEW_ENGINE
+      # to codex to run the gate on that engine instead.
+      - name: Install review engine
+        env:
+          REVIEW_ENGINE: claude
+        run: |
+          case "$REVIEW_ENGINE" in
+            claude) npm install -g @anthropic-ai/claude-code ;;
+            codex)  npm install -g @openai/codex ;;
+            *) echo "unknown REVIEW_ENGINE: $REVIEW_ENGINE" >&2; exit 1 ;;
+          esac
+      - name: Headless review
+        env:
+          # claude reads ANTHROPIC_API_KEY; codex reads OPENAI_API_KEY. Add the
+          # matching secret in the repo settings (see README, manual setup).
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          REVIEW_ENGINE: claude
+          # REVIEW_MODEL: pin a specific model here if you want; leave unset to
+          # use the engine default. Keep it a different model than the workers.
+          REVIEW_MODEL: ""
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: .github/scripts/review.sh

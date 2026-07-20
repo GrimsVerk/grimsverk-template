@@ -25,7 +25,10 @@ this explicit instruction —
 
 > You are a worker. Do only this assigned task, in the files listed. You are
 > NOT an orchestrator: do not spawn, invoke, or delegate to any further
-> agents, and do not use any orchestration scripts. When done, ensure the
+> agents, and do not use any orchestration scripts. Never modify the merge
+> gates — CI workflows (`.github/workflows/`), the review check or its prompt
+> (`.github/review-prompt.md`, `.github/scripts/review.sh`), branch
+> protection, `CODEOWNERS`, or the pre-commit config. When done, ensure the
 > project's checks pass, then stop.
 
 Never hand a worker `spawn-worker.sh` or any orchestration tooling.
@@ -42,26 +45,37 @@ NOT pass `--bypass-sandbox` unless the task genuinely requires it and you have
 said why. Collect each printed `WORKER_RESULT` line (id, branch, worktree,
 exit code).
 
-## 3. Review, then merge or discard
+## 3. Review, then assemble
 
 After all workers finish, for each one:
 
 - Read its branch diff (`git -C <worktree> diff <base>...`) and its log
   under `.claude/orchestration-logs/<id>.log`.
 - Review the changes against `AGENTS.md`. If a `reviewer` subagent exists,
-  delegate the review to it; otherwise review directly.
-- **Merge** the branches that pass review into your working branch. For the
-  ones that failed or errored, either re-dispatch a corrected worker prompt
-  (once) or discard the branch — don't merge broken work.
+  delegate the review to it; otherwise review directly. This is a local
+  **pre-check to catch obvious junk before it costs a CI run — it is NOT
+  merge authorization.** The authoritative review is the pipeline's soft
+  gate (`.github/workflows/review.yml`), which runs independently on the PR.
+- **Assemble** the branches that pass your pre-check into a single feature
+  branch (merge the worker branches into it). For the ones that failed or
+  errored, either re-dispatch a corrected worker prompt (once) or discard the
+  branch — don't assemble broken work.
 
-## 4. Clean up and report
+## 4. Open a PR into the pipeline, then stop
 
-Remove the worktrees you're done with:
+Push the assembled feature branch and open **one** pull request. **Do not
+merge it.** Your job ends here: the merge is the pipeline's, triggered by the
+required checks going green — the CI hard gate plus the review soft gate (and,
+where enabled, GitHub auto-merge completes it mechanically). A passing local
+pre-check is never your authorization to merge, and you never run `gh pr merge`
+on your own judgment.
+
+Clean up the worktrees you're done with:
 
 ```sh
 git worktree remove --force .claude/worktrees/<id>
 git branch -D worker/<id>   # for discarded branches
 ```
 
-Then report a summary: what each worker was asked to do, which branches
-merged, which didn't, and why.
+Then report a summary: what each worker was asked to do, which branches you
+assembled into the PR, which you discarded and why, and the PR link.

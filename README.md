@@ -67,6 +67,15 @@ belongs to the template repo and never leaks into generated projects.
   new set of conditional files, nothing else changes.
 - **Centrally updatable.** The answers file is mandatory so `copier update`
   works in every generated project.
+- **Soft review gate + mechanical merge.** Generated projects gate merges on
+  CI (hard) plus an independent read-only LLM review of the PR diff (soft,
+  `.github/workflows/review.yml`), both vendor-neutral and surviving deletion
+  of `.claude/`. When `auto_merge` is `true` (the default), green PRs merge
+  via GitHub native auto-merge — triggered by check status, never by an agent;
+  `CODEOWNERS` keeps the gate-defining paths human-owned. Set `auto_merge` to
+  `false` (e.g. the iOS app, or anything touching payments/secrets/user data)
+  to keep a human merge step while still running the review gate. `code_owner`
+  supplies the CODEOWNERS handle.
 - **No marketplace, no plugin.** Deliberately excluded.
 
 ## Adding a language
