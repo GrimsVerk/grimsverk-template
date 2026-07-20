@@ -58,5 +58,6 @@ belongs to the template repo and never leaks into generated projects.
 2. Add scaffold files under `template/` wrapped in
    `{% if language == '<new>' %}…{% endif %}` path conditionals.
 3. Extend the conditionals in `.pre-commit-config.yaml.jinja`,
-   `ci.yml.jinja`, `.gitignore.jinja`, `README.md.jinja`, and
+   `ci.yml.jinja`, `.gitignore.jinja`, `README.md.jinja`,
+   `AGENTS.md.jinja` (Enforcement + Language-specific sections), and
    `.claude/settings.json.jinja`.

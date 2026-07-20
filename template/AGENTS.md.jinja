@@ -4,21 +4,76 @@ Canonical working instructions for any coding agent in this repository.
 Tool-specific entry points (e.g. `CLAUDE.md`) only point here; rules are
 never duplicated elsewhere.
 
-> **Status:** structured placeholder — rules are populated in the
-> rule-extraction pass.
-
 ## Workflow
 
-TODO (populated in rule-extraction pass)
+**Branches.** Never commit to the default branch directly; work on a branch
+and let the owner merge. Never force-push or rewrite history on a branch
+that has been pushed.
+
+**Commits.** One conceptually contained commit per unit of work, pushed
+when complete, with an imperative one-line message. The test suite must
+pass before every commit. Documentation is updated in the same commit as
+the code it describes — docs never lag the code.
+
+**Tests.** New behaviour comes with tests in the same commit. The suite
+runs offline and deterministically; a test that needs an unavailable
+optional resource skips with a clear reason rather than failing.
+
+**Dependencies.** No new dependencies without the owner's approval — ask
+first, in chat.
+
+**Decisions.** Design choices and owner rulings are recorded in
+`docs/DECISIONS.md` (ADR-lite: one dated entry per decision, newest at the
+bottom; create the file on the first decision). A recorded ruling is never
+silently reversed — to change one, argue the case in chat, wait for the
+owner, then add a superseding entry. History is never rewritten.
+
+**Work queue.** When working unattended, implement only items the owner
+has approved in `docs/BACKLOG.md` ("Approved" section, top to bottom), and
+keep going until the list is done or you are truly blocked. New ideas are
+written into "Proposed" as text — never coded unprompted. If an attempt is
+stuck after 3–5 tries, log what was tried and why it failed, then move on;
+if the blocker gates everything, build the simplest clearly-marked
+stand-in and leave the real fix for the owner.
+
+**Memory.** Chat is not storage. Anything a future session (or a different
+agent) would need is written into the repository in the same unit of work:
+decisions → `docs/DECISIONS.md`, work items and ideas → `docs/BACKLOG.md`,
+session notes and hand-offs → `docs/JOURNAL.md` (one dated entry per
+working session), user-facing behaviour → `README.md`.
+
+**Honesty about verification.** Never claim something is verified in an
+environment where you could not observe it. Record what was verified where;
+"CI added" is not "CI verified" until a run has actually passed. When only
+the owner can verify something, say exactly what to run and ask for the
+output.
+
+**Ambiguity.** Prefer stating what you need in chat and continuing on best
+judgment over blocking; the owner reads chat. Stop and ask only when truly
+blocked on something only the owner can provide.
 
 ## Enforcement
 
-TODO (populated in rule-extraction pass)
-
-<!-- Enforcement is implemented in git hooks (.pre-commit-config.yaml) and CI
-     (.github/workflows/ci.yml). This section describes those gates; it does
-     not replace them. -->
+Pre-commit hooks (`.pre-commit-config.yaml`) and CI
+(`.github/workflows/ci.yml`) enforce formatting, linting{% if language == 'python' %}, typing{% endif %}, and the
+test suite on every commit and push, regardless of which tool or agent
+wrote the code. A failing gate is fixed, never bypassed: no `--no-verify`,
+no skipping or weakening checks to get green.
 
 ## Language-specific
 
-TODO (populated in rule-extraction pass)
+{% if language == 'python' -%}
+Tool configuration in `pyproject.toml` is the source of truth for lint,
+format, and typing rules — follow it, don't restate or override it. The
+test suite's offline rule is enforced by the autouse fixture in
+`tests/conftest.py`. Run the full gate locally with:
+
+    uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
+{%- else -%}
+`.swiftformat` and `.swiftlint.yml` are the source of truth for style —
+follow them, don't restate or override them. `project.yml` is the source
+of truth for the Xcode project; the `.xcodeproj` is generated
+(`xcodegen generate`), never committed. Run tests with:
+
+    xcodebuild test -project {{ app_name }}.xcodeproj -scheme {{ app_name }} -destination 'platform=iOS Simulator,name=iPhone 16'
+{%- endif %}
