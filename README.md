@@ -30,7 +30,7 @@ copier copy gh:GrimsVerk/grimsverk-template my-project
 cd my-project
 ```
 
-Copier asks seven questions:
+Copier asks six questions:
 
 | Question | Notes |
 | --- | --- |
@@ -38,7 +38,6 @@ Copier asks seven questions:
 | `project_slug` | Defaults to a slugified `project_name`; used for the repo, package, and paths |
 | `language` | `python` or `swift-ios` |
 | `description` | One line; lands in the README and package metadata |
-| `license` | SPDX id. **Currently only recorded in `pyproject.toml` — no `LICENSE` file is generated yet** |
 | `auto_merge` | `true` (default) = green PRs merge themselves. Choose `false` for anything real people download, or that touches payments, secrets, or user data |
 | `code_owner` | Required. A real `@handle` or `@org/team` — GitHub silently ignores `CODEOWNERS` entries that don't resolve |
 
@@ -217,6 +216,14 @@ belongs to the template repo and never leaks into generated projects.
   `false` (e.g. the iOS app, or anything touching payments/secrets/user data)
   to keep a human merge step while still running the review gate. `code_owner`
   supplies the CODEOWNERS handle.
+- **Deliberately unlicensed.** There is no `license` question, and generated
+  projects carry no `LICENSE` file and no `license` field in package metadata.
+  Every project is assessed on its own terms, by the owner, when licensing
+  actually matters — publication, distribution, accepting outside
+  contributions. A template-chosen default would silently attach terms to
+  every project that never revisits the choice, which is worse than shipping
+  nothing. The rule is restated in the generated `AGENTS.md` ("Licensing") and
+  in `copier.yml`, so agents stop re-proposing it.
 - **No marketplace, no plugin.** Deliberately excluded.
 
 ## Adding a language
