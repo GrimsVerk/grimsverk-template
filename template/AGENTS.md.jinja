@@ -8,7 +8,21 @@ never duplicated elsewhere.
 
 **Branches.** Never commit to the default branch directly; work on a branch
 and let the owner merge. Never force-push or rewrite history on a branch
-that has been pushed.
+that has been pushed. When the work has a plan, the branch name must contain
+that plan's `slug`: CI locates the plan by matching slugs against the branch
+name, so a branch that doesn't match silently costs the review its estimates.
+
+**Planning.** Non-trivial work gets a plan before it gets code — copy
+`docs/plans/_TEMPLATE.md` to `docs/plans/<slug>.md` and fill it in. A plan is
+3-5 **vertical** slices: each delivers something observable end-to-end, never a
+horizontal layer (all the storage, then all the CLI), because horizontal work
+leaves nothing testable until the end, when steering is most expensive. Each
+slice declares the files it touches, its type and method signatures, and a line
+estimate. Before writing any slices, list the decisions you had to guess at
+rather than derive, and stop for the owner's ruling — then record the rulings in
+the plan. The estimate is a **tripwire, not a target**: never compress code,
+drop error handling, or thin tests to come in under it. An overrun does not fail
+the build; CI reports the delta and the reviewer asks whether it was justified.
 
 **Commits.** One conceptually contained commit per unit of work, pushed
 when complete, with an imperative one-line message. The test suite must
@@ -49,8 +63,10 @@ stand-in and leave the real fix for the owner.
 **Memory.** Chat is not storage. Anything a future session (or a different
 agent) would need is written into the repository in the same unit of work:
 decisions → `docs/DECISIONS.md`, work items and ideas → `docs/BACKLOG.md`,
-session notes and hand-offs → `docs/JOURNAL.md` (one dated entry per
-working session), user-facing behaviour → `README.md`.
+the plan for a change being built → `docs/plans/<slug>.md`, session notes and
+hand-offs → `docs/JOURNAL.md` (one dated entry per working session),
+user-facing behaviour → `README.md`. `BACKLOG.md` is the standing queue of what
+*might* be built; a plan covers the one change being built now.
 
 **Honesty about verification.** Never claim something is verified in an
 environment where you could not observe it. Record what was verified where;
