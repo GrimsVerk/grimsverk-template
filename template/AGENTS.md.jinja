@@ -40,6 +40,17 @@ the code it describes — docs never lag the code.
 runs offline and deterministically; a test that needs an unavailable
 optional resource skips with a clear reason rather than failing.
 
+**Who writes the tests.** A slice's code and its tests are written by
+**different agents, in parallel, neither able to see the other's work**. The
+test author works from the slice's declared behaviour and signatures — never
+from the implementation, which is why it is written at the same time rather than
+afterwards. An agent that writes both describes what its code happens to do,
+bugs included, and calls that a test suite. The separation is structural, not a
+promise to be careful: each agent works in its own worktree off the same base,
+so the other's output is not there to read. The two meet at assembly, and tests
+disagreeing with the code is the signal that something needs a human decision —
+not a nuisance to smooth over by editing whichever side is easier.
+
 **Architecture doc.** At the end of every slice, update `docs/architecture.md`
 so it describes what now exists and how it flows. Keep it at the level of
 **logic, not code**: what the components are, what data moves between them, what

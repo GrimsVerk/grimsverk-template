@@ -49,27 +49,52 @@ For each feature, create its branch off the default branch first:
 git switch -c feat/<slug> main
 ```
 
-Then, for each slice, write a **self-contained** worker prompt: the slice it
-implements (`Slice N` of `docs/plans/<slug>.md`), the files that slice declares,
-the signatures it declares, the acceptance bar (tests pass, follows `AGENTS.md`,
-`docs/architecture.md` updated), and this explicit instruction —
+Then, for each slice, spawn **two workers in parallel**: one writing the code,
+one writing the tests. They never see each other's work — both branch off
+`feat/<slug>` at the same commit, so neither has the other's output in its
+worktree. That blindness is the point: an agent writing both the code and its
+tests writes tests that describe what its code happens to do, bugs included.
 
-> You are a worker. Do only this assigned slice, in the files listed. You are
-> NOT an orchestrator: do not spawn, invoke, or delegate to any further
-> agents, and do not use any orchestration scripts. Never modify the merge
-> gates — CI workflows (`.github/workflows/`), the review check or its prompt
-> (`.github/review-prompt.md`, `.github/scripts/review.sh`), branch
-> protection, `CODEOWNERS`, or the pre-commit config. Before you finish,
-> update `docs/architecture.md` to describe what now exists — logic, not code.
-> Then ensure the project's checks pass, and stop.
+Split the slice's declared files between them: paths under `tests/` or `Tests/`
+belong to the **test-writer**, everything else to the **coder**. They must not
+write into each other's files.
+
+**Coder prompt** — the slice (`Slice N` of `docs/plans/<slug>.md`), its
+non-test files, its signatures, the acceptance bar (follows `AGENTS.md`,
+`docs/architecture.md` updated), plus:
+
+> You are a worker. Do only this assigned slice, in the files listed. Implement
+> the signatures declared in the slice EXACTLY — another agent is writing tests
+> against them right now, from the same declaration, and cannot see your code.
+> Do not write tests; they are being written in parallel. You are NOT an
+> orchestrator: do not spawn, invoke, or delegate to any further agents, and do
+> not use any orchestration scripts. Never modify the merge gates — CI workflows
+> (`.github/workflows/`), the review check or its prompt
+> (`.github/review-prompt.md`, `.github/scripts/review.sh`), branch protection,
+> `CODEOWNERS`, or the pre-commit config. Before you finish, update
+> `docs/architecture.md` to describe what now exists — logic, not code. Then
+> stop.
+
+**Test-writer prompt** — the slice, its test files, its signatures, and the role
+defined in `.claude/agents/test-writer.md` (read it into the prompt, or delegate
+to that subagent). Its tests are expected to **fail** in isolation, because the
+implementation is not in its tree; that is correct and it must not write the
+implementation to go green.
 
 Never hand a worker `spawn-worker.sh` or any orchestration tooling.
 
-Spawn workers **in parallel**, each via the primitive:
+Spawn every worker **in parallel**, each via the primitive:
 
 ```sh
-.claude/scripts/spawn-worker.sh --id <slug>-<n> --base feat/<slug> --prompt "<prompt>" &
+.claude/scripts/spawn-worker.sh --id <slug>-<n>       --base feat/<slug> --prompt "<coder prompt>" &
+.claude/scripts/spawn-worker.sh --id <slug>-<n>-tests --base feat/<slug> --prompt "<test prompt>" &
 ```
+
+Pairing **doubles the worker count** — a 4-slice feature is 8 processes, which
+is the whole concurrency cap. Budget for it: run fewer slices at once, or fewer
+features. You may skip the pair and let the coder write its own tests for a
+slice that delivers no real logic (pure scaffolding, config, a rename); say so
+when you do. Never skip it for a slice with behaviour worth asserting on.
 
 - `--id <slug>-<n>` becomes the branch `worker/<slug>-<n>`, keeping every branch
   traceable to its plan.
@@ -95,9 +120,25 @@ After a feature's workers finish, for each one:
   authorization.** The authoritative review is the pipeline's soft gate, which
   runs independently on the PR.
 - **Assemble** the branches that pass into `feat/<slug>` (merge the worker
-  branches into it). For the ones that failed or errored, either re-dispatch a
-  corrected worker prompt (once) or discard the branch — don't assemble broken
-  work.
+  branches into it), taking each slice's coder and test-writer **together**. For
+  the ones that failed or errored, either re-dispatch a corrected worker prompt
+  (once) or discard the branch — don't assemble broken work.
+
+- **Reconcile the pair.** Once a slice's code and tests are both merged, run the
+  suite. This is the first moment they meet, and a failure here is *information*,
+  not a nuisance: the two agents disagreed about what the slice meant. Work out
+  which side is wrong before touching either.
+  - Tests assert behaviour the slice promised and the code doesn't deliver →
+    **the code is wrong.** Fix the code.
+  - Tests assert something the slice never promised → **the tests are wrong.**
+    Fix the tests.
+  - Both are defensible readings → **the plan was ambiguous.** Fix the plan, say
+    so in your report, and note it as an escape in `docs/escapes.md` — an
+    ambiguous slice is exactly the kind of gap the plan is supposed to close.
+
+  Never resolve a disagreement by weakening the test to match the code. That
+  converts a caught defect into a passing suite, which is the failure mode this
+  whole split exists to prevent.
 - Check `docs/architecture.md` actually got updated and reads as one coherent
   description rather than several workers' fragments stitched together. Fix it
   yourself if not; it is the file the owner reads.

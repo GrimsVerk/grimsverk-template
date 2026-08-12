@@ -62,11 +62,11 @@ would branch off another feature's code and carry it into their PR.
 
 Two separate limits, for two separate reasons.
 
-**Workers per feature: follow the plan.** The plan already decided this — one
-worker per slice. That is typically 3–5 because that is what a well-sliced plan
-looks like, but take the number from the plan rather than padding or trimming to
-hit a target. A plan with two genuinely independent slices gets two workers. If a
-plan seems to need more than about six, the slicing is probably too fine.
+**Workers per feature: follow the plan, then double it.** The plan already
+decided the slice count — typically 3–5, because that is what a well-sliced plan
+looks like. Take the number from the plan rather than padding or trimming to hit
+a target. Then note that each slice gets **two** workers, a coder and a
+test-writer (below), so a 4-slice feature is 8 processes.
 
 **Total workers across all features: cap it at ~8.** The binding constraint is
 not the machine, it is your subscription's rate limits — every worker and every
@@ -74,6 +74,35 @@ PR's review gate draw on the same budget, so a wide fan-out starves the gates
 that are supposed to check it. Past that point the assemble-and-review step
 dominates anyway. Two or three features in flight is a realistic ceiling; if
 that means a feature waits, let it wait.
+
+## Code and tests are written blind, in parallel
+
+Each slice gets two workers: one writing the code, one writing the tests. Both
+branch off `feat/<slug>` at the same commit, so **neither has the other's output
+in its worktree** — the test author cannot read the implementation because it
+is not there.
+
+That structure is the mechanism. An agent asked to write code and its tests
+writes tests that describe what its code happens to do, bugs included, and the
+suite then certifies the bug. Splitting the roles only helps if the test author
+genuinely cannot see the implementation; a promise to ignore it is not the same
+thing, and writing tests *afterwards* fails for the same reason even with a
+different agent — the code is there to read.
+
+What makes blind parallel authorship work at all is the slice's **Signatures**
+block. It is the contract both sides code against: same names, same arguments,
+same types. Without it the two would agree on intent and disagree on every
+identifier, and reconciliation would cost more than the separation saves. This
+is the reason the plan schema demands signatures with no bodies.
+
+The two meet at assembly, and disagreement there is the payoff, not a problem —
+it means the slice was built and checked by two independent readings of the
+spec, and they differed. `/orchestrate` step 4 says how to resolve it; the one
+forbidden resolution is weakening the test to match the code.
+
+CI's `test-the-tests` check backs this up from the other side: it reverts the
+implementation and fails if the tests still pass, catching a test author that
+asserted on nothing.
 
 ## Features must not overlap on files
 
