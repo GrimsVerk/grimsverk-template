@@ -124,15 +124,25 @@ test suite on every commit and push, regardless of which tool or agent
 wrote the code. A failing gate is fixed, never bypassed: no `--no-verify`,
 no skipping or weakening checks to get green.
 
-**The merge pipeline.** Merges are mechanical: a pull request merges when
-its required checks go green — the **hard gate** (CI: format/lint{% if language == 'python' %}/type{% endif %}/tests,
-which is authoritative) plus a **soft gate** (`.github/workflows/review.yml`,
-an independent read-only LLM review of the diff against this file and
-`docs/DESIGN.md`, run with fresh context — a different model than the author
-is a nice-to-have, not required). The soft gate is an added check, never a
-replacement for CI. No agent merges on its own judgment: opening the PR into this pipeline
-is where an agent's job ends, and the merge is triggered by check status,
-not by any agent — including a passing local review — deciding to merge.
+**The merge pipeline.** Merges are mechanical: a pull request merges when its
+required checks go green. Four of them, three mechanical and one judgment:
+
+- **CI** — format/lint{% if language == 'python' %}/type{% endif %}/tests. The authoritative hard gate.
+- **`plan`** — the PR resolves to exactly one plan under `docs/plans/`, matched
+  by that plan's slug appearing in the branch name. Fails hard, because a plan
+  the reviewer never receives is a gate that quietly stopped working. Branches
+  prefixed `chore/` or `docs/` are exempt.
+- **`test-the-tests`** — reverts this PR's implementation, keeps its new tests,
+  and fails if the suite still passes.
+- **review** (`.github/workflows/review.yml`) — an independent read-only LLM
+  reviewing the diff against this file, `docs/DESIGN.md`, the plan, and the
+  mechanical facts CI computed, with fresh context. A different model than the
+  author is a nice-to-have, not required. It is an added check, never a
+  replacement for CI.
+
+No agent merges on its own judgment: opening the PR into this pipeline is where
+an agent's job ends, and the merge is triggered by check status, not by any
+agent — including a passing local review — deciding to merge.
 
 **The ratchet.** Nothing that escapes to the owner gets fixed without also
 producing a permanent check that would have caught it. "Why did this bug exist"
