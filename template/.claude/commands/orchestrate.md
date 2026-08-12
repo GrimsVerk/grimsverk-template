@@ -11,16 +11,25 @@ Follow these steps.
 
 ## 1. Decompose
 
-Break the task into a small number of **independent** subtasks — target 3–5,
-never more. Each subtask must be scoped to **disjoint files or directories**
-so no two workers can touch the same path and collide. If the task can't be
-split cleanly into independent pieces, say so and do it yourself instead of
-forcing a bad split.
+Work from the plan. `docs/plans/<slug>.md` already breaks this change into
+vertical slices with declared files, signatures, and estimates — **use those
+slices as the subtasks** rather than inventing a second decomposition. If no
+plan exists, stop and write one first (`/plan`); planning is not optional for
+non-trivial work, and CI's `plan` check will fail the PR without one.
+
+Note the plan's `slug`: every branch below must contain it, or the PR cannot be
+matched to its plan and the `plan` check fails.
+
+Slices should already be scoped to **disjoint files** so no two workers collide.
+If they aren't, fix the plan rather than working around it here. Target 3–5; if
+the plan can't be split cleanly into independent pieces, say so and do it
+yourself instead of forcing a bad split.
 
 ## 2. Write worker prompts and spawn
 
-For each subtask, write a **self-contained** prompt: what to change, which
-files/dirs it owns, the acceptance bar (tests pass, follows `AGENTS.md`), and
+For each slice, write a **self-contained** prompt naming the slice it implements
+(`Slice N` of `docs/plans/<slug>.md`), the files that slice declares, the
+signatures it declares, the acceptance bar (tests pass, follows `AGENTS.md`), and
 this explicit instruction —
 
 > You are a worker. Do only this assigned task, in the files listed. You are
@@ -36,8 +45,11 @@ Never hand a worker `spawn-worker.sh` or any orchestration tooling.
 Spawn workers **in parallel**, each via the primitive:
 
 ```sh
-.claude/scripts/spawn-worker.sh --id <short-id> --prompt "<prompt>" &
+.claude/scripts/spawn-worker.sh --id <slug>-<n> --prompt "<prompt>" &
 ```
+
+The `--id` becomes the branch name (`worker/<id>`), so **start it with the
+plan's slug** — that keeps every branch traceable to its plan.
 
 Run them with background `&` + `wait` (or `xargs -P`), not one at a time.
 Defaults: engine `codex`, workspace-level sandbox. Keep the sandbox on — do
@@ -57,7 +69,10 @@ After all workers finish, for each one:
   merge authorization.** The authoritative review is the pipeline's soft
   gate (`.github/workflows/review.yml`), which runs independently on the PR.
 - **Assemble** the branches that pass your pre-check into a single feature
-  branch (merge the worker branches into it). For the ones that failed or
+  branch (merge the worker branches into it). **Name that branch so it contains
+  the plan's slug** — e.g. `feat/<slug>` — because it is the branch the pull
+  request comes from, and CI resolves the plan from it. A PR whose branch
+  doesn't match its plan fails the `plan` check. For the ones that failed or
   errored, either re-dispatch a corrected worker prompt (once) or discard the
   branch — don't assemble broken work.
 

@@ -30,6 +30,11 @@ rubber-stamp, and no agent merges on its own judgment:
 
 - **Hard gate — CI** (`.github/workflows/ci.yml`): format, lint,{% if language == 'python' %} types,{% endif %} and
   tests. Authoritative; a red CI blocks merge.
+- **Hard gate — plan** (the `plan` job): every PR must resolve to exactly one
+  plan under `docs/plans/`, matched by the plan's `slug` appearing in the branch
+  name. It fails hard rather than warning, because a plan the reviewer never
+  receives is a gate that quietly stopped working. Branches prefixed `chore/` or
+  `docs/` are exempt, for changes too small to plan.
 - **Soft gate — review** (`.github/workflows/review.yml`): an independent,
   read-only LLM reviews the PR diff against `AGENTS.md` and `docs/DESIGN.md`
   (design conformance, scope creep, soundness, security smells) and blocks on
@@ -51,6 +56,7 @@ them on the default branch (`main`):
 1. **Branch protection** on `main`: require a pull request before merging, and
    require these **status checks** to pass:
    - `{% if language == 'python' %}checks{% else %}test{% endif %}` (CI hard gate)
+   - `plan` (mechanical: the PR resolves to exactly one plan)
    - `review` (LLM soft gate)
 2. **Require review from Code Owners** (branch protection), so changes to the
    gate paths in `CODEOWNERS` need {{ code_owner }}'s approval even under

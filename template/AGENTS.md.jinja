@@ -8,9 +8,10 @@ never duplicated elsewhere.
 
 **Branches.** Never commit to the default branch directly; work on a branch
 and let the owner merge. Never force-push or rewrite history on a branch
-that has been pushed. When the work has a plan, the branch name must contain
-that plan's `slug`: CI locates the plan by matching slugs against the branch
-name, so a branch that doesn't match silently costs the review its estimates.
+that has been pushed. **Any branch you open a pull request from must contain its
+plan's `slug`** — CI resolves the plan by matching slugs against the branch name,
+and a PR whose plan can't be resolved fails the `plan` check. Name intermediate
+branches with the slug too, so they stay traceable to the work they belong to.
 
 **Planning.** Non-trivial work gets a plan before it gets code — copy
 `docs/plans/_TEMPLATE.md` to `docs/plans/<slug>.md` and fill it in. A plan is
@@ -23,6 +24,12 @@ rather than derive, and stop for the owner's ruling — then record the rulings 
 the plan. The estimate is a **tripwire, not a target**: never compress code,
 drop error handling, or thin tests to come in under it. An overrun does not fail
 the build; CI reports the delta and the reviewer asks whether it was justified.
+
+A genuinely trivial change — a typo, a doc tweak — may skip planning by using a
+`chore/` or `docs/` branch prefix, which the `plan` check exempts. That escape
+hatch exists so small fixes aren't ceremony; reaching for it to avoid planning
+real work is a rule violation, and it is visible in the branch name precisely so
+that it can't be done quietly.
 
 **Commits.** One conceptually contained commit per unit of work, pushed
 when complete, with an imperative one-line message. The test suite must

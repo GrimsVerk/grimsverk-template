@@ -54,4 +54,7 @@ jobs:
           REVIEW_MODEL: ""
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Which plan this PR is judged against is resolved from the branch
+          # name (see .github/scripts/plan-resolve.sh).
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: .github/scripts/review.sh

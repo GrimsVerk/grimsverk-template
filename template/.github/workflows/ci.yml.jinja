@@ -6,8 +6,25 @@ on:
   push:
   pull_request:
 
-{% if language == 'python' -%}
 jobs:
+  # Mechanical precondition, not a code judgment: does this PR resolve to exactly
+  # one plan? Kept a separate check from `review` on purpose — a red `plan` says
+  # the branch/plan wiring is broken, where a red `review` would read as "the
+  # reviewer rejected the code". Hard-fails: an estimate the reviewer never
+  # receives is a gate that quietly stopped working. Branches with an exempt
+  # prefix (chore/, docs/) pass without a plan. Always ubuntu — this is a text
+  # match, and it must not sit behind a macOS runner on the Swift variant.
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve the plan for this branch
+        # GITHUB_HEAD_REF is the PR's source branch, set by Actions on
+        # pull_request events.
+        run: HEAD_REF="$GITHUB_HEAD_REF" .github/scripts/plan-resolve.sh
+
+{% if language == 'python' %}
   checks:
     runs-on: ubuntu-latest
     steps:
@@ -18,8 +35,7 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy
       - run: uv run pytest
-{%- else -%}
-jobs:
+{% else %}
   test:
     # iOS builds require Xcode, so this job must run on a macOS runner —
     # Linux runners cannot build or test this target.
