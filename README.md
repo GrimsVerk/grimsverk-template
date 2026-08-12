@@ -163,11 +163,20 @@ the skeleton and single source of truth for the doc's shape.
 ## Orchestration (optional Claude layer)
 
 Generated projects also carry a single-layer orchestration setup under
-`.claude/`: run `/orchestrate <task>` and the main session fans the work
-out to a few headless worker agents, each in its own git worktree, then
-merges the good branches. See `.claude/orchestration.md` in a generated
-project for the one-layer rule, sandbox defaults, and safety notes. Like
-the rest of `.claude/`, it is deletable without breaking the project.
+`.claude/`: run `/orchestrate <slugs>` and the main session builds one or
+more planned features at once. Each feature gets its own branch, its own
+group of headless workers (one per slice of its plan, each in its own git
+worktree), and its own pull request. The orchestrator assembles the worker
+branches and opens the PRs — it never merges; that stays mechanical, driven
+by the required checks going green.
+
+Still exactly one layer of spawning, however many features are running: the
+orchestrator drives every worker directly, and there is deliberately no
+per-feature sub-orchestrator. See `.claude/orchestration.md` in a generated
+project for the one-layer rule, the concurrency limits, the requirement that
+concurrent features not touch the same files, sandbox defaults, and safety
+notes. Like the rest of `.claude/`, it is deletable without breaking the
+project.
 
 ## Updating generated projects
 
