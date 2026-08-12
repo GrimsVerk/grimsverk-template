@@ -4,20 +4,153 @@ A [Copier](https://copier.readthedocs.io/) template for new GrimsVerk projects.
 This repository is the template itself — nothing in it ships directly; it
 *generates* project repositories.
 
-## Usage
-
-```sh
-uv tool install copier   # or: pipx install copier
-copier copy --trust gh:GrimsVerk/grimsverk-template my-project
-```
-
-Copier asks a handful of questions (name, slug, language, description,
-license) and renders a ready-to-work-in project.
-
 Supported languages:
 
 - `python` — uv-managed package, src layout, ruff + mypy + pytest
 - `swift-ios` — SwiftUI iOS app, XcodeGen-managed project, SwiftFormat + SwiftLint
+
+## Starting a new project
+
+**You never clone this template.** Copier reads it from GitHub and *renders* a
+fresh project into a new local directory. That directory is not a git repo and
+has no remote — you turn it into one and push it to a brand-new, empty GitHub
+repo. Steps 1–4 get you a working local project; step 5 turns on the merge
+gates, and its order matters (see below).
+
+### 0. Install Copier (once per machine)
+
+```sh
+uv tool install copier   # or: pipx install copier
+```
+
+### 1. Generate the project
+
+```sh
+copier copy gh:GrimsVerk/grimsverk-template my-project
+cd my-project
+```
+
+Copier asks six questions:
+
+| Question | Notes |
+| --- | --- |
+| `project_name` | Human-readable, e.g. `My App` |
+| `project_slug` | Defaults to a slugified `project_name`; used for the repo, package, and paths |
+| `language` | `python` or `swift-ios` |
+| `description` | One line; lands in the README and package metadata |
+| `auto_merge` | `true` (default) = green PRs merge themselves. Choose `false` for anything real people download, or that touches payments, secrets, or user data |
+| `code_owner` | Required. A real `@handle` or `@org/team` — GitHub silently ignores `CODEOWNERS` entries that don't resolve |
+
+### 2. Bootstrap the toolchain
+
+```sh
+uv sync                                            # python
+brew install xcodegen swiftformat swiftlint \
+  && xcodegen generate                             # swift-ios
+```
+
+Then, either language:
+
+```sh
+pre-commit install
+```
+
+### 3. Make it a git repo
+
+```sh
+git init -b main
+git add -A
+git commit -m "Initial scaffold from grimsverk-template"
+```
+
+The generated `AGENTS.md` forbids committing directly to `main`; this initial
+scaffold commit is the one exception, made before the gates exist.
+
+### 4. Create an empty GitHub repo and push
+
+Create the repo with **no** README, `.gitignore`, or license — any of those
+gives it a commit your local `main` doesn't have, and the first push is
+rejected. Either use the web UI and then:
+
+```sh
+git remote add origin git@github.com:GrimsVerk/my-project.git
+git push -u origin main
+```
+
+…or do both at once:
+
+```sh
+gh repo create my-project --private --source=. --remote=origin --push
+```
+
+### 5. Turn on the gates — in this order
+
+GitHub only lets you mark a status check *required* after it has reported at
+least once, and the two gates first report at different times:
+
+| Check | Runs on | First reports after |
+| --- | --- | --- |
+| `checks` (python) / `test` (swift-ios) | every push | your first push |
+| `review` | pull requests only | your first **PR** |
+
+So `review` cannot be marked required straight after step 4 — it won't be in
+the dropdown yet. Hence:
+
+**a. Add the review credential first.** *Settings → Secrets and variables →
+Actions → New repository secret*, named `CLAUDE_CODE_OAUTH_TOKEN`. Get the
+value by running `claude setup-token` locally (needs the Claude Code CLI; it
+uses your subscription, not a metered API key). Do this *before* making
+`review` required — the job fails closed without a credential, so every PR
+would block.
+
+**b. Enable the merge settings.** *Settings → General → Pull Requests*: tick
+**Allow auto-merge**, and leave **Allow merge commits** on. Merge commits are
+what make the one-line revert in the generated README work, so keep them even
+when `auto_merge` is `false`.
+
+**c. Open one throwaway PR** so the `review` check registers:
+
+```sh
+git checkout -b setup-gates
+git commit --allow-empty -m "Register the review check"
+git push -u origin setup-gates
+```
+
+Open the PR on GitHub and let both checks run.
+
+**d. Now add branch protection** (*Settings → Branches → Add branch ruleset*,
+or classic *Add rule*) on `main`:
+
+- Require a pull request before merging — with **Required approvals: `0`**
+- **Require review from Code Owners** ✅
+- Require status checks to pass ✅ → select `checks` (or `test` for swift-ios)
+  **and** `review`
+
+> The approvals number is the setting to get right. Anything ≥ 1 gates *every*
+> PR on a human approval, and auto-merge never fires. `0` **plus** *Require
+> review from Code Owners* is the intent: ordinary PRs merge on green, while
+> PRs touching the gate paths in `CODEOWNERS` still need your approval.
+
+**e. Merge or close the setup-gates PR.**
+
+### 6. Start working
+
+Run `/design` in the project and rant your idea at it — it writes
+`docs/DESIGN.md`, which the review gate then checks every PR against. After
+that it's branch → PR → green → merge. The generated `README.md` carries the
+per-project details, including the `git revert -m 1 <merge-sha>` rollback
+recipe that is the real safety net under auto-merge.
+
+### What you get
+
+```
+AGENTS.md            agent guidelines (CLAUDE.md is a one-line pointer to it)
+docs/DESIGN.md       design doc skeleton + the /design interview kit
+.github/             CI, the LLM review gate, CODEOWNERS, auto-merge
+.pre-commit-config.yaml
+.claude/             optional convenience layer — deletable, nothing breaks
+.copier-answers.yml  lets `copier update` pull in template changes later
+```
 
 ## Design-doc workflow
 
@@ -42,8 +175,15 @@ Every generated project contains a `.copier-answers.yml` file. To pull in
 template improvements later, run inside the project:
 
 ```sh
-copier update --trust
+copier update
 ```
+
+Re-run it after changing an answer too — e.g. flipping `auto_merge` on an
+existing project.
+
+> `--trust` is not needed for either command: this template renders files only
+> and runs no tasks or migrations. If a future version adds one, Copier will
+> refuse and tell you to re-run with `--trust`.
 
 ## Layout
 
@@ -76,6 +216,14 @@ belongs to the template repo and never leaks into generated projects.
   `false` (e.g. the iOS app, or anything touching payments/secrets/user data)
   to keep a human merge step while still running the review gate. `code_owner`
   supplies the CODEOWNERS handle.
+- **Deliberately unlicensed.** There is no `license` question, and generated
+  projects carry no `LICENSE` file and no `license` field in package metadata.
+  Every project is assessed on its own terms, by the owner, when licensing
+  actually matters — publication, distribution, accepting outside
+  contributions. A template-chosen default would silently attach terms to
+  every project that never revisits the choice, which is worse than shipping
+  nothing. The rule is restated in the generated `AGENTS.md` ("Licensing") and
+  in `copier.yml`, so agents stop re-proposing it.
 - **No marketplace, no plugin.** Deliberately excluded.
 
 ## Adding a language

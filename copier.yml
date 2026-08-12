@@ -30,14 +30,15 @@ description:
   help: One-line project description
   default: ""
 
-license:
-  type: str
-  help: License (SPDX identifier)
-  default: MIT
-  choices:
-    - MIT
-    - Apache-2.0
-    - GPL-3.0-or-later
+# NOTE — there is deliberately no `license` question, and this is not an
+# oversight to be "fixed". Generated projects ship no LICENSE file and no
+# `license` field in package metadata: every project is assessed on its own
+# terms, by the owner, at the point licensing actually matters (publication,
+# distribution, accepting outside contributions). A template-chosen default
+# would silently attach terms to every project that never revisits the choice,
+# which is worse than shipping nothing. Do not re-add this question or emit a
+# license anywhere. The same rule is stated for coding agents in
+# template/AGENTS.md.jinja under "Licensing".
 
 auto_merge:
   type: bool
