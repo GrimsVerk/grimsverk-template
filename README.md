@@ -178,6 +178,20 @@ concurrent features not touch the same files, sandbox defaults, and safety
 notes. Like the rest of `.claude/`, it is deletable without breaking the
 project.
 
+## The build loop
+
+Generated projects carry a full path from idea to evidenced delivery, each stage
+leaving an artifact the next one checks against:
+
+| Command | Produces | Checked by |
+| --- | --- | --- |
+| `/design` | `docs/DESIGN.md` — what and why, requirements `R1…`, criteria `S1…` | the owner, at an uncertainty stop |
+| `/plan` | `docs/plans/<slug>.md` — vertical slices, files, signatures, estimates | the owner, at a second uncertainty stop |
+| `/orchestrate` | one branch and PR per feature; per slice a coder and a blind test-writer in parallel | CI, `plan`, `test-the-tests`, the review gate |
+| `/deliver` | drives the loop, then `docs/acceptance.md` | the owner, for anything an agent can't observe |
+
+No agent merges at any point — merges are triggered by checks going green.
+
 ## Updating generated projects
 
 Every generated project contains a `.copier-answers.yml` file. To pull in

@@ -2,7 +2,8 @@
 slug: <kebab-case-id>      # MUST appear in every branch name working this plan
 status: draft              # draft | in-flight | merged
 created: <YYYY-MM-DD>
-design: <the docs/DESIGN.md milestone or requirement this implements>
+design: <the docs/DESIGN.md milestone this implements>
+covers: [R1, R2]           # the DESIGN.md §5 requirement ids this plan delivers
 ---
 
 # <Feature name> — Plan
@@ -11,7 +12,13 @@ design: <the docs/DESIGN.md milestone or requirement this implements>
 (like this) explain what each part is for; delete them or leave them, they don't
 render. The filename, the `slug` field, and the branch name must agree — CI finds
 this plan by looking for a plan whose slug appears in the PR's branch name, and
-without a match the reviewer runs with no estimates to check the diff against. -->
+without a match the reviewer runs with no estimates to check the diff against.
+
+`covers:` lists the `docs/DESIGN.md` §5 requirement ids this plan delivers. It is
+what `.github/scripts/coverage.sh` reads to answer "is every requirement actually
+planned?" — a requirement no plan covers is work nobody has scheduled, and
+without this field that gap is invisible until the end. List only what this plan
+genuinely delivers; padding it hides the same gap more convincingly. -->
 
 ## Uncertainties
 

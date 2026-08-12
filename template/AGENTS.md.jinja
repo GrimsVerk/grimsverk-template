@@ -86,12 +86,23 @@ stuck after 3–5 tries, log what was tried and why it failed, then move on;
 if the blocker gates everything, build the simplest clearly-marked
 stand-in and leave the real fix for the owner.
 
+**Done.** "Everything merged" is a statement about the queue, not about the
+product. A slice is done when its tests pass against it; a plan is done when it
+has merged; the **project** is done when every `docs/DESIGN.md` §5 requirement
+is covered by a merged plan *and* every §13 success criterion has recorded
+evidence in `docs/acceptance.md`. Coverage is mechanical
+(`.github/scripts/coverage.sh`); acceptance is not, which is exactly why it is
+written down rather than inferred from the code. Never report the project as
+done while criteria are pending on the owner — report it as pending on the
+owner, and say precisely what they need to run or look at.
+
 **Memory.** Chat is not storage. Anything a future session (or a different
 agent) would need is written into the repository in the same unit of work:
 decisions → `docs/DECISIONS.md`, work items and ideas → `docs/BACKLOG.md`,
 the plan for a change being built → `docs/plans/<slug>.md`, what the system is
 and how it flows → `docs/architecture.md`, anything that escaped to the owner →
-`docs/escapes.md`, session notes and hand-offs → `docs/JOURNAL.md` (one dated
+`docs/escapes.md`, evidence that a success criterion holds →
+`docs/acceptance.md`, session notes and hand-offs → `docs/JOURNAL.md` (one dated
 entry per working session), user-facing behaviour → `README.md`. `BACKLOG.md` is the standing queue of what
 *might* be built; a plan covers the one change being built now.
 

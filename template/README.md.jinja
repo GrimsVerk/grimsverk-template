@@ -95,6 +95,27 @@ Only one check is seeded (`test-the-tests`). That is deliberate: the log is what
 tells you which check to add next, and a check added on speculation is machinery
 you now maintain for a failure that never happens. Let the log ask first.
 
+## Is it done?
+
+Two different questions, deliberately kept apart:
+
+```sh
+.github/scripts/coverage.sh    # is every DESIGN.md §5 requirement PLANNED?
+```
+
+Coverage is mechanical: it matches requirement ids against the `covers:` field
+of each plan. A full pass means the work was **scheduled and merged** — not that
+it works.
+
+Whether it works is the **acceptance pass**, recorded in `docs/acceptance.md`:
+one row per §13 success criterion, with evidence, and an honest split between
+what an agent observed by running something and what only you can verify. The
+project is done when every criterion has evidence and nothing is pending on you.
+An empty backlog is not the same claim.
+
+`/deliver` drives the whole loop — plan, build, wait for the pipeline, repeat,
+then run the acceptance pass.
+
 ## Reverting a bad merge
 
 Because no human reads every change before it lands, fast rollback is the real
