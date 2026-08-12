@@ -124,7 +124,7 @@ or classic *Add rule*) on `main`:
 - Require a pull request before merging — with **Required approvals: `0`**
 - **Require review from Code Owners** ✅
 - Require status checks to pass ✅ → select `checks` (or `test` for swift-ios),
-  `plan`, **and** `review`
+  `plan`, `test-the-tests`, **and** `review`
 
 > The approvals number is the setting to get right. Anything ≥ 1 gates *every*
 > PR on a human approval, and auto-merge never fires. `0` **plus** *Require

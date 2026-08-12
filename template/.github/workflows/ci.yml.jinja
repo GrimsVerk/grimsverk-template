@@ -35,6 +35,29 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy
       - run: uv run pytest
+
+  # The ratchet's one seeded check (AGENTS.md): revert the implementation, keep
+  # the new tests, and fail if the suite still passes — tests that pass without
+  # the code under test are testing nothing.
+  test-the-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the check diffs the PR against its merge base.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - name: Tests must fail without the implementation
+        # The SHAs are derived in the shell rather than from a GitHub Actions
+        # expression on purpose: this file is a Jinja template, and Jinja would
+        # consume a dollar-brace-brace expression before GitHub ever saw it.
+        # Do not "simplify" this into the github.event.pull_request context.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+          HEAD_SHA="$(git rev-parse HEAD)" \
+          .github/scripts/test-the-tests.sh
 {% else %}
   test:
     # iOS builds require Xcode, so this job must run on a macOS runner —
@@ -58,4 +81,30 @@ jobs:
           -scheme {{ app_name }}
           -destination 'platform=iOS Simulator,name=iPhone 16'
           CODE_SIGNING_ALLOWED=NO
+
+  # The ratchet's one seeded check (AGENTS.md): revert the implementation, keep
+  # the new tests, and fail if the suite still passes — tests that pass without
+  # the code under test are testing nothing. On Swift this is a blunter signal
+  # than on Python: reverting Sources/ usually breaks compilation rather than
+  # producing assertion failures. That still answers the question (the suite did
+  # not pass), it just answers it crudely. Note this doubles macOS runner time on
+  # every PR, which is the expensive runner.
+  test-the-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the check diffs the PR against its merge base.
+          fetch-depth: 0
+      - run: brew install xcodegen
+      - name: Tests must fail without the implementation
+        # The SHAs are derived in the shell rather than from a GitHub Actions
+        # expression on purpose: this file is a Jinja template, and Jinja would
+        # consume a dollar-brace-brace expression before GitHub ever saw it.
+        # Do not "simplify" this into the github.event.pull_request context.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+          HEAD_SHA="$(git rev-parse HEAD)" \
+          .github/scripts/test-the-tests.sh
 {%- endif %}

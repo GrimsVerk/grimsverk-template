@@ -35,6 +35,11 @@ rubber-stamp, and no agent merges on its own judgment:
   name. It fails hard rather than warning, because a plan the reviewer never
   receives is a gate that quietly stopped working. Branches prefixed `chore/` or
   `docs/` are exempt, for changes too small to plan.
+- **Hard gate — test-the-tests** (the `test-the-tests` job): reverts this PR's
+  implementation, keeps its new tests, and fails if the suite still passes.
+  Tests that stay green without the code they cover are testing nothing, which
+  matters most when nobody reads them. Runs only when a PR changes both
+  implementation and tests.
 - **Soft gate — review** (`.github/workflows/review.yml`): an independent,
   read-only LLM reviews the PR diff against `AGENTS.md` and `docs/DESIGN.md`
   (design conformance, scope creep, soundness, security smells) and blocks on
@@ -57,6 +62,7 @@ them on the default branch (`main`):
    require these **status checks** to pass:
    - `{% if language == 'python' %}checks{% else %}test{% endif %}` (CI hard gate)
    - `plan` (mechanical: the PR resolves to exactly one plan)
+   - `test-the-tests` (mechanical: the new tests fail without the new code)
    - `review` (LLM soft gate)
 2. **Require review from Code Owners** (branch protection), so changes to the
    gate paths in `CODEOWNERS` need {{ code_owner }}'s approval even under
@@ -76,6 +82,18 @@ them on the default branch (`main`):
 {% endif %}
 Coding agents work on a branch and open a PR into this pipeline; branch
 protection plus the required checks are what prevent self-merging.
+
+## The ratchet
+
+Nothing that escapes to you gets fixed without also adding a permanent check
+that would have caught it — "why did this bug exist" and "which gate should have
+caught this" are the same question. Each escape is one line in
+`docs/escapes.md`: what escaped, which gate should have caught it, what check
+was added.
+
+Only one check is seeded (`test-the-tests`). That is deliberate: the log is what
+tells you which check to add next, and a check added on speculation is machinery
+you now maintain for a failure that never happens. Let the log ask first.
 
 ## Reverting a bad merge
 
