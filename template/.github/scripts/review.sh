@@ -39,7 +39,16 @@ if [[ -z "$DIFF" ]]; then
   exit 0
 fi
 
-read_or_note() { if [[ -f "$1" ]]; then cat "$1"; else echo "(not present in this project)"; fi; }
+# Everything the reviewer is judged AGAINST is read at BASE_SHA, never from the
+# working tree. The head checkout is the diff under review: a pull request that
+# edits the rules, the design, or its own plan must be judged by the versions
+# that were in force when it was opened, or the gate grades the change against
+# whatever the change decided the standard should be. The PR's edits to those
+# files are still fully visible — in the diff, where they belong.
+read_at_base() {
+  git -C "$ROOT" show "${BASE_SHA}:$1" 2>/dev/null \
+    || echo "(not present at this pull request's base commit)"
+}
 
 # Which plan does this PR belong to? A hard failure here is the `plan` CI check's
 # job, not ours — if resolution fails we still review, just without estimates, so
@@ -47,16 +56,18 @@ read_or_note() { if [[ -f "$1" ]]; then cat "$1"; else echo "(not present in thi
 PLAN_PATH="$(HEAD_REF="${HEAD_REF:-}" "${HERE}/plan-resolve.sh" 2>/dev/null || true)"
 
 CONTEXT="$(cat <<EOF
-===== AGENTS.md (project rules) =====
-$(read_or_note "$ROOT/AGENTS.md")
+===== AGENTS.md (project rules, as of the base commit) =====
+$(read_at_base AGENTS.md)
 
-===== docs/DESIGN.md (intended design) =====
-$(read_or_note "$ROOT/docs/DESIGN.md")
+===== docs/DESIGN.md (intended design, as of the base commit) =====
+$(read_at_base docs/DESIGN.md)
 
 ===== THE PLAN this PR is judged against ($PLAN_PATH) =====
-$(if [[ -n "$PLAN_PATH" ]]; then read_or_note "$ROOT/$PLAN_PATH"; else
+$(if [[ -n "$PLAN_PATH" ]]; then read_at_base "$PLAN_PATH"; else
     echo "(no plan resolved — this branch is exempt from planning, or the plan"
-    echo "check has failed separately. Review against docs/DESIGN.md instead.)"
+    echo "check has failed separately. Review against docs/DESIGN.md instead,"
+    echo "and treat the missing plan as something to scrutinise: an unplanned"
+    echo "change is less checked than a planned one, not more trusted.)"
   fi)
 
 $("${HERE}/plan-metrics.sh" "$PLAN_PATH" 2>/dev/null || echo "(metrics unavailable)")
