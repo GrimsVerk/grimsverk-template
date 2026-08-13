@@ -101,6 +101,26 @@ two means two sessions, which is the owner's call to make, not yours.
 
 ## 4. Wait for the pipeline
 
+> **⚠ OPEN QUESTION — RAISE THIS WITH THE OWNER BEFORE A LONG UNATTENDED RUN.**
+>
+> This step says "wait" without saying *how*, and nobody has decided yet. Each
+> feature costs minutes of CI plus an LLM review, and in batch mode that repeats
+> per plan, so an unattended run is mostly waiting. The options have real
+> tradeoffs and the owner wants to pick:
+>
+> - **idle** — end the turn and let the owner resume. Costs nothing, but the run
+>   is not actually unattended.
+> - **poll** — re-check every N seconds. Unattended, but spends budget on
+>   information that usually has not changed, and that budget is shared with the
+>   review gate you are waiting for.
+> - **something else** — a scheduled wake-up, a webhook, or a stop-and-report at
+>   each PR boundary.
+>
+> Until this is decided: **stop at the pull request and report**, rather than
+> guessing. Say plainly that you are stopping because the waiting strategy is
+> undecided, and offer the options above. Delete this block once the owner rules,
+> and record the ruling in `docs/DECISIONS.md`.
+
 PRs merge when their required checks go green — CI, `plan`, `test-the-tests`,
 and the review gate. That is mechanical and none of it is yours to drive. Do not
 run `gh pr merge`, do not approve, do not nudge a check.
