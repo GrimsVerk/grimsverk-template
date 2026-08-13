@@ -30,9 +30,16 @@ jobs:
         # Jinja would consume a dollar-brace-brace expression before GitHub saw
         # it. Do not "simplify" this into the github.event.pull_request context.
         run: |
-          HEAD_REF="$GITHUB_HEAD_REF" \
-          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
-          .github/scripts/plan-resolve.sh
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)"
+          PLAN="$(HEAD_REF="$GITHUB_HEAD_REF" BASE_SHA="$BASE_SHA" \
+                  .github/scripts/plan-resolve.sh)"
+          # An exempt branch resolves to no plan and has nothing to validate.
+          [ -n "$PLAN" ] || exit 0
+          # The plan must also be READABLE. A plan the parser cannot understand
+          # produces no estimates and no file list, which reaches the reviewer
+          # as an empty table it has been told to treat as ground truth — so it
+          # fails here instead, where the message can say what to fix.
+          git show "$BASE_SHA:$PLAN" | .github/scripts/plan-parse.sh >/dev/null
 
 {% if language == 'python' %}
   checks:

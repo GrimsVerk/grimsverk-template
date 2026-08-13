@@ -30,6 +30,7 @@ FACTOR=3
 FLOOR=80
 
 PLAN="${1:-}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(git rev-parse --show-toplevel)"
 : "${BASE_SHA:?BASE_SHA is required}"
 : "${HEAD_SHA:?HEAD_SHA is required}"
@@ -45,7 +46,11 @@ added_lines() {
   fi
 }
 
-echo "===== MECHANICAL FACTS (computed by CI from the diff — trustworthy) ====="
+# This script emits ONE SECTION of the mechanical-facts region. review.sh owns
+# the region's header and footer and calls each fact script in turn, so a new
+# fact — the ratchet will ask for some — is a new script and one call site, not
+# an edit to this one.
+echo "----- plan conformance -----"
 echo
 
 # ---------------------------------------------------------------- slice deltas
@@ -55,60 +60,44 @@ echo
 # raising the estimate in the same commit. `plan-resolve.sh` has already
 # guaranteed the plan exists at base; this reads that version of it.
 if [[ -n "$PLAN" ]] && git -C "$ROOT" cat-file -e "${BASE_SHA}:${PLAN}" 2>/dev/null; then
+  # Parsing is delegated to plan-parse.sh, which is STRICT: a plan it cannot
+  # read is an error, not an empty result. Silence here would be the worst
+  # possible failure — the reviewer is told to treat these numbers as ground
+  # truth, so an empty table reads as "no overruns, no scope creep" when it
+  # actually means "nothing was measured".
   echo "Plan: $PLAN (as of the base commit)"
   echo
-  printf '%-38s %10s %10s   %s\n' "SLICE" "ESTIMATE" "ACTUAL" "NOTE"
+  # plan-parse.sh writes nothing to stderr when it succeeds, so folding the two
+  # streams together lets one capture serve as both the records and the
+  # diagnosis, with the exit code deciding which it is.
+  if PARSED="$(git -C "$ROOT" show "${BASE_SHA}:${PLAN}" \
+      | "${HERE}/plan-parse.sh" 2>&1)"; then
+    printf '%-38s %10s %10s   %s\n' "SLICE" "ESTIMATE" "ACTUAL" "NOTE"
 
-  # One record per slice: title, estimate, then the declared file paths joined
-  # by '|'. Split with IFS rather than eval — the plan file is part of the diff
-  # under review, so a PR could otherwise put shell metacharacters in a Files:
-  # line and have this script run them.
-  while IFS=$'\t' read -r title estimate files; do
-    [[ -z "$title" ]] && continue
-    if [[ -n "$files" ]]; then
+    # Split with IFS rather than eval — the plan file is part of the diff under
+    # review, so a PR could otherwise put shell metacharacters in a Files: line
+    # and have this script run them.
+    while IFS=$'\t' read -r title estimate files; do
+      [[ -z "$title" ]] && continue
       IFS='|' read -r -a slice_files <<< "$files"
       actual="$(added_lines "${slice_files[@]}")"
-    else
-      actual=0
-    fi
-    note=""
-    if [[ -z "$estimate" || "$estimate" -eq 0 ]]; then
-      note="no estimate declared"
-      estimate="?"
-    else
+      note=""
       threshold=$(( estimate * FACTOR ))
       [[ "$threshold" -lt "$FLOOR" ]] && threshold=$FLOOR
       if [[ "$actual" -gt "$threshold" ]]; then
         note="OVER — ${FACTOR}x estimate exceeded (>${threshold}); is the deviation justified?"
       fi
-    fi
-    [[ -z "$files" ]] && note="${note:+$note; }no files declared"
-    printf '%-38s %10s %10s   %s\n' "${title:0:38}" "$estimate" "$actual" "$note"
-  done < <(awk '
-    /^## Slice/ {
-      if (title != "") print title "\t" est "\t" files
-      title = $0; sub(/^## +/, "", title)
-      est = 0; files = ""
-      next
-    }
-    /^- \*\*Estimate:\*\*/ {
-      line = $0
-      if (match(line, /[0-9]+/)) est = substr(line, RSTART, RLENGTH)
-      next
-    }
-    /^- \*\*Files:\*\*/ {
-      line = $0
-      while (match(line, /`[^`]+`/)) {
-        p = substr(line, RSTART + 1, RLENGTH - 2)
-        # Skip the template placeholders (<path>) and anything with the join
-        # delimiter in it.
-        if (p !~ /[<>|]/) files = files (files == "" ? "" : "|") p
-        line = substr(line, RSTART + RLENGTH)
-      }
-      next
-    }
-    END { if (title != "") print title "\t" est "\t" files }
-  ' <(git -C "$ROOT" show "${BASE_SHA}:${PLAN}"))
+      printf '%-38s %10s %10s   %s\n' "${title:0:38}" "$estimate" "$actual" "$note"
+    done <<< "$PARSED"
+  else
+    echo "!!!!! PLAN PARSE FAILED — NO SLICE METRICS COMPUTED !!!!!"
+    echo
+    printf '%s\n' "$PARSED"
+    echo
+    echo "This pull request has NO per-slice line deltas, no scope check, and no"
+    echo "overrun detection. An empty result here is not 'nothing to report' —"
+    echo "it is a gate that stopped working. Treat it as a blocking finding."
+  fi
 else
   echo "Plan: none (branch exempt from planning) — no slice estimates to check."
 fi
@@ -174,6 +163,4 @@ else
   echo "Test:implementation added lines: no test or implementation files touched"
 fi
 
-echo
-echo "===== END MECHANICAL FACTS ====="
 exit 0
