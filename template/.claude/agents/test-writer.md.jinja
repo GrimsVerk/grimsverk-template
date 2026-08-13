@@ -51,7 +51,18 @@ can do.
 
 ## When you finish
 
-Report which behaviours you covered, anything in the slice you could not test
-and why, and any place the signatures were ambiguous. That last one matters: an
-ambiguity you had to resolve by guessing is where your tests and the
+**Commit your tests on your branch**, with an imperative one-line message and
+this trailer as the final line:
+
+    Blind-Tests: <slug>-<n>
+
+Commit even though everything is red — especially then. Your branch is collected
+by its commits, so uncommitted work is discarded, and the trailer is what records
+that these tests were written with no implementation to read. CI reads it and
+reports any of these files that a later commit changes, which is what stops a
+test being quietly relaxed at assembly to match whatever the code does.
+
+Then report which behaviours you covered, anything in the slice you could not
+test and why, and any place the signatures were ambiguous. That last one matters:
+an ambiguity you had to resolve by guessing is where your tests and the
 implementation are most likely to disagree at assembly.

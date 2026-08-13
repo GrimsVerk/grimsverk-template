@@ -43,11 +43,21 @@ If the total exceeds the cap, run fewer features at once.
 
 ## 3. Per feature: create the branch, then spawn its workers
 
-For each feature, create its branch off the default branch first:
+For each feature, get onto its branch. Create it off the default branch the
+first time; switch to it if it already exists, because **dispatching a fix into
+an open pull request runs this same command** (`/deliver` step 4) and must not
+fail on a branch that is already there:
 
 ```sh
-git switch -c feat/<slug> main
+git switch feat/<slug> 2>/dev/null || git switch -c feat/<slug> main
 ```
+
+If the branch already existed you are in **fix-dispatch mode**: the feature's
+pull request is open, its checks have said something, and you are adding commits
+to it. Everything below is unchanged — workers still branch off `feat/<slug>`,
+still get disjoint files, still commit — but scope the slices to the fix, do not
+re-run slices that already landed, and do not open a second pull request. The
+existing one updates itself when you push.
 
 Then, for each slice, spawn **two workers in parallel**: one writing the code,
 one writing the tests. They never see each other's work — both branch off
@@ -73,13 +83,26 @@ non-test files, its signatures, the acceptance bar (follows `AGENTS.md`,
 > (`.github/review-prompt.md`, `.github/scripts/review.sh`), branch protection,
 > `CODEOWNERS`, or the pre-commit config. Before you finish, update
 > `docs/architecture.md` to describe what now exists — logic, not code. Then
-> stop.
+> **commit your work on this branch** with an imperative one-line message, per
+> `AGENTS.md`. Work left uncommitted does not exist: the orchestrator collects
+> your branch by its commits and an empty branch is discarded. Then stop.
 
 **Test-writer prompt** — the slice, its test files, its signatures, and the role
 defined in `.claude/agents/test-writer.md` (read it into the prompt, or delegate
 to that subagent). Its tests are expected to **fail** in isolation, because the
 implementation is not in its tree; that is correct and it must not write the
-implementation to go green.
+implementation to go green. Its prompt ends with:
+
+> **Commit your tests on this branch** before you stop, with an imperative
+> one-line message and this trailer as the last line of the message:
+>
+>     Blind-Tests: <slug>-<n>
+>
+> The trailer records that these tests were written without the implementation
+> present. CI reads it (`.github/scripts/blind-tests.sh`) and reports any of
+> these test files that a later commit modifies, so that a test quietly weakened
+> to match the code is visible to the reviewer instead of invisible. Your tests
+> failing right now is expected and is not a reason to delay committing.
 
 Never hand a worker `spawn-worker.sh` or any orchestration tooling.
 
@@ -111,6 +134,19 @@ why. Collect each printed `WORKER_RESULT` line (id, branch, worktree, exit code)
 
 After a feature's workers finish, for each one:
 
+- **Check it actually committed.** A branch with no commits beyond its base is a
+  **failed worker**, not a worker with nothing to say — most likely it edited
+  files and stopped without committing, and every one of those edits is about to
+  be discarded silently:
+
+  ```sh
+  git -C <worktree> log --oneline feat/<slug>..HEAD   # empty => failure
+  git -C <worktree> status --porcelain                # uncommitted leftovers
+  ```
+
+  If the log is empty, treat the worker as errored: re-dispatch it once (with
+  the commit instruction made explicit) or discard it, and say so in your
+  report. Never let an empty branch pass as a success.
 - Read its branch diff (`git -C <worktree> diff feat/<slug>...`) and its log
   under `.claude/orchestration-logs/<id>.log`.
 - Review the changes against `AGENTS.md` **and against the slice it was given** —
@@ -120,9 +156,23 @@ After a feature's workers finish, for each one:
   authorization.** The authoritative review is the pipeline's soft gate, which
   runs independently on the PR.
 - **Assemble** the branches that pass into `feat/<slug>` (merge the worker
-  branches into it), taking each slice's coder and test-writer **together**. For
-  the ones that failed or errored, either re-dispatch a corrected worker prompt
+  branches into it), taking each slice's coder and test-writer together. For the
+  ones that failed or errored, either re-dispatch a corrected worker prompt
   (once) or discard the branch — don't assemble broken work.
+
+  **Merge the test-writer's branch first, then the coder's**, for each slice:
+
+  ```sh
+  git merge --no-ff worker/<slug>-<n>-tests    # blind tests, with the trailer
+  git merge --no-ff worker/<slug>-<n>          # then the implementation
+  ```
+
+  This ordering is load-bearing, not cosmetic. It puts the blind tests into the
+  pull request's history *before* the code, so `.github/scripts/blind-tests.sh`
+  can report any test file that a later commit modified. Merge them the other
+  way round and every test looks like it was written after the implementation —
+  the reviewer loses the one signal that distinguishes a test that was always
+  correct from one that was quietly relaxed to match the code.
 
 - **Reconcile the pair.** Once a slice's code and tests are both merged, run the
   suite. This is the first moment they meet, and a failure here is *information*,
@@ -138,7 +188,11 @@ After a feature's workers finish, for each one:
 
   Never resolve a disagreement by weakening the test to match the code. That
   converts a caught defect into a passing suite, which is the failure mode this
-  whole split exists to prevent.
+  whole split exists to prevent. This is no longer only a rule you follow: any
+  test file you touch after its blind-authoring commit is reported to the
+  reviewer by `.github/scripts/blind-tests.sh`, naming the commit that touched
+  it. So when a test genuinely was wrong, fix it in a commit whose message says
+  which slice promise it got wrong and why — the reviewer will be reading it.
 - Check `docs/architecture.md` actually got updated and reads as one coherent
   description rather than several workers' fragments stitched together. Fix it
   yourself if not; it is the file the owner reads.

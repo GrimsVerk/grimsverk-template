@@ -63,6 +63,14 @@ so the other's output is not there to read. The two meet at assembly, and tests
 disagreeing with the code is the signal that something needs a human decision —
 not a nuisance to smooth over by editing whichever side is easier.
 
+This is checked, not just asked for. Tests written blind are committed with a
+`Blind-Tests: <slug>-<n>` trailer, before the implementation is merged, and
+`.github/scripts/blind-tests.sh` reports to the reviewer any of those test files
+that a later commit in the same pull request modified. Editing a test after it
+was written blind is allowed — it may have asserted something the slice never
+promised — but it is visible, and the commit that does it must say why. Weakening
+a test so the existing implementation passes is a blocking finding.
+
 **Architecture doc.** At the end of every slice, update `docs/architecture.md`
 so it describes what now exists and how it flows. Keep it at the level of
 **logic, not code**: what the components are, what data moves between them, what
