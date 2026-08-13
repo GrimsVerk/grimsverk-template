@@ -32,9 +32,13 @@ rubber-stamp, and no agent merges on its own judgment:
   tests. Authoritative; a red CI blocks merge.
 - **Hard gate — plan** (the `plan` job): every PR must resolve to exactly one
   plan under `docs/plans/`, matched by the plan's `slug` appearing in the branch
-  name. It fails hard rather than warning, because a plan the reviewer never
-  receives is a gate that quietly stopped working. Branches prefixed `chore/` or
-  `docs/` are exempt, for changes too small to plan.
+  name, **and that plan must already exist at the PR's base commit**. It fails
+  hard rather than warning, because a plan the reviewer never receives is a gate
+  that quietly stopped working — and a plan arriving with its own implementation
+  is one the implementation wrote. Plans land first, on their own `docs/` PR.
+  Branches prefixed `chore/` or `docs/` are exempt, for changes too small to
+  plan; the exemption is capped at ~50 added lines so it can't be used to route
+  real work around the gate.
 - **Hard gate — test-the-tests** (the `test-the-tests` job): reverts this PR's
   implementation, keeps its new tests, and fails if the suite still passes.
   Tests that stay green without the code they cover are testing nothing, which

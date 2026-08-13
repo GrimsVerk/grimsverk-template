@@ -25,11 +25,23 @@ the plan. The estimate is a **tripwire, not a target**: never compress code,
 drop error handling, or thin tests to come in under it. An overrun does not fail
 the build; CI reports the delta and the reviewer asks whether it was justified.
 
+**A plan lands before the code it plans.** Commit it on its own `docs/` branch,
+let it merge, and only then branch off the default branch to build it. This is
+enforced, not advisory: the `plan` check fails a pull request whose plan does not
+already exist at its base commit. A plan written alongside its implementation
+specifies nothing — the estimates, the file list, and the slice boundaries all
+end up as whatever the change turned out to need, and the reviewer is left
+checking a diff against a document from that same diff. `CODEOWNERS` puts
+`docs/plans/` behind the owner's review, so merging the plan is the ruling on it.
+
 A genuinely trivial change — a typo, a doc tweak — may skip planning by using a
 `chore/` or `docs/` branch prefix, which the `plan` check exempts. That escape
 hatch exists so small fixes aren't ceremony; reaching for it to avoid planning
 real work is a rule violation, and it is visible in the branch name precisely so
-that it can't be done quietly.
+that it can't be done quietly. It is also **size-capped** — an exempt branch
+adding more than ~50 lines fails the `plan` check — and the reviewer is told to
+scrutinise exempt branches harder rather than to relax, because an unplanned
+change is less checked than a planned one, not more trusted.
 
 **Commits.** One conceptually contained commit per unit of work, pushed
 when complete, with an imperative one-line message. The test suite must
@@ -162,6 +174,14 @@ CI workflows (`.github/workflows/`), the review check or its prompt
 config, or `CODEOWNERS`. These are human-owned and enforced by `CODEOWNERS`;
 a change to any of them requires human review even under auto-merge. Do not
 weaken, skip, or route around a gate to get green.
+
+The same applies to the things that check the code's **intent** — this file,
+`docs/DESIGN.md`, and everything under `docs/plans/` — plus the append-only
+ledgers `docs/escapes.md` and `docs/acceptance.md`. They are what the review
+gate measures a change against, so a change may not carry its own revision of
+them: the review scripts read all of them at the pull request's base commit, and
+`CODEOWNERS` requires the owner's review to change any of them. Revise them on
+their own pull request, before the work they govern, never alongside it.
 
 ## Language-specific
 
