@@ -1,0 +1,89 @@
+name: Template CI
+
+# CI for the TEMPLATE REPOSITORY itself — not for generated projects (those get
+# their own workflows under template/.github/workflows/).
+#
+# This exists because the template ships seven bash scripts that gate other
+# people's pull requests, and until this workflow there was nothing running any
+# of them: the first execution of plan-resolve.sh happened on a user's first PR.
+# A repository whose entire argument is "gates catch what humans won't read"
+# had no gates on itself.
+
+on:
+  push:
+  pull_request:
+
+# Only the newest run per ref matters; the older one is reviewing a diff that no
+# longer exists.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint every shipped script
+        # --severity=warning, not the default of everything: at info level the
+        # only findings are false positives — markdown backticks inside the
+        # single-quoted plan fixtures (SC2016), and functions invoked through
+        # EXIT traps that shellcheck cannot see being called (SC2329). Failing
+        # the build on those trains people to ignore it, which costs more than
+        # the checks are worth. Warnings and errors still fail.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck --severity=warning \
+                     template/.github/scripts/*.sh \
+                     template/.claude/scripts/*.sh \
+                     tests/*.sh
+
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv tool install copier
+      - name: Run the template's own test suite
+        run: tests/run.sh
+
+  render:
+    # Both languages are RENDER-checked here; only python is built and tested.
+    #
+    # Deliberate gap: nothing runs `xcodegen generate` or `xcodebuild` on the
+    # rendered swift project, because that needs a macOS runner at ~10x the
+    # minute cost for a template repo that changes rarely. So a project.yml
+    # error that survives YAML parsing will reach a generated project. If that
+    # ever actually happens, it is an escape — add the macOS job then, and not
+    # before.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, swift-ios]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv tool install copier
+      - name: Render a project
+        # An awkward project_name on purpose: the slug is derived from it and
+        # feeds both the Python package name and the Swift type name.
+        run: |
+          copier copy --defaults --trust \
+            --data project_name="My Second App" \
+            --data language="${{ matrix.language }}" \
+            --data description="Rendered by template CI" \
+            --data code_owner="@grimsverk" \
+            . /tmp/rendered
+      - name: The rendered project must pass its own gate
+        if: matrix.language == 'python'
+        working-directory: /tmp/rendered
+        run: |
+          uv sync
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy
+          uv run pytest

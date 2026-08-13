@@ -123,8 +123,8 @@ or classic *Add rule*) on `main`:
 
 - Require a pull request before merging — with **Required approvals: `0`**
 - **Require review from Code Owners** ✅
-- Require status checks to pass ✅ → select `checks` (or `test` for swift-ios)
-  **and** `review`
+- Require status checks to pass ✅ → select `checks` (or `test` for swift-ios),
+  `secrets`, `plan`, `test-the-tests`, **and** `review`
 
 > The approvals number is the setting to get right. Anything ≥ 1 gates *every*
 > PR on a human approval, and auto-merge never fires. `0` **plus** *Require
@@ -145,12 +145,30 @@ recipe that is the real safety net under auto-merge.
 
 ```
 AGENTS.md            agent guidelines (CLAUDE.md is a one-line pointer to it)
+GLOSSARY.md          how agents talk to you + the vocabulary you've settled
 docs/DESIGN.md       design doc skeleton + the /design interview kit
 .github/             CI, the LLM review gate, CODEOWNERS, auto-merge
 .pre-commit-config.yaml
 .claude/             optional convenience layer — deletable, nothing breaks
 .copier-answers.yml  lets `copier update` pull in template changes later
 ```
+
+## Glossary and communication rules
+
+`GLOSSARY.md` carries two word lists — vocabulary you're still learning, which
+agents explain, and vocabulary you've settled, which they must not re-explain —
+plus the rules for how they write to you: dense while working, high level in
+summaries. A word in neither list counts as unknown, so the agent glosses it and
+asks where it belongs, which fills the lists in as you work rather than needing
+an authoring session up front.
+
+It is deliberately **two** files. `GLOSSARY.md` ships from the template and is
+replaced wholesale by `copier update`, so projects never edit it.
+`GLOSSARY.project.md` is created on first use inside a project, grows there, and
+— because the template never ships it — can never be clobbered by an update.
+When a project's list has grown usefully, fold its words into the template's
+`GLOSSARY.md` and delete them from the project file; every other project picks
+them up on its next `copier update`.
 
 ## Design-doc workflow
 
@@ -163,11 +181,43 @@ the skeleton and single source of truth for the doc's shape.
 ## Orchestration (optional Claude layer)
 
 Generated projects also carry a single-layer orchestration setup under
-`.claude/`: run `/orchestrate <task>` and the main session fans the work
-out to a few headless worker agents, each in its own git worktree, then
-merges the good branches. See `.claude/orchestration.md` in a generated
-project for the one-layer rule, sandbox defaults, and safety notes. Like
-the rest of `.claude/`, it is deletable without breaking the project.
+`.claude/`: run `/orchestrate <slugs>` and the main session builds one or
+more planned features at once. Each feature gets its own branch, its own
+group of headless workers (one per slice of its plan, each in its own git
+worktree), and its own pull request. The orchestrator assembles the worker
+branches and opens the PRs — it never merges; that stays mechanical, driven
+by the required checks going green.
+
+Still exactly one layer of spawning, however many features are running: the
+orchestrator drives every worker directly, and there is deliberately no
+per-feature sub-orchestrator. See `.claude/orchestration.md` in a generated
+project for the one-layer rule, the concurrency limits, the requirement that
+concurrent features not touch the same files, sandbox defaults, and safety
+notes. Like the rest of `.claude/`, it is deletable without breaking the
+project.
+
+## The build loop
+
+Generated projects carry a full path from idea to evidenced delivery, each stage
+leaving an artifact the next one checks against:
+
+| Command | Produces | Checked by |
+| --- | --- | --- |
+| `/design` | `docs/DESIGN.md` — what and why, requirements `R1…`, criteria `S1…` | the owner, through the interview itself |
+| `/plan` | `docs/plans/<slug>.md` — vertical slices, files, signatures, estimates | the owner, at a hard uncertainty stop, then by merging the plan |
+| `/orchestrate` | one branch and PR per feature; per slice a coder and a blind test-writer in parallel | CI, `plan`, `test-the-tests`, the review gate |
+| `/deliver` | drives the loop, then `docs/acceptance.md` | the owner, for anything an agent can't observe |
+
+Plans land before the code that implements them, on their own `docs/` pull
+request — `CODEOWNERS` puts `docs/plans/` behind your review, so merging a plan
+*is* the ruling on it, and CI rejects any PR whose plan isn't already at its
+base commit. No agent merges at any point; merges are triggered by checks going
+green.
+
+**On running several features at once:** the cap is ~8 concurrent workers, and
+each slice spawns two (a coder and a test-writer). A 4-slice plan is therefore 8
+workers — the whole budget. One feature at a time is the normal case; concurrent
+features only fit when their plans are small and touch disjoint files.
 
 ## Updating generated projects
 
