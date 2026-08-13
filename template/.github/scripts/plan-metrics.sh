@@ -49,8 +49,13 @@ echo "===== MECHANICAL FACTS (computed by CI from the diff — trustworthy) ====
 echo
 
 # ---------------------------------------------------------------- slice deltas
-if [[ -n "$PLAN" && -f "$ROOT/$PLAN" ]]; then
-  echo "Plan: $PLAN"
+# The plan is read at BASE_SHA, not from the working tree. These numbers are
+# handed to the reviewer as ground truth, so the estimates a diff is measured
+# against must not be editable by that diff — otherwise an overrun is fixed by
+# raising the estimate in the same commit. `plan-resolve.sh` has already
+# guaranteed the plan exists at base; this reads that version of it.
+if [[ -n "$PLAN" ]] && git -C "$ROOT" cat-file -e "${BASE_SHA}:${PLAN}" 2>/dev/null; then
+  echo "Plan: $PLAN (as of the base commit)"
   echo
   printf '%-38s %10s %10s   %s\n' "SLICE" "ESTIMATE" "ACTUAL" "NOTE"
 
@@ -103,7 +108,7 @@ if [[ -n "$PLAN" && -f "$ROOT/$PLAN" ]]; then
       next
     }
     END { if (title != "") print title "\t" est "\t" files }
-  ' "$ROOT/$PLAN")
+  ' <(git -C "$ROOT" show "${BASE_SHA}:${PLAN}"))
 else
   echo "Plan: none (branch exempt from planning) — no slice estimates to check."
 fi

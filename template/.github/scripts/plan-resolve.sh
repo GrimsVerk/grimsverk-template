@@ -14,28 +14,59 @@
 # the reviewer never receives is a gate that silently stopped working.
 #
 # Branches whose name starts with an exempt prefix skip the check entirely and
-# print nothing (exit 0) — see EXEMPT_PREFIXES. Using an exempt prefix to dodge
-# planning is a rule violation under AGENTS.md, not a supported workflow.
+# print nothing (exit 0) — see EXEMPT_PREFIXES. The exemption is SIZE-CAPPED:
+# it exists for typos and doc tweaks, so a branch claiming it while adding more
+# than EXEMPT_MAX_ADDED lines fails instead. Without the cap the hatch is
+# self-service — renaming a branch to chore/ skips this check AND leaves the
+# review gate with no plan to check conformance against, which is two gates
+# disarmed by a string the author chooses.
+#
+# The resolved plan must ALSO already exist at BASE_SHA. A plan introduced by
+# the same pull request it authorises is not a specification, it is a
+# description written after the fact: the reviewer would be checking the diff
+# against a document from that same diff, including the estimates it is judged
+# by and the file list that defines scope creep. Plans land first, on their own
+# (docs/-prefixed) pull request, and the work branches off afterwards.
 #
 # Required env:
 #   HEAD_REF   the PR's head branch name (e.g. feat/draft-saving)
+#   BASE_SHA   the PR's base commit — the plan must exist here, and the exempt
+#              size cap is measured against it
 # Optional env:
-#   PLANS_DIR  where plans live (default: docs/plans)
+#   PLANS_DIR         where plans live (default: docs/plans)
+#   HEAD_SHA          the PR head commit (default: HEAD)
+#   EXEMPT_MAX_ADDED  added-line cap for exempt branches (default: 50)
 
 set -euo pipefail
 
 # Keep in sync with the Planning rule in AGENTS.md.
 EXEMPT_PREFIXES=(chore/ docs/)
+EXEMPT_MAX_ADDED="${EXEMPT_MAX_ADDED:-50}"
 
 ROOT="$(git rev-parse --show-toplevel)"
 PLANS_DIR="${PLANS_DIR:-docs/plans}"
 : "${HEAD_REF:?HEAD_REF is required (the PR head branch name)}"
+: "${BASE_SHA:?BASE_SHA is required (the PR base commit)}"
+HEAD_SHA="${HEAD_SHA:-HEAD}"
 
 die() { echo "plan-resolve: $*" >&2; exit 1; }
 
 for prefix in "${EXEMPT_PREFIXES[@]}"; do
   if [[ "$HEAD_REF" == "$prefix"* ]]; then
-    echo "plan-resolve: branch '$HEAD_REF' uses the exempt prefix '$prefix' — no plan required" >&2
+    added="$(git -C "$ROOT" diff --numstat "${BASE_SHA}...${HEAD_SHA}" \
+      | awk '{ s += $1 } END { print s + 0 }')"
+    if [[ "$added" -gt "$EXEMPT_MAX_ADDED" ]]; then
+      die "branch '$HEAD_REF' claims the exempt prefix '$prefix' but adds $added
+lines (cap: $EXEMPT_MAX_ADDED).
+
+The exemption is for changes too small to plan — a typo, a doc tweak. A change
+this size needs a plan: copy $PLANS_DIR/_TEMPLATE.md to $PLANS_DIR/<slug>.md,
+land it, then branch with the slug in the branch name.
+
+Raising the cap to get this through is gate tampering under AGENTS.md."
+    fi
+    echo "plan-resolve: branch '$HEAD_REF' uses the exempt prefix '$prefix' \
+($added added lines, cap $EXEMPT_MAX_ADDED) — no plan required" >&2
     exit 0
   fi
 done
@@ -83,7 +114,22 @@ for i in "${!SLUGS[@]}"; do
 done
 
 case ${#MATCHED[@]} in
-  1) echo "${MATCHED[0]}" ;;
+  1)
+    # The plan must predate the work. Reading it from the head checkout is what
+    # makes this check worth doing at all — see the header.
+    if ! git -C "$ROOT" cat-file -e "${BASE_SHA}:${MATCHED[0]}" 2>/dev/null; then
+      die "plan '${MATCHED[0]}' does not exist at this pull request's base commit.
+
+It is being introduced by the pull request it is supposed to specify, so the
+reviewer would check this diff against a document written alongside it — the
+estimates, the file list, and the slice boundaries would all be whatever this
+change needed them to be.
+
+Land the plan first, on its own docs/ pull request, then branch off the default
+branch with the slug in the branch name and open the implementation separately."
+    fi
+    echo "${MATCHED[0]}"
+    ;;
   0)
     printf -v available '  %s\n' "${SLUGS[@]}"
     die "no plan slug appears in branch '$HEAD_REF'.

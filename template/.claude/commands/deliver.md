@@ -43,6 +43,13 @@ behalf, and do not proceed to step 3 without rulings. This is the only gate that
 catches building the wrong thing correctly, and everything downstream is
 incapable of noticing.
 
+**Then land the plan before building it.** The plan merges on its own
+`docs/`-prefixed pull request, reviewed by the owner via `CODEOWNERS`. Wait for
+that merge — step 3 branches off the default branch and CI's `plan` check fails
+any pull request whose plan is not already at its base commit. A plan that
+arrives with its own implementation is a description, not a specification, and
+the review gate would be checking the work against a document the work wrote.
+
 ## 3. Build it
 
 Run `/orchestrate <slug>` — or several slugs, if their plans touch disjoint

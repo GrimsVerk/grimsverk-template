@@ -19,10 +19,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the check reads the plan as it exists at the merge
+          # base, and measures an exempt branch's size against it.
+          fetch-depth: 0
       - name: Resolve the plan for this branch
         # GITHUB_HEAD_REF is the PR's source branch, set by Actions on
-        # pull_request events.
-        run: HEAD_REF="$GITHUB_HEAD_REF" .github/scripts/plan-resolve.sh
+        # pull_request events. The base SHA is derived in the shell for the same
+        # reason as in test-the-tests below: this file is a Jinja template, and
+        # Jinja would consume a dollar-brace-brace expression before GitHub saw
+        # it. Do not "simplify" this into the github.event.pull_request context.
+        run: |
+          HEAD_REF="$GITHUB_HEAD_REF" \
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+          .github/scripts/plan-resolve.sh
 
 {% if language == 'python' %}
   checks:
