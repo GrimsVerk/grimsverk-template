@@ -181,19 +181,19 @@ the skeleton and single source of truth for the doc's shape.
 ## Orchestration (optional Claude layer)
 
 Generated projects also carry a single-layer orchestration setup under
-`.claude/`: run `/orchestrate <slugs>` and the main session builds one or
-more planned features at once. Each feature gets its own branch, its own
-group of headless workers (one per slice of its plan, each in its own git
-worktree), and its own pull request. The orchestrator assembles the worker
-branches and opens the PRs — it never merges; that stays mechanical, driven
-by the required checks going green.
+`.claude/`: run `/orchestrate <slug>` and the session builds **one** planned
+feature. It gets its own branch, a pair of headless workers per slice of its
+plan (a coder and a test-writer, each in its own git worktree), and one pull
+request. The orchestrator assembles the worker branches and opens the PR — it
+never merges; that stays mechanical, driven by the required checks going green.
 
-Still exactly one layer of spawning, however many features are running: the
-orchestrator drives every worker directly, and there is deliberately no
-per-feature sub-orchestrator. See `.claude/orchestration.md` in a generated
-project for the one-layer rule, the concurrency limits, the requirement that
-concurrent features not touch the same files, sandbox defaults, and safety
-notes. Like the rest of `.claude/`, it is deletable without breaking the
+Exactly one layer of spawning: the orchestrator drives every worker directly and
+never spawns another orchestrator. To build two features at once, open a second
+session — that keeps each orchestrator's context clean for assembly, and you
+remain the one place that knows what is running. See `.claude/orchestration.md`
+in a generated project for the one-layer rule, the two concurrency limits, the
+requirement that concurrently-built features not touch the same files, sandbox
+defaults, and safety notes. Like the rest of `.claude/`, it is deletable without breaking the
 project.
 
 ## The build loop
@@ -214,10 +214,13 @@ request — `CODEOWNERS` puts `docs/plans/` behind your review, so merging a pla
 base commit. No agent merges at any point; merges are triggered by checks going
 green.
 
-**On running several features at once:** the cap is ~8 concurrent workers, and
-each slice spawns two (a coder and a test-writer). A 4-slice plan is therefore 8
-workers — the whole budget. One feature at a time is the normal case; concurrent
-features only fit when their plans are small and touch disjoint files.
+**One feature per orchestrator.** `/orchestrate` builds a single feature start to
+finish. To work on two at once, open a second session and run it there — each
+keeps a clean context for assembly, which is the step that degrades quietly as
+diffs pile up, and neither has to police the other. Two limits apply inside one
+session: **12 concurrent workers** (machine and subscription — workers share the
+rate limit with the review gate, which fails closed) and **6 slices assembled per
+session** (your context). A 3–5 slice plan sits inside both.
 
 ## Updating generated projects
 

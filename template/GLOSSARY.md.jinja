@@ -184,7 +184,8 @@ fresh explanation each time is what stops it sticking.
 ### Working with agents
 
 - **orchestrator / worker** — the session that splits a job up and hands out the
-  pieces is the **orchestrator**; each agent doing one piece is a **worker**.
+  pieces is the **orchestrator** (the owner calls these **orcs**, and you should
+  read it that way when they do); each agent doing one piece is a **worker**.
   This project permits exactly one level of that.
 - **headless** — an agent run with no interactive session: handed a prompt, left
   to finish alone, output captured to a log. Workers run **headless**.
@@ -262,10 +263,6 @@ fresh explanation each time is what stops it sticking.
   request has different **provenance** from a branch in your own repository,
   which is why auto-merge checks before arming.
 - **wholesale** — replaced entirely rather than merged piece by piece.
-- **load-bearing** — borrowed from building, where a **load-bearing** wall is one
-  you cannot remove without the structure coming down. `CODEOWNERS` is
-  **load-bearing** here: take it away and several other guarantees quietly stop
-  holding, without anything appearing to break.
 - **waterfall** — the old way of building software: every decision made up front,
   in order, before any code exists, with no route for what you learn while
   building to get back into the plan. Vertical slices exist to avoid
@@ -283,4 +280,4 @@ fresh explanation each time is what stops it sticking.
 
 > Do not explain these. Use them plainly.
 
-*(empty — nothing promoted yet)*
+load-bearing
