@@ -17,6 +17,20 @@ project_slug:
   type: str
   help: Machine-friendly name, used for the repo, package, and paths
   default: "{{ project_name | lower | replace(' ', '-') }}"
+  # The slug is not just the repo name: `package_name` and `app_name` below are
+  # derived from it, so it has to survive becoming a Python identifier and a
+  # Swift type name. The default slugifier only lowercases and swaps spaces for
+  # dashes, so "My App 2.0" would sail through as `my-app-2.0` and render a
+  # package called `my_app_2.0` that Python cannot import. Catch it at the
+  # prompt, where it costs one retype.
+  validator: >-
+    {% if not project_slug | regex_search('^[a-z][a-z0-9]*(-[a-z0-9]+)*$') %}
+    project_slug must be lowercase letters, digits, and single dashes, starting
+    with a letter (e.g. my-app). Got: "{{ project_slug }}". It becomes the Python
+    package "{{ project_slug | replace('-', '_') }}" and the Swift type
+    "{{ project_slug | replace('-', ' ') | title | replace(' ', '') }}", and both
+    must be valid identifiers.
+    {% endif %}
 
 language:
   type: str
@@ -54,9 +68,20 @@ code_owner:
     GitHub handle that owns the merge gates in CODEOWNERS (a user like @you or a
     team like @org/team). Changes to CI, the review check, pre-commit, and
     CODEOWNERS require this owner's review — even under auto-merge.
+  # GitHub silently ignores CODEOWNERS lines whose owner does not parse — the
+  # file stays valid, the rule simply never binds, and the gate paths quietly
+  # become writable by anything that passes CI. A shape check cannot confirm the
+  # handle exists, but it catches the common misses: a bare username with no @,
+  # an email address, a trailing slash.
   validator: >-
-    {% if not code_owner %}code_owner is required: the CODEOWNERS gate is
-    ignored by GitHub without a real @user or @org/team.{% endif %}
+    {% if not code_owner %}
+    code_owner is required: the CODEOWNERS gate is ignored by GitHub without a
+    real @user or @org/team.
+    {% elif not code_owner | regex_search('^@[A-Za-z0-9](-?[A-Za-z0-9])*(/[A-Za-z0-9._-]+)?$') %}
+    code_owner must look like @user or @org/team (leading @, no trailing slash).
+    Got: "{{ code_owner }}". GitHub ignores CODEOWNERS entries it cannot resolve,
+    which disables the gate silently rather than erroring.
+    {% endif %}
 
 # Computed values — never asked, derived from the answers above.
 package_name:

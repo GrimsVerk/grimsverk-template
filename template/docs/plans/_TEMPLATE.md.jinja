@@ -88,11 +88,16 @@ agree on the intent and disagree on every identifier. Be exact — names,
 arguments, and types are the agreement. -->
 
 {% if language == 'python' -%}
+<!-- Keep this block formatter-clean: `ruff format` formats Python code blocks
+inside Markdown, so a snippet with the wrong blank-line spacing fails the
+generated project's own `ruff format --check .` on its very first run. -->
+
 ```python
 @dataclass
 class Draft:
     id: DraftId
     body: str
+
 
 def save_draft(draft: Draft) -> DraftId: ...
 def load_draft(draft_id: DraftId) -> Draft | None: ...
