@@ -18,7 +18,15 @@
 #
 # Usage:  coverage.sh
 #
-# Exit: 0 = every requirement is covered · 1 = gaps (expected mid-project)
+# Exit codes are distinct because /deliver branches on them, and "there is work
+# left to plan" is a completely different situation from "this project is not
+# set up yet". Collapsing both into 1, as this once did, made the delivery loop
+# unable to tell a to-do list from a broken repository.
+#
+#   0  every requirement is covered by a plan
+#   1  gaps: some requirement has no plan (NORMAL mid-project — this is the
+#      to-do list, not a failure)
+#   2  setup problem: no docs/DESIGN.md, or its section 5 has no requirement ids
 
 set -euo pipefail
 
@@ -26,7 +34,10 @@ ROOT="$(git rev-parse --show-toplevel)"
 DESIGN="${DESIGN:-$ROOT/docs/DESIGN.md}"
 PLANS_DIR="${PLANS_DIR:-$ROOT/docs/plans}"
 
-[[ -f "$DESIGN" ]] || { echo "coverage: no $DESIGN — run /design first" >&2; exit 1; }
+[[ -f "$DESIGN" ]] || {
+  echo "coverage: no $DESIGN — run /design first" >&2
+  exit 2
+}
 
 # Requirement ids, taken from section 5 only so that an "R1" mentioned in prose
 # elsewhere doesn't invent a requirement.
@@ -45,7 +56,7 @@ mapfile -t REQS < <(awk '
 if [[ ${#REQS[@]} -eq 0 ]]; then
   echo "coverage: no requirement ids (R1, R2, ...) found in section 5 of ${DESIGN#"$ROOT"/}."
   echo "          Give each requirement a stable id so coverage can be checked."
-  exit 1
+  exit 2
 fi
 
 # id -> space-separated list of plan slugs claiming it

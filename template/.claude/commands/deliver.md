@@ -27,8 +27,16 @@ $ARGUMENTS
 .github/scripts/coverage.sh
 ```
 
-Requirements listed as NOT PLANNED are the work. A non-zero exit here is normal
-mid-project — it is the to-do list, not a failure.
+Read the exit code, they mean different things:
+
+- **0** — every requirement is covered by a plan. Skip to step 6, the acceptance
+  pass; there is nothing left to plan.
+- **1** — gaps. The requirements listed as NOT PLANNED are the work. This is the
+  normal mid-project state and it is the to-do list, not a failure.
+- **2** — setup problem: there is no `docs/DESIGN.md`, or its §5 requirements
+  have no ids. **Stop and fix that first** — everything below is keyed on those
+  ids, and planning against a design that has none produces plans whose coverage
+  can never be checked.
 
 ## 2. Plan the next milestone
 

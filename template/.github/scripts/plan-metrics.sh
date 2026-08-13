@@ -36,12 +36,17 @@ ROOT="$(git rev-parse --show-toplevel)"
 : "${HEAD_SHA:?HEAD_SHA is required}"
 
 # Added lines in the diff, optionally restricted to the given paths.
+#
+# --literal-pathspecs because the paths come from the plan's Files: lines, which
+# are attacker-adjacent: the plan is a file in the repository. Without it, a
+# path written as `:(exclude)src` would be read by git as a magic pathspec and
+# silently remove a slice's real files from its own line count.
 added_lines() {
   if [[ $# -eq 0 ]]; then
-    git -C "$ROOT" diff --numstat "${BASE_SHA}...${HEAD_SHA}" \
+    git -C "$ROOT" --literal-pathspecs diff --numstat "${BASE_SHA}...${HEAD_SHA}" \
       | awk '{ s += $1 } END { print s + 0 }'
   else
-    git -C "$ROOT" diff --numstat "${BASE_SHA}...${HEAD_SHA}" -- "$@" \
+    git -C "$ROOT" --literal-pathspecs diff --numstat "${BASE_SHA}...${HEAD_SHA}" -- "$@" \
       | awk '{ s += $1 } END { print s + 0 }'
   fi
 }
@@ -121,7 +126,13 @@ fi
 deps_at() {
   local ref="$1"
   {
+    # Covers [project].dependencies, [dependency-groups].dev, and every array
+    # under [project.optional-dependencies] — an extra is still a dependency,
+    # and adding one there was previously invisible to this check.
     git -C "$ROOT" show "${ref}:pyproject.toml" 2>/dev/null | awk '
+      /^\[project\.optional-dependencies\]/ { inopt = 1; next }
+      /^\[/ && !/^\[project\.optional-dependencies\]/ { inopt = 0 }
+      inopt && /^[A-Za-z0-9_.-]+ *= *\[/ { inarr = 1 }
       /^(dependencies|dev) *= *\[/ { inarr = 1 }
       inarr {
         line = $0
