@@ -1,6 +1,13 @@
 ---
-description: Build one or more planned features in parallel, each on its own branch, and open a PR per feature
+description: Build a planned feature (or several small ones) in parallel, each on its own branch, and open a PR per feature
 ---
+
+> **Budget first.** The cap is ~8 concurrent workers and every slice spawns two
+> — a coder and a test-writer. So a 4-slice plan is 8 workers, the entire
+> budget, and **one feature at a time is the normal case**. Running several at
+> once only fits when their plans are small *and* touch disjoint files. If in
+> doubt, sequence them: a feature that waits costs you time, while a fan-out
+> that starves the review gate costs you the checks that catch the output.
 
 You are the **orchestrator**. Drive the single-layer orchestration described in
 `.claude/orchestration.md` (read it first if you have not). The features to
