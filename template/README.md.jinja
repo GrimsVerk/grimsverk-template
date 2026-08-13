@@ -30,6 +30,11 @@ rubber-stamp, and no agent merges on its own judgment:
 
 - **Hard gate — CI** (`.github/workflows/ci.yml`): format, lint,{% if language == 'python' %} types,{% endif %} and
   tests. Authoritative; a red CI blocks merge.
+- **Hard gate — secrets** (the `secrets` job): gitleaks over the full history.
+  It runs in CI and not only in pre-commit, because pre-commit needs
+  `pre-commit install` on every clone — a fresh worktree, or anyone who skipped
+  that step, would otherwise bypass it, and a committed credential is exactly
+  the thing that must not depend on someone having run a setup command.
 - **Hard gate — plan** (the `plan` job): every PR must resolve to exactly one
   plan under `docs/plans/`, matched by the plan's `slug` appearing in the branch
   name, **and that plan must already exist at the PR's base commit**. It fails
@@ -44,6 +49,15 @@ rubber-stamp, and no agent merges on its own judgment:
   Tests that stay green without the code they cover are testing nothing, which
   matters most when nobody reads them. Runs only when a PR changes both
   implementation and tests.
+
+  Know what this does and does not prove. It proves the suite **depends on** the
+  new code — nothing more. A compile error or a failed import satisfies it, so a
+  test that imports a new module and then asserts very little still passes the
+  check. It is not mutation testing and it does not measure how good the
+  assertions are. What it catches is the specific, common failure of a suite
+  wired to nothing: tests asserting on mocks, on fixtures, or on the absence of
+  an exception. The assertion quality question is the reviewer's, informed by
+  the blind-authorship facts.
 - **Soft gate — review** (`.github/workflows/review.yml`): an independent,
   read-only LLM reviews the PR diff against `AGENTS.md` and `docs/DESIGN.md`
   (design conformance, scope creep, soundness, security smells) and blocks on
@@ -65,7 +79,8 @@ them on the default branch (`main`):
 1. **Branch protection** on `main`: require a pull request before merging, and
    require these **status checks** to pass:
    - `{% if language == 'python' %}checks{% else %}test{% endif %}` (CI hard gate)
-   - `plan` (mechanical: the PR resolves to exactly one plan)
+   - `secrets` (mechanical: gitleaks over the full history)
+   - `plan` (mechanical: the PR resolves to exactly one plan, already at base)
    - `test-the-tests` (mechanical: the new tests fail without the new code)
    - `review` (LLM soft gate)
 2. **Require review from Code Owners** (branch protection), so changes to the

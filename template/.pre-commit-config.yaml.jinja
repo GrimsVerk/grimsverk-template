@@ -1,6 +1,11 @@
 # Git-level enforcement. This (plus CI) is the gate that holds regardless of
 # which tool or agent wrote the code. Enable with: pre-commit install
 {% if language == 'python' -%}
+# VERSION PINNING. The `rev` values here and the version constraints in
+# pyproject.toml's dev group must agree. If pre-commit runs ruff 0.15 while CI
+# runs whatever `uv sync` resolved, the two disagree about formatting and you
+# get the worst debugging loop there is: green locally, red in CI, with no diff
+# to explain it. Bump both together, in the same commit.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.22
@@ -17,6 +22,12 @@ repos:
       - id: gitleaks
 {%- else -%}
 # Requires the tools locally: brew install swiftformat swiftlint
+#
+# These are `language: system` hooks, so they run whatever version happens to be
+# installed — which will drift from CI's `brew install` (also unpinned) and
+# between machines. Swift has no equivalent of pinning a pre-commit rev here.
+# If a formatter upgrade ever produces a green-locally/red-in-CI split, that is
+# an escape: log it and pin both sides then.
 repos:
   - repo: local
     hooks:
@@ -30,4 +41,10 @@ repos:
         entry: swiftlint lint --strict --quiet
         language: system
         types: [swift]
+  # Secret scanning is language-independent — the python variant has had this
+  # since the start and swift had nothing.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
 {%- endif %}

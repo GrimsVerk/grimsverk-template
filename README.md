@@ -124,7 +124,7 @@ or classic *Add rule*) on `main`:
 - Require a pull request before merging — with **Required approvals: `0`**
 - **Require review from Code Owners** ✅
 - Require status checks to pass ✅ → select `checks` (or `test` for swift-ios),
-  `plan`, `test-the-tests`, **and** `review`
+  `secrets`, `plan`, `test-the-tests`, **and** `review`
 
 > The approvals number is the setting to get right. Anything ≥ 1 gates *every*
 > PR on a human approval, and auto-merge never fires. `0` **plus** *Require
@@ -185,12 +185,21 @@ leaving an artifact the next one checks against:
 
 | Command | Produces | Checked by |
 | --- | --- | --- |
-| `/design` | `docs/DESIGN.md` — what and why, requirements `R1…`, criteria `S1…` | the owner, at an uncertainty stop |
-| `/plan` | `docs/plans/<slug>.md` — vertical slices, files, signatures, estimates | the owner, at a second uncertainty stop |
+| `/design` | `docs/DESIGN.md` — what and why, requirements `R1…`, criteria `S1…` | the owner, through the interview itself |
+| `/plan` | `docs/plans/<slug>.md` — vertical slices, files, signatures, estimates | the owner, at a hard uncertainty stop, then by merging the plan |
 | `/orchestrate` | one branch and PR per feature; per slice a coder and a blind test-writer in parallel | CI, `plan`, `test-the-tests`, the review gate |
 | `/deliver` | drives the loop, then `docs/acceptance.md` | the owner, for anything an agent can't observe |
 
-No agent merges at any point — merges are triggered by checks going green.
+Plans land before the code that implements them, on their own `docs/` pull
+request — `CODEOWNERS` puts `docs/plans/` behind your review, so merging a plan
+*is* the ruling on it, and CI rejects any PR whose plan isn't already at its
+base commit. No agent merges at any point; merges are triggered by checks going
+green.
+
+**On running several features at once:** the cap is ~8 concurrent workers, and
+each slice spawns two (a coder and a test-writer). A 4-slice plan is therefore 8
+workers — the whole budget. One feature at a time is the normal case; concurrent
+features only fit when their plans are small and touch disjoint files.
 
 ## Updating generated projects
 

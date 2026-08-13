@@ -6,6 +6,21 @@ on:
   push:
   pull_request:
 
+# Triggering on both push and pull_request means an open PR gets two runs per
+# push. That duplication is deliberate (a branch gets CI before any PR exists),
+# but a SUPERSEDED run is pure waste — it is testing a commit nobody will merge.
+# Cancel in progress, keyed per workflow and ref, which matters most on the
+# swift variant where every job is a macOS runner at ~10x the minute cost.
+# The raw-block wrapper below is required: this file is a Jinja template, and
+# Jinja would consume a dollar-brace-brace expression before GitHub ever saw it.
+# The other workflows are copied verbatim and need no such wrapper. (Do not name
+# the wrapper tag in a comment — Jinja reads it there too, and the comment opens
+# a real block. That mistake renders a broken workflow that still looks fine in
+# the template source.)
+concurrency:
+  group: {% raw %}ci-${{ github.workflow }}-${{ github.ref }}{% endraw %}
+  cancel-in-progress: true
+
 jobs:
   # Mechanical precondition, not a code judgment: does this PR resolve to exactly
   # one plan? Kept a separate check from `review` on purpose — a red `plan` says
@@ -17,6 +32,7 @@ jobs:
   plan:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,13 +57,35 @@ jobs:
           # fails here instead, where the message can say what to fix.
           git show "$BASE_SHA:$PLAN" | .github/scripts/plan-parse.sh >/dev/null
 
+  # Secret scanning belongs in CI, not only in a local hook. gitleaks runs in
+  # pre-commit too, but pre-commit requires `pre-commit install` on every clone
+  # — an agent working in a fresh worktree, or anyone who skipped that step,
+  # bypasses it entirely. A committed credential is exactly the thing that must
+  # not depend on someone having run a setup command.
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: a secret removed in a later commit is still in the
+          # repository, and still needs rotating.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+
 {% if language == 'python' %}
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync
+      # --locked, not a bare sync: it fails if uv.lock is missing or out of date
+      # with pyproject.toml, rather than silently resolving something different
+      # from what anyone tested locally. Commit uv.lock.
+      - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
@@ -59,6 +97,7 @@ jobs:
   test-the-tests:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -77,6 +116,7 @@ jobs:
           .github/scripts/test-the-tests.sh
 {% else %}
   test:
+    timeout-minutes: 45
     # iOS builds require Xcode, so this job must run on a macOS runner —
     # Linux runners cannot build or test this target.
     runs-on: macos-15
@@ -86,8 +126,17 @@ jobs:
       # source of truth, so CI regenerates the project first.
       - name: Generate Xcode project
         run: |
-          brew install xcodegen
+          brew install xcodegen swiftformat swiftlint
           xcodegen generate
+      # Format and lint run HERE, not only in pre-commit. AGENTS.md and the
+      # README both say CI enforces formatting and linting "regardless of which
+      # tool or agent wrote the code" — before this step that was true for
+      # python and false for swift, where the only enforcement was a local hook
+      # that requires `pre-commit install`.
+      - name: Format check
+        run: swiftformat --lint .
+      - name: Lint
+        run: swiftlint lint --strict --quiet
       - name: Run tests
         # Unit tests for an iOS target need an iOS Simulator destination;
         # the device name must exist in the runner image's simulator list.
@@ -109,6 +158,7 @@ jobs:
   test-the-tests:
     if: github.event_name == 'pull_request'
     runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
