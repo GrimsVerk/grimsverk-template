@@ -66,8 +66,11 @@ run `gh pr merge`, do not approve, do not nudge a check.
 
 What you *may* do while waiting:
 
-- A red check is actionable. Read it and dispatch a fix through `/orchestrate`
-  on the same feature branch, the same way the work was built.
+- A red check is actionable. Read it and dispatch a fix through
+  `/orchestrate <slug>` — the same command, which detects that `feat/<slug>`
+  already exists and enters fix-dispatch mode: workers branch off the existing
+  feature branch, scoped to the fix, and the open pull request updates when you
+  push. Do not open a second pull request for it.
 - A red `review` with blocking findings is the same: fix the findings, don't
   argue with the gate.
 - If a gate was wrong — it passed something broken, or blocked something
