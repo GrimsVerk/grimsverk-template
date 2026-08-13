@@ -141,6 +141,20 @@ fresh explanation each time is what stops it sticking.
 - **exit code** — every command finishes with a number: `0` means success,
   anything else means failure. CI decides whether a step passed by reading its
   **exit code**, nothing more.
+- **rate limit** — a cap on how much you can ask of a service inside a given
+  window of time. Sixteen agents working at once share one subscription's
+  **rate limit**, which is how a wide fan-out ends up starving the review gate
+  of the capacity it needs to run.
+- **throughput vs. latency** — **throughput** is how much work finishes per unit
+  of time; **latency** is how long any one piece takes. Doubling the workers
+  improves throughput and does nothing whatsoever for the latency of a single
+  slice.
+- **saturate** — to use up all of something's available capacity, leaving none
+  for anything else. Workers can **saturate** the budget their own review gate
+  needs.
+- **polling** — repeatedly asking "is it finished yet?" instead of being told
+  when it is. **Polling** a CI run every ten seconds spends real budget on an
+  answer that has not changed since the last time you asked.
 
 ### Testing
 
@@ -187,6 +201,13 @@ fresh explanation each time is what stops it sticking.
 - **blast radius** — how much can go wrong if one thing fails or leaks. Handing
   one broad API key to five parallel unattended agents is a large **blast
   radius** for very little benefit.
+- **unattended** — running with nobody watching, so the agent has to decide for
+  itself when to stop. Most of the rules in `AGENTS.md` exist for **unattended**
+  work specifically — they are what a session follows when you are asleep.
+- **fan-out** — spawning many parallel workers from a single point. A wide
+  **fan-out** gets the work done sooner and makes everything downstream harder:
+  more diffs to assemble, more reconciliations, more chances two workers
+  collided.
 
 ### The template's own tooling
 
@@ -241,6 +262,20 @@ fresh explanation each time is what stops it sticking.
   request has different **provenance** from a branch in your own repository,
   which is why auto-merge checks before arming.
 - **wholesale** — replaced entirely rather than merged piece by piece.
+- **load-bearing** — borrowed from building, where a **load-bearing** wall is one
+  you cannot remove without the structure coming down. `CODEOWNERS` is
+  **load-bearing** here: take it away and several other guarantees quietly stop
+  holding, without anything appearing to break.
+- **waterfall** — the old way of building software: every decision made up front,
+  in order, before any code exists, with no route for what you learn while
+  building to get back into the plan. Vertical slices exist to avoid
+  **waterfall** — they create points where re-steering is still cheap.
+- **CRUD** — Create, Read, Update, Delete: the four basic operations on stored
+  data. A "**CRUD** app" is one whose behaviour is mostly those four over some
+  records, which is shorthand for well-understood, low-surprise work.
+- **port** (as a verb) — moving working software to a new language, platform or
+  framework without changing what it does. A **port** is predictable work
+  precisely because the target behaviour already exists to compare against.
 
 ---
 
