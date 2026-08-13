@@ -145,12 +145,30 @@ recipe that is the real safety net under auto-merge.
 
 ```
 AGENTS.md            agent guidelines (CLAUDE.md is a one-line pointer to it)
+GLOSSARY.md          how agents talk to you + the vocabulary you've settled
 docs/DESIGN.md       design doc skeleton + the /design interview kit
 .github/             CI, the LLM review gate, CODEOWNERS, auto-merge
 .pre-commit-config.yaml
 .claude/             optional convenience layer — deletable, nothing breaks
 .copier-answers.yml  lets `copier update` pull in template changes later
 ```
+
+## Glossary and communication rules
+
+`GLOSSARY.md` carries two word lists — vocabulary you're still learning, which
+agents explain, and vocabulary you've settled, which they must not re-explain —
+plus the rules for how they write to you: dense while working, high level in
+summaries. A word in neither list counts as unknown, so the agent glosses it and
+asks where it belongs, which fills the lists in as you work rather than needing
+an authoring session up front.
+
+It is deliberately **two** files. `GLOSSARY.md` ships from the template and is
+replaced wholesale by `copier update`, so projects never edit it.
+`GLOSSARY.project.md` is created on first use inside a project, grows there, and
+— because the template never ships it — can never be clobbered by an update.
+When a project's list has grown usefully, fold its words into the template's
+`GLOSSARY.md` and delete them from the project file; every other project picks
+them up on its next `copier update`.
 
 ## Design-doc workflow
 

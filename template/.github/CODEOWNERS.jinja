@@ -39,3 +39,9 @@
 # The Claude permission deny list. Vendor-specific and deletable, but while it
 # exists an agent must not be able to widen its own permissions.
 /.claude/settings.json       {{ code_owner }}
+
+# The template-owned glossary. Replaced wholesale by `copier update`, so an edit
+# here is not just unreviewed, it is about to be silently lost — words belong in
+# GLOSSARY.project.md, which is deliberately NOT owned so it can grow freely
+# during a project.
+/GLOSSARY.md                 {{ code_owner }}

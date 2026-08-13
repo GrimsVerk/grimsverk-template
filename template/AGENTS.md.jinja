@@ -125,7 +125,9 @@ the plan for a change being built → `docs/plans/<slug>.md`, what the system is
 and how it flows → `docs/architecture.md`, anything that escaped to the owner →
 `docs/escapes.md`, evidence that a success criterion holds →
 `docs/acceptance.md`, session notes and hand-offs → `docs/JOURNAL.md` (one dated
-entry per working session), user-facing behaviour → `README.md`. `BACKLOG.md` is the standing queue of what
+entry per working session), a term the owner had to ask about →
+`GLOSSARY.project.md` (create it on the first word; never edit `GLOSSARY.md`,
+which the template owns), user-facing behaviour → `README.md`. `BACKLOG.md` is the standing queue of what
 *might* be built; a plan covers the one change being built now.
 
 **Honesty about verification.** Never claim something is verified in an
@@ -137,6 +139,17 @@ output.
 **Ambiguity.** Prefer stating what you need in chat and continuing on best
 judgment over blocking; the owner reads chat. Stop and ask only when truly
 blocked on something only the owner can provide.
+
+**Talking to the owner.** Read `GLOSSARY.md` and `GLOSSARY.project.md` (the
+second may not exist yet) before your first substantial reply. They carry the
+owner's communication rules and two word lists: vocabulary being learned, which
+you explain, and vocabulary already learned, which you must not re-explain. A
+word in neither list counts as unknown — gloss it in passing and ask which list
+it belongs in. Working commentary can be as technical as it likes; **final
+summaries are high level**, and any detail worth keeping is explained only far
+enough to land. This applies to conversation with the owner, not to commit
+messages, pull request bodies, code comments, or the CI review agent, all of
+which are written for a technical reader.
 
 ## Enforcement
 

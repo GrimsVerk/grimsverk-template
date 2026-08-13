@@ -74,6 +74,28 @@ for lang in python swift-ios; do
     else no "$lang CODEOWNERS covers $path"; fi
   done
 
+  # The glossary must ship, with both lists present — the "learned" section is
+  # the half that stops the agent over-explaining, so a file missing it is
+  # worse than no file.
+  g="$out/GLOSSARY.md"
+  if [[ -f "$g" ]]; then
+    ok "$lang ships GLOSSARY.md"
+    for heading in "## How to talk to me" "## Words I'm learning" "## Words I've learned"; do
+      if grep -qF "$heading" "$g"; then ok "$lang glossary has '$heading'"
+      else no "$lang glossary has '$heading'"; fi
+    done
+  else
+    no "$lang ships GLOSSARY.md"
+  fi
+
+  # The PROJECT glossary must NOT ship. It is created on first use, which is
+  # precisely what keeps `copier update` from ever conflicting with it.
+  if [[ -e "$out/GLOSSARY.project.md" ]]; then
+    no "$lang does not ship GLOSSARY.project.md" "it was rendered, so copier update will fight over it"
+  else
+    ok "$lang does not ship GLOSSARY.project.md"
+  fi
+
   # Every shipped script must be executable — CI invokes them by path.
   nonexec=""
   while IFS= read -r s; do

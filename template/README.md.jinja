@@ -23,6 +23,18 @@ pre-commit install              # enable git-level checks (SwiftFormat, SwiftLin
 The `.xcodeproj` is generated from `project.yml` and is not committed —
 edit `project.yml`, never the generated project.
 {% endif %}
+## Talking to agents here
+
+`GLOSSARY.md` holds the owner's communication rules and two word lists:
+vocabulary being learned, which agents explain in passing, and vocabulary
+already settled, which they use plainly. A word in neither list counts as
+unknown — the agent glosses it and asks where it belongs.
+
+`GLOSSARY.md` comes from the template and is replaced by `copier update`, so it
+is never edited here. Words met during this project go in
+`GLOSSARY.project.md`, which is created on first use and belongs to this
+repository alone.
+
 ## Merge pipeline
 
 Changes land through two gates, and the merge is **mechanical** — no human
