@@ -111,20 +111,19 @@ cd $PROJECT
 > HTTPS URL, which prompts for a password — and passwords have not worked for
 > git operations since 2021, so it fails after asking.
 
-**The project name is not a question.** It is `$PROJECT`, the directory you just
-named: the repo name, the Python package, and the name in every generated
-document. Copier asks four questions:
+Copier asks five questions, and the first one answers itself:
 
 | Question | Notes |
 | --- | --- |
+| `project_name` | **Press Enter** — it defaults to `$PROJECT`, the directory you just named. Becomes the repo name, the Python package, and the name in every generated document. It is asked rather than simply taken from the folder because Copier only remembers answers it asked for, and `copier update` runs in a scratch directory where the folder name is meaningless |
 | `language` | `python` or `swift-ios` |
 | `description` | One line; lands in the README, the package metadata, and the module docstring |
 | `auto_merge` | `true` (default) = green PRs merge themselves. Choose `false` for anything real people download, or that touches payments, secrets, or user data — those keep a human merge |
 | `code_owner` | Defaults to `@GrimsVerk`. Owns the merge gates in `CODEOWNERS`: changes to CI, the review check, pre-commit and the rule files need this owner's review, even under auto-merge. Must be a real `@handle` or `@org/team` — GitHub silently ignores entries that don't resolve |
 
-If the directory name cannot be a Python package name, generation stops before
-writing anything and tells you so. `find_best_mobo` and `find-best-mobo` are both
-fine; `My App 2.0` is not.
+If the name cannot be a Python package name, generation stops before writing
+anything and tells you so. `find_best_mobo` and `find-best-mobo` are both fine;
+`My App 2.0` is not.
 
 ### 2. Make it a git repo
 
