@@ -24,8 +24,42 @@ _templates_suffix: .jinja
 # last component. Verified against Copier 9.17.1.
 project_name:
   type: str
-  when: false
-  default: "{{ _copier_conf.dst_path.name }}"
+  help: Project name? (press Enter to accept the folder name)
+  # Defaults to the directory you named on the command line, so generating with
+  # `copier copy <url> find_best_mobo` means pressing Enter — you never type the
+  # name twice.
+  #
+  # It IS asked, though, and that is not an oversight. An earlier version made it
+  # a computed value with `when: false`, which reads better and is broken:
+  # copier does not record computed values in .copier-answers.yml, because it
+  # expects to re-derive them. But `copier update` renders into a scratch
+  # directory of its own and applies the diff afterwards — so on update the
+  # "folder name" is something like `copier._main.new_copy.2m403sv0`, and every
+  # heading, the package path and pyproject's name would be rewritten to that.
+  # A recorded answer is the only version that survives an update, and only
+  # asked questions get recorded.
+  #
+  # The default goes blank if the folder name looks like one of those scratch
+  # directories. That happens exactly once per existing project — on the update
+  # that introduces this question, when there is no recorded answer to fall back
+  # on — and a blank prompt asking for the name beats a prefilled wrong one.
+  default: >-
+    {{ _copier_conf.dst_path.name
+       if not _copier_conf.dst_path.name.startswith('copier.')
+       else '' }}
+  # The name becomes the Python package name, so an invalid one renders a
+  # pyproject.toml that cannot build and an __init__.py that cannot be imported —
+  # a failure that would otherwise surface on the project's first CI run rather
+  # than here, before anything is written.
+  validator: >-
+    {% if not project_name %}
+    A project name is required — it becomes the repository name, the Python
+    package, and the name in every generated document.
+    {% elif not project_name | regex_search('^[a-z][a-z0-9]*([_-][a-z0-9]+)*$') %}
+    "{{ project_name }}" cannot be a Python package name. Use lowercase letters,
+    digits, underscores and dashes, starting with a letter — e.g. find_best_mobo
+    or find-best-mobo.
+    {% endif %}
 
 language:
   type: str
@@ -33,32 +67,6 @@ language:
   choices:
     - python
     - swift-ios
-  # THE PROJECT-NAME CHECK LIVES HERE, and that needs explaining.
-  #
-  # The directory name becomes the Python package name, so an invalid one
-  # renders a pyproject.toml that cannot build and an __init__.py that cannot be
-  # imported — a failure the owner would meet on the generated project's first
-  # CI run rather than at generation. It has to fail loudly, here.
-  #
-  # It cannot be a validator on `project_name` itself: Copier does not run
-  # validators on computed (`when: false`) variables — verified against 9.17.1,
-  # which rendered "My App 2.0" straight through into a broken project. So the
-  # check hangs off the first question that IS asked, which fires before any
-  # file is written. Moving or removing this question means moving the check.
-  #
-  # The empty case is real, not defensive: `copier copy <tpl> .` yields a
-  # dst_path with no final component at all.
-  validator: >-
-    {% if not project_name %}
-    Cannot read a project name from the destination directory.
-    Give copier a named directory — `copier copy <template-url> my_project` —
-    rather than `.`, which has no name to take.
-    {% elif not project_name | regex_search('^[a-z][a-z0-9]*([_-][a-z0-9]+)*$') %}
-    The destination directory "{{ project_name }}" cannot be a Python package
-    name, and this template takes the project name from the directory. Use
-    lowercase letters, digits, underscores and dashes, starting with a letter —
-    e.g. find_best_mobo or find-best-mobo. Rename the destination and re-run.
-    {% endif %}
 
 description:
   type: str

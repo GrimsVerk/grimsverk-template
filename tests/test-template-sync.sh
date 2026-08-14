@@ -137,4 +137,79 @@ expect_rc "a dirty tree stops the updater" 1 $?
 expect_contains "explains why a dirty tree is refused" "$out" "uncommitted changes"
 git -C "$PROJ2" checkout -q -- shared.txt
 
+# ===================================================================
+# THE REAL TEMPLATE, generated and then updated.
+#
+# Everything above uses a miniature template: fast, but it shares none of this
+# template's questions. That gap shipped a bug. project_name was a computed
+# value; copier does not record computed values in .copier-answers.yml, because
+# it expects to re-derive them; and `copier update` renders into a scratch
+# directory of its own. So on update the "folder name" was
+# `copier._main.new_copy.XXXXXX`, and it would have been written into every
+# heading, the package path, and pyproject's name.
+#
+# Only a generate-then-update round trip over the real template catches that
+# class of bug, so it runs here despite being the slowest thing in the suite.
+# ===================================================================
+# Snapshot the working tree into a throwaway repo with a real tag. `copier
+# update` resolves and checks out the ref recorded in the answers file, and
+# --vcs-ref=HEAD on a dirty tree records a `git describe` string that is not a
+# checkout-able ref — so the update would fail for reasons that have nothing to
+# do with the template.
+REAL="$WORK/template-under-test"
+mkdir -p "$REAL"
+tar -c --exclude=.git --exclude=.venv -C "$HERE/.." . | tar -x -C "$REAL"
+init_repo "$REAL"
+git -C "$REAL" add -A && git -C "$REAL" commit -qm "template under test"
+git -C "$REAL" tag v9.9.9
+
+R1="$WORK/find_best_mobo"
+
+if copier copy --defaults --trust --quiet --vcs-ref=v9.9.9 \
+     --data language=python --data code_owner="@GrimsVerk" \
+     --data description="Searching Buildzoid videos for his top AMD mobo pick." \
+     "$REAL" "$R1" >/dev/null 2>&1; then
+  ok "the real template generates"
+
+  # The name must be RECORDED, not recomputed. This is the assertion that fails
+  # if project_name ever goes back to being a computed value.
+  if grep -q '^project_name: find_best_mobo$' "$R1/.copier-answers.yml"; then
+    ok "project_name is recorded in the answers file"
+  else
+    no "project_name is recorded in the answers file" \
+      "$(cat "$R1/.copier-answers.yml")"
+  fi
+
+  init_repo "$R1"
+  git -C "$R1" add -A && git -C "$R1" commit -qm scaffold
+
+  # Updating to the same ref changes no content, but exercises the whole update
+  # machinery — including how every answer is reused or re-derived.
+  if ( cd "$R1" && copier update --defaults --trust --vcs-ref=v9.9.9 ) >/dev/null 2>&1; then
+    ok "the real template survives copier update"
+  else
+    no "the real template survives copier update"
+  fi
+
+  leaked="$(grep -rl 'copier\._main' "$R1" 2>/dev/null | grep -v '/\.git/' || true)"
+  if [[ -z "$leaked" ]]; then
+    ok "no copier scratch-directory name leaked into the project"
+  else
+    no "no copier scratch-directory name leaked into the project" "$leaked"
+  fi
+
+  if [[ "$(head -1 "$R1/AGENTS.md")" == "# find_best_mobo — agent guidelines" ]]; then
+    ok "the project name survived the update"
+  else
+    no "the project name survived the update" "$(head -1 "$R1/AGENTS.md")"
+  fi
+  if [[ -d "$R1/src/find_best_mobo" ]]; then
+    ok "the package path survived the update"
+  else
+    no "the package path survived the update" "$(ls "$R1/src" 2>/dev/null)"
+  fi
+else
+  no "the real template generates"
+fi
+
 summary
