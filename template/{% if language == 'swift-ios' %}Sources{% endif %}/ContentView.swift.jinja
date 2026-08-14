@@ -1,3 +1,13 @@
+{#-
+  The description is rendered as a multi-line string literal, not
+  `Text("...")`, because it is free text landing on a line SwiftLint measures
+  (120 columns, see .swiftlint.yml). Interpolated into a single-line literal, a
+  long description fails `swiftlint --strict` in CI before a line of code has
+  been written — the same bug the Python module docstring had. In a Swift
+  multi-line literal the closing delimiter's indentation is what strips leading
+  whitespace from each content line, so the wordwrapped block is indented to
+  match it exactly.
+-#}
 import SwiftUI
 
 struct ContentView: View {
@@ -5,8 +15,12 @@ struct ContentView: View {
         VStack(spacing: 12) {
             Text("{{ project_name }}")
                 .font(.largeTitle)
-{% if description %}            Text("{{ description }}")
-                .foregroundStyle(.secondary)
+{% if description %}            Text(
+                """
+{{ description | trim | trim('.') | wordwrap(64) | indent(16, first=True) }}.
+                """
+            )
+            .foregroundStyle(.secondary)
 {% endif %}        }
         .padding()
     }

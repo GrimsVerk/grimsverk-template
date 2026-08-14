@@ -9,39 +9,60 @@ _subdirectory: template
 # copied untouched rather than parsed as templates.
 _templates_suffix: .jinja
 
+# THE PROJECT NAME IS NOT ASKED FOR. It is the destination directory you already
+# named on the command line:
+#
+#     copier copy <template-url> find_best_mobo
+#
+# That single word is the directory, the repo, the Python package, and the only
+# name the owner ever uses. Asking for it again — twice, as this template used to
+# — is pure friction, and it invites the three names to drift apart. There is
+# deliberately no title-cased "display name": adding one back reintroduces the
+# question that was removed.
+#
+# `_copier_conf.dst_path` is the destination Copier was given; `.name` is its
+# last component. Verified against Copier 9.17.1.
 project_name:
   type: str
-  help: Human-readable project name (e.g. "My App")
-
-project_slug:
-  type: str
-  help: Machine-friendly name, used for the repo, package, and paths
-  default: "{{ project_name | lower | replace(' ', '-') }}"
-  # The slug is not just the repo name: `package_name` and `app_name` below are
-  # derived from it, so it has to survive becoming a Python identifier and a
-  # Swift type name. The default slugifier only lowercases and swaps spaces for
-  # dashes, so "My App 2.0" would sail through as `my-app-2.0` and render a
-  # package called `my_app_2.0` that Python cannot import. Catch it at the
-  # prompt, where it costs one retype.
-  validator: >-
-    {% if not project_slug | regex_search('^[a-z][a-z0-9]*(-[a-z0-9]+)*$') %}
-    project_slug must be lowercase letters, digits, and single dashes, starting
-    with a letter (e.g. my-app). Got: "{{ project_slug }}". It becomes the Python
-    package "{{ project_slug | replace('-', '_') }}" and the Swift type
-    "{{ project_slug | replace('-', ' ') | title | replace(' ', '') }}", and both
-    must be valid identifiers.
-    {% endif %}
+  when: false
+  default: "{{ _copier_conf.dst_path.name }}"
 
 language:
   type: str
-  help: Primary language / platform
+  help: Which language? (python or swift-ios)
   choices:
     - python
     - swift-ios
+  # THE PROJECT-NAME CHECK LIVES HERE, and that needs explaining.
+  #
+  # The directory name becomes the Python package name, so an invalid one
+  # renders a pyproject.toml that cannot build and an __init__.py that cannot be
+  # imported — a failure the owner would meet on the generated project's first
+  # CI run rather than at generation. It has to fail loudly, here.
+  #
+  # It cannot be a validator on `project_name` itself: Copier does not run
+  # validators on computed (`when: false`) variables — verified against 9.17.1,
+  # which rendered "My App 2.0" straight through into a broken project. So the
+  # check hangs off the first question that IS asked, which fires before any
+  # file is written. Moving or removing this question means moving the check.
+  #
+  # The empty case is real, not defensive: `copier copy <tpl> .` yields a
+  # dst_path with no final component at all.
+  validator: >-
+    {% if not project_name %}
+    Cannot read a project name from the destination directory.
+    Give copier a named directory — `copier copy <template-url> my_project` —
+    rather than `.`, which has no name to take.
+    {% elif not project_name | regex_search('^[a-z][a-z0-9]*([_-][a-z0-9]+)*$') %}
+    The destination directory "{{ project_name }}" cannot be a Python package
+    name, and this template takes the project name from the directory. Use
+    lowercase letters, digits, underscores and dashes, starting with a letter —
+    e.g. find_best_mobo or find-best-mobo. Rename the destination and re-run.
+    {% endif %}
 
 description:
   type: str
-  help: One-line project description
+  help: One-line description of the project?
   default: ""
 
 # NOTE — there is deliberately no `license` question, and this is not an
@@ -54,20 +75,18 @@ description:
 # license anywhere. The same rule is stated for coding agents in
 # template/AGENTS.md.jinja under "Licensing".
 
+# The two help strings below are short on purpose. Longer ones were truncated
+# mid-word in a real terminal, which made the prompt unreadable; the full
+# explanation lives in the README's question table instead.
 auto_merge:
   type: bool
-  help: >-
-    Auto-merge PRs when all required checks pass (CI + the LLM review gate)?
-    true for most repos; choose false for anything real people download or that
-    touches payments, secrets, or user data — those keep a human merge.
+  help: Auto-merge pull requests once every check is green?
   default: true
 
 code_owner:
   type: str
-  help: >-
-    GitHub handle that owns the merge gates in CODEOWNERS (a user like @you or a
-    team like @org/team). Changes to CI, the review check, pre-commit, and
-    CODEOWNERS require this owner's review — even under auto-merge.
+  help: Which GitHub handle owns the merge gates?
+  default: "@GrimsVerk"
   # GitHub silently ignores CODEOWNERS lines whose owner does not parse — the
   # file stays valid, the rule simply never binds, and the gate paths quietly
   # become writable by anything that passes CI. A shape check cannot confirm the
@@ -83,13 +102,16 @@ code_owner:
     which disables the gate silently rather than erroring.
     {% endif %}
 
-# Computed values — never asked, derived from the answers above.
+# Computed values — never asked, derived from the directory name above. Dashes
+# and underscores are both accepted in a directory name, so both are normalised
+# here: to underscores for the Python package, and away entirely for the Swift
+# type.
 package_name:
   type: str
   when: false
-  default: "{{ project_slug | replace('-', '_') }}"
+  default: "{{ project_name | replace('-', '_') }}"
 
 app_name:
   type: str
   when: false
-  default: "{{ project_slug | replace('-', ' ') | title | replace(' ', '') }}"
+  default: "{{ project_name | replace('-', ' ') | replace('_', ' ') | title | replace(' ', '') }}"

@@ -1,0 +1,92 @@
+name: Release tag
+
+# Tag every merge to main, automatically.
+#
+# WHY THIS EXISTS. Copier resolves a template to its latest **tag**, not to the
+# tip of main. So a change that merges without a tag reaches no new project and
+# no `copier update` — it is merged and invisible. That has already happened
+# once: find_best_mobo was generated from v0.3.0 while main was several merges
+# ahead of it, and nothing anywhere said so.
+#
+# INCREMENT RULE. Patch by default (v0.4.0 -> v0.4.1). The head commit's subject
+# escalates it:
+#   - "BREAKING" or a "!" before the colon of a conventional-commit subject
+#     (e.g. "feat!: ...") -> major
+#   - "feat" or "feat(scope)" prefix                              -> minor
+#   - anything else                                               -> patch
+# The subject of a squash or merge commit is the pull request title, so the PR
+# title is what controls the bump in practice.
+
+on:
+  push:
+    branches: [main]
+
+# Needed to create and push the tag.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history and tags: the next version is computed from the last
+          # tag, and a shallow clone has none of them.
+          fetch-depth: 0
+
+      - name: Compute and push the next tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Already tagged at HEAD? Nothing to do. This is the guard that stops
+          # the workflow re-triggering on its own tag push, and it also makes a
+          # manual re-run a no-op rather than a duplicate bump.
+          if existing="$(git tag --points-at HEAD | head -1)" && [ -n "$existing" ]; then
+            echo "HEAD is already tagged as $existing — nothing to do."
+            exit 0
+          fi
+
+          latest="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+          if [ -z "$latest" ]; then
+            next="v0.1.0"
+            echo "No existing tags; starting at $next."
+          else
+            subject="$(git log -1 --pretty=%s)"
+            # Full message too: the conventional-commit convention puts
+            # "BREAKING CHANGE:" in the footer, which %s alone never sees.
+            body="$(git log -1 --pretty=%B)"
+            echo "Latest tag: $latest"
+            echo "Head subject: $subject"
+
+            major="$(echo "${latest#v}" | cut -d. -f1)"
+            minor="$(echo "${latest#v}" | cut -d. -f2)"
+            patch="$(echo "${latest#v}" | cut -d. -f3)"
+
+            if echo "$subject" | grep -qE '^[a-z]+(\([^)]*\))?!:' \
+               || echo "$body" | grep -qE 'BREAKING[ -]CHANGE'; then
+              major=$((major + 1)); minor=0; patch=0; bump=major
+            elif echo "$subject" | grep -qE '^feat(\([^)]*\))?:'; then
+              minor=$((minor + 1)); patch=0; bump=minor
+            else
+              patch=$((patch + 1)); bump=patch
+            fi
+            next="v${major}.${minor}.${patch}"
+            echo "Bump: $bump -> $next"
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$next" -m "Release $next
+
+          $(git log -1 --pretty=%s)"
+          git push origin "$next"
+
+          echo "Tagged $next" >> "$GITHUB_STEP_SUMMARY"

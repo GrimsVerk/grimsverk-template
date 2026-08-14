@@ -26,15 +26,16 @@ echo "=== gates (rendered project) ==="
 
 command -v copier >/dev/null || { echo "  SKIP  copier not on PATH"; exit 0; }
 
+# Rendered into a directory named demo_app, because the project name (and so
+# the package directory the fixtures below write into) IS the directory name.
 copier copy --defaults --trust --quiet \
-  --data project_name="Demo App" \
   --data language=python \
   --data code_owner="@grimsverk" \
-  "$TEMPLATE" "$WORK/repo" >/dev/null 2>&1 \
+  "$TEMPLATE" "$WORK/demo_app" >/dev/null 2>&1 \
   || { no "template renders"; summary; exit 1; }
 ok "template renders"
 
-R="$WORK/repo"
+R="$WORK/demo_app"
 init_repo "$R"
 git -C "$R" add -A && git -C "$R" commit -qm "scaffold"
 
