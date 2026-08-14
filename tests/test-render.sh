@@ -81,6 +81,11 @@ for lang in python swift-ios; do
   if grep -q 'plan-lint.sh' "$ci" 2>/dev/null; then ok "$lang plan job lints every plan"
   else no "$lang plan job lints every plan"; fi
 
+  # Escape citations must resolve at the base commit. The script existing and
+  # the job calling it are two different things, so the wiring is asserted too.
+  if grep -q 'escape-refs.sh' "$ci" 2>/dev/null; then ok "$lang plan job resolves escape citations"
+  else no "$lang plan job resolves escape citations"; fi
+
   # The secrets job must be able to read pull requests. gitleaks-action lists a
   # PR's commits through the API, and the default token cannot — it answers 403
   # and the job dies before scanning anything, which is the worst shape a check
@@ -189,6 +194,23 @@ PYCHK
   if says "$ag" "not relitigated"
   then ok "$lang AGENTS.md records the ruling on combined PRs"
   else no "$lang AGENTS.md records the ruling on combined PRs"; fi
+
+  # Escapes entries carry ids, citations point backward only, and the entry
+  # authorizes nothing — the three clauses that make the entry-first ordering
+  # cheap without giving a self-serving entry anything to buy.
+  if says "$ag" "Citations are by id, and they point backward only"
+  then ok "$lang AGENTS.md states the id citation rule"
+  else no "$lang AGENTS.md states the id citation rule"; fi
+  if says "$ag" "Entries are records, never authorization"
+  then ok "$lang AGENTS.md states that entries never authorize"
+  else no "$lang AGENTS.md states that entries never authorize"; fi
+  esc="$out/docs/escapes.md"
+  if grep -q '^| Id |' "$esc" 2>/dev/null
+  then ok "$lang escapes.md carries the id column"
+  else no "$lang escapes.md carries the id column"; fi
+  if says "$esc" "unverified — pending"
+  then ok "$lang escapes.md documents the stub lifecycle"
+  else no "$lang escapes.md documents the stub lifecycle"; fi
 
   # Both blind workers get ONE contract, quoted verbatim. Asymmetric briefs made
   # the two build to different contracts and disagree at assembly about a

@@ -259,6 +259,23 @@ attempt for the same reason, because nothing about the ordering has changed.
 Downstream this blocked the same pull request twice. Write the ledger entry, land
 it, then reference it.
 
+**Citations are by id, and they point backward only.** Every `docs/escapes.md`
+entry carries an id — `ESC-<n>`, the next unused integer — and a gated document
+cites an entry by that id alone, only once the entry exists on the default
+branch. This is checked, not asked for: CI resolves every `ESC-` citation in
+this file, `docs/DESIGN.md`, and `docs/plans/` against `docs/escapes.md` at the
+pull request's base commit (`.github/scripts/escape-refs.sh`) and fails when one
+dangles, so a claim about the ledger can never be false at the moment it is
+checked. And the entry-first ordering is cheap to obey, because an entry may
+land before its check exists — as a **stub**: id, date, the one-clause
+description, the gate column, and a check column explicitly marked *unverified —
+pending*. A stub is one line, blocks on nothing, and is exactly the
+explicitly-marked proposal the ratchet rule above already allows; once the fix
+and its check have merged, append the completing correction row — same id, the
+demonstrated check, citing the merged work. Entries are records, never
+authorization: no gate passes a change because of anything in the escapes log,
+so neither a stub nor a completed row is worth forging.
+
 **This ordering is the cost, and it is not going to be traded away.** It was put
 to us that one pull request might reasonably carry an `docs/escapes.md` entry
 together with the fix it describes, when the two share a root cause — the
@@ -272,7 +289,9 @@ permitted edit does not make the claim in the appended row true. And an agent
 logging its own escape is exactly where a self-serving entry would come from, in
 the direction hardest to notice, since a plausible line about what "should have
 caught it" reads no differently from an accurate one. The serialization is real
-and it is the price. Order the chain correctly and it does not deadlock.
+and it is the price. Order the chain correctly and it does not deadlock — and
+the stub lifecycle above is what keeps the price small: the entry that must land
+first is one line and waits on nothing.
 
 ## Language-specific
 

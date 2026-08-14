@@ -64,6 +64,17 @@ jobs:
         # unrelated branch trips over it — and then the error names a document
         # that branch never touched. Runs for exempt branches too.
         run: .github/scripts/plan-lint.sh
+      - name: Escape citations must resolve at the base commit
+        # A gated document cites a docs/escapes.md entry by rigid id (ESC-<n>),
+        # and only once that entry exists at the base — the review gate reads
+        # documents at the base commit, so a citation to an unmerged entry is
+        # false at the only moment anything checks it. Downstream that blocked
+        # one pull request twice. Rigid ids are what make this checkable at
+        # all: prose claims ("logged in docs/escapes.md") cannot be resolved
+        # mechanically, which is why that version was never built.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            .github/scripts/escape-refs.sh
 
   # The other half of the planning story. A `template/` branch is exempt from
   # the `plan` check above, because a template update is specified in the
