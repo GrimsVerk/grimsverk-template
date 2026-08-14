@@ -154,6 +154,58 @@ PYCHK
     ok "$lang does not ship GLOSSARY.project.md"
   fi
 
+  # ------------------- rules that exist because something actually went wrong
+  #
+  # These are PRESENCE checks, and worth being clear about what that buys. They
+  # cannot tell whether an agent followed a rule — no check can read a prompt
+  # that was never written down. What they catch is the rule being dropped or
+  # reworded out of existence by a later template edit, silently, after the
+  # failure that produced it has been forgotten. Each line below cost a real
+  # failure downstream; the phrase asserted on is the load-bearing half.
+  ag="$out/AGENTS.md"
+  orch="$out/.claude/commands/orchestrate.md"
+  del="$out/.claude/commands/deliver.md"
+
+  # Whitespace-collapsed, because these documents are hard-wrapped prose: a
+  # phrase spans a line break wherever the paragraph happened to fill up, and a
+  # check that broke every time someone reflowed a paragraph would be switched
+  # off within a month.
+  says() { tr -s '[:space:]' ' ' < "$1" | grep -qF "$2"; }
+
+  # A recorded ratchet check must be demonstrated or marked unverified: an
+  # untested proposal in that column reads with the authority of a verified one.
+  if says "$ag" "red against the defect, green against the fix"
+  then ok "$lang AGENTS.md requires a demonstrated ratchet check"
+  else no "$lang AGENTS.md requires a demonstrated ratchet check"; fi
+
+  # Land the ratchet entry first, then the document citing it. The review gate
+  # reads escapes.md at the BASE commit, so a citation to an unmerged entry is
+  # false at the only moment it is checked — it blocked the same PR twice.
+  if says "$ag" "the ratchet entry first"
+  then ok "$lang AGENTS.md states the cross-reference ordering"
+  else no "$lang AGENTS.md states the cross-reference ordering"; fi
+
+  # And the ruling that keeps that ordering from being renegotiated per PR.
+  if says "$ag" "not relitigated"
+  then ok "$lang AGENTS.md records the ruling on combined PRs"
+  else no "$lang AGENTS.md records the ruling on combined PRs"; fi
+
+  # Both blind workers get ONE contract, quoted verbatim. Asymmetric briefs made
+  # the two build to different contracts and disagree at assembly about a
+  # behaviour the plan never stated.
+  if says "$orch" "verbatim into both prompts"
+  then ok "$lang orchestrate.md requires a shared contract block"
+  else no "$lang orchestrate.md requires a shared contract block"; fi
+
+  # Wait until nothing is pending — never until the PR is no longer open. A
+  # failing PR never leaves the open state, so that condition makes red
+  # indistinguishable from still-running, and from success where nobody looks.
+  for f in "$orch" "$del"; do
+    if says "$f" "no check is still pending"
+    then ok "$lang $(basename "$f") states the wait condition"
+    else no "$lang $(basename "$f") states the wait condition"; fi
+  done
+
   # Every shipped script must be executable — CI invokes them by path.
   nonexec=""
   while IFS= read -r s; do
