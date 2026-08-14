@@ -56,6 +56,13 @@ rubber-stamp, and no agent merges on its own judgment:
   Branches prefixed `chore/` or `docs/` are exempt, for changes too small to
   plan; the exemption is capped at ~50 added lines so it can't be used to route
   real work around the gate.
+- **Hard gate — template-sync** (the `template-sync` job): a `template/` branch
+  is exempt from `plan`, because a template update is specified in the *template*
+  repository and no plan here can describe it. This is what earns that: it
+  replays `copier update` from the base commit and fails unless the result is
+  byte-for-byte this PR. Stronger than a plan — a plan says someone intended the
+  change; this proves nothing hand-written rode along with it. Passes trivially
+  on every other branch.
 - **Hard gate — test-the-tests** (the `test-the-tests` job): reverts this PR's
   implementation, keeps its new tests, and fails if the suite still passes.
   Tests that stay green without the code they cover are testing nothing, which
@@ -93,6 +100,7 @@ them on the default branch (`main`):
    - `{% if language == 'python' %}checks{% else %}test{% endif %}` (CI hard gate)
    - `secrets` (mechanical: gitleaks over the full history)
    - `plan` (mechanical: the PR resolves to exactly one plan, already at base)
+   - `template-sync` (mechanical: a `template/` PR is pure `copier update` output)
    - `test-the-tests` (mechanical: the new tests fail without the new code)
    - `review` (LLM soft gate)
 2. **Require review from Code Owners** (branch protection), so changes to the
@@ -113,6 +121,38 @@ them on the default branch (`main`):
 {% endif %}
 Coding agents work on a branch and open a PR into this pipeline; branch
 protection plus the required checks are what prevent self-merging.
+
+## Updating from the template
+
+Template improvements arrive through `copier update`, and that is a third kind
+of change: not planned work, not a trivial chore. It was specified and reviewed
+in the template repository, so no plan here could describe it.
+
+```sh
+git switch main && git pull
+git switch -c template/v0.5.0          # the version you are moving to
+copier update --defaults
+git commit -am "Update from template v0.5.0"
+git push -u origin template/v0.5.0
+```
+
+The `template/` prefix exempts it from the `plan` check and hands verification
+to `template-sync`, which replays the update from the base commit and fails
+unless this PR is exactly its output. So the branch may carry the template's
+changes and **nothing else** — if a hand fix is needed on top, it goes in its own
+pull request afterwards, with a plan.
+
+Expect to approve it yourself. A template update usually touches `.github/` and
+`AGENTS.md`, which `CODEOWNERS` owns, and GitHub will not accept your approval on
+your own PR — see the deadlock note in the root template's README. That is
+working as intended: a change to your own gates is exactly what a human should
+look at. `template-sync` being green is what makes that a quick read of the
+template's release notes rather than a line-by-line audit of 40 files.
+
+> If the template repository is private, CI needs a `TEMPLATE_TOKEN` secret — a
+> fine-grained PAT with read access to it. The built-in token is scoped to this
+> repository only and cannot fetch another one, so without it `template-sync`
+> fails closed.
 
 ## The ratchet
 

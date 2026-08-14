@@ -400,6 +400,39 @@ copier update
 Re-run it after changing an answer too — e.g. flipping `auto_merge` on an
 existing project.
 
+**Put it on a `template/` branch.** A template update is a third kind of change:
+not planned work, not a trivial chore. It was specified and reviewed *here*, in
+this repository, at the merge that produced the version being pulled in — so no
+plan in the target project could ever describe it, and the `plan` check would
+block it forever.
+
+```sh
+git switch main && git pull
+git switch -c template/v0.5.0
+copier update --defaults
+git commit -am "Update from template v0.5.0"
+git push -u origin template/v0.5.0
+```
+
+The prefix exempts it from `plan` and hands verification to **`template-sync`**,
+which replays `copier update` from the PR's base commit and fails unless the
+result is byte-for-byte the pull request. That is a stronger guarantee than a
+plan — a plan says someone intended a change; this proves nothing hand-written
+rode along with the sync. So the branch carries the template's output and
+**nothing else**; a hand fix on top goes in its own later PR, with a plan.
+
+Two things to expect:
+
+- **You will approve it yourself.** Template updates touch `.github/` and
+  `AGENTS.md`, which `CODEOWNERS` owns, and GitHub refuses your approval on your
+  own PR. That is the deadlock described above, working as intended — a change to
+  your own gates is exactly what a human should look at. `template-sync` green is
+  what makes that a read of the release notes rather than an audit of 40 files.
+- **A private template needs a token.** A project's built-in `GITHUB_TOKEN` is
+  scoped to that project and cannot fetch this repository. Add a fine-grained PAT
+  with read access here as the `TEMPLATE_TOKEN` secret in each generated repo, or
+  `template-sync` fails closed.
+
 > `--trust` is not needed for either command: this template renders files only
 > and runs no tasks or migrations. If a future version adds one, Copier will
 > refuse and tell you to re-run with `--trust`.

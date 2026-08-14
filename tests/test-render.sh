@@ -28,7 +28,12 @@ command -v copier >/dev/null || { echo "  SKIP  copier not on PATH"; exit 0; }
 
 render() { # render <outdir> <language> [extra --data args...]
   local out="$1" lang="$2"; shift 2
-  copier copy --defaults --trust --quiet \
+  # --vcs-ref=HEAD is load-bearing. Pointed at a git repository, copier renders
+  # the latest TAG by default — so without this every test here validated the
+  # last release instead of the working tree, and a change under test was
+  # invisible to its own tests. HEAD also pulls in uncommitted changes, which is
+  # exactly what a pre-commit test run needs to see.
+  copier copy --defaults --trust --quiet --vcs-ref=HEAD \
     --data language="$lang" \
     --data code_owner="@grimsverk" \
     "$@" "$TEMPLATE" "$out" 2>&1
@@ -56,6 +61,16 @@ for lang in python swift-ios; do
   done < <(grep -rlE '\{\{|\{%' "$out" 2>/dev/null || true)
   if [[ -z "$stray" ]]; then ok "$lang has no unrendered Jinja"
   else no "$lang has no unrendered Jinja" "$stray"; fi
+
+  # Every required check must exist as a job. This list is what the READMEs tell
+  # you to mark required in branch protection, and a name that drifts out of the
+  # workflow leaves a required check that never reports — every PR waits forever
+  # on something that cannot arrive.
+  ci="$out/.github/workflows/ci.yml"
+  for job in plan template-sync secrets test-the-tests; do
+    if grep -qE "^  ${job}:" "$ci" 2>/dev/null; then ok "$lang ci.yml defines '$job'"
+    else no "$lang ci.yml defines '$job'"; fi
+  done
 
   # Every workflow must parse as YAML.
   bad=""
