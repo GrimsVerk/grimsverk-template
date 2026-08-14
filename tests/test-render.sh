@@ -72,6 +72,15 @@ for lang in python swift-ios; do
     else no "$lang ci.yml defines '$job'"; fi
   done
 
+  # Every plan in the tree must be parsed, not only the one this pull request
+  # resolves to. A plan is written on one pull request and resolved by a later
+  # one, so without this step a malformed plan stays invisible until some
+  # unrelated branch trips over it — and then the error names a document that
+  # branch never touched. Asserted on the wiring, because the script existing
+  # and the job calling it are two different things.
+  if grep -q 'plan-lint.sh' "$ci" 2>/dev/null; then ok "$lang plan job lints every plan"
+  else no "$lang plan job lints every plan"; fi
+
   # The secrets job must be able to read pull requests. gitleaks-action lists a
   # PR's commits through the API, and the default token cannot — it answers 403
   # and the job dies before scanning anything, which is the worst shape a check

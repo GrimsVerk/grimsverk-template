@@ -56,6 +56,14 @@ jobs:
           # as an empty table it has been told to treat as ground truth — so it
           # fails here instead, where the message can say what to fix.
           git show "$BASE_SHA:$PLAN" | .github/scripts/plan-parse.sh >/dev/null
+      - name: Every plan in the tree must parse
+        # Separate from the step above, and not conditional on it: that one
+        # reads only the plan THIS pull request resolves to, as it exists at the
+        # base commit. A plan is written on one pull request and resolved by a
+        # later one, so without this a malformed plan stays invisible until some
+        # unrelated branch trips over it — and then the error names a document
+        # that branch never touched. Runs for exempt branches too.
+        run: .github/scripts/plan-lint.sh
 
   # The other half of the planning story. A `template/` branch is exempt from
   # the `plan` check above, because a template update is specified in the

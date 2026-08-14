@@ -65,6 +65,17 @@ adding more than ~50 lines fails the `plan` check — and the reviewer is told t
 scrutinise exempt branches harder rather than to relax, because an unplanned
 change is less checked than a planned one, not more trusted.
 
+**The planning documents themselves are exempt from that cap**, and only they: a
+branch whose entire diff sits inside `docs/plans/` or `docs/DESIGN.md` passes at
+any size. A completed design doc runs to hundreds of lines and the plan template
+is over a hundred before anything is filled in, so the cap made the two
+documents this process demands the two documents it could not accept — and no
+plan can cover them anyway, since a plan branch cannot resolve to a plan that
+does not exist yet. Writing a plan is not skipping planning; it is the planning,
+and `CODEOWNERS` still puts it behind the owner's review. Touch one file outside
+those paths and the cap is back: split the branch rather than widening the
+exemption.
+
 **Commits.** One conceptually contained commit per unit of work, pushed
 when complete, with an imperative one-line message. The test suite must
 pass before every commit. Documentation is updated in the same commit as

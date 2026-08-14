@@ -42,6 +42,19 @@ R="$WORK/demo_app"
 init_repo "$R"
 git -C "$R" add -A && git -C "$R" commit -qm "scaffold"
 
+# The shipped design skeleton must not trip the gate it ships with. coverage.sh
+# now FAILS on a malformed requirement id instead of skipping it, and a skeleton
+# whose own placeholder ids were malformed would fail every project on day one.
+# rc 2 is "setup problem"; rc 1 is "requirements with no plan yet", which is the
+# correct answer for a project that has not planned anything.
+( cd "$R" && .github/scripts/coverage.sh >/dev/null 2>&1 )
+if [[ $? -eq 2 ]]; then
+  no "the shipped design skeleton passes its own coverage gate" \
+    "$( cd "$R" && .github/scripts/coverage.sh 2>&1 | head -5 )"
+else
+  ok "the shipped design skeleton passes its own coverage gate"
+fi
+
 mkdir -p "$R/docs/plans"
 cat > "$R/docs/plans/draft-saving.md" <<'EOF'
 ---
@@ -102,11 +115,99 @@ out="$(resolve chore/sneaky)"
 expect_rc "oversized chore branch is capped" 1 $?
 expect_contains "names the cap" "$out" "claims the exempt prefix"
 
+# ------------------------------------- a plans-only branch is exempt at any size
+# The cap was right for doc tweaks and wrong for the two documents the process
+# itself demands. A completed design doc is hundreds of lines and the plan
+# template is 124 before anything is filled in, so every plan blew the cap — and
+# no plan can cover a plan, since a plan branch cannot resolve to a plan that
+# does not exist yet. Downstream that forced three owner bypasses in one session.
+on_branch docs/big-plan
+{
+  echo '---'; echo 'slug: big-plan'; echo '---'
+  echo '# Big — Plan'
+  echo '## Slice 1 — thing'
+  echo '- **Files:** `src/demo_app/big.py`'
+  echo '- **Estimate:** ~10 lines'
+  seq 1 200 | sed 's/^/prose line /'
+} > "$R/docs/plans/big-plan.md"
+commit_all "Add a large plan"
+out="$(resolve docs/big-plan)"
+expect_rc "a plans-only branch is exempt at any size" 0 $?
+expect_contains "and says why it is exempt" "$out" "planning documents themselves"
+
+# The design doc has the same problem and the same answer.
+on_branch docs/design-doc
+seq 1 400 | sed 's/^/design line /' >> "$R/docs/DESIGN.md"
+commit_all "Write the design doc"
+out="$(resolve docs/design-doc)"
+expect_rc "a design-doc branch is exempt at any size" 0 $?
+
+# ------------------------- but a plan travelling with code is still capped
+# The whole-diff test, not a per-file one: a plan must not be usable as cover
+# for the code smuggled alongside it.
+on_branch docs/plan-and-code
+cp "$R/docs/plans/draft-saving.md" "$R/docs/plans/sneaky-plan.md"
+sed -i 's/draft-saving/sneaky-plan/' "$R/docs/plans/sneaky-plan.md"
+seq 1 120 > "$R/src/demo_app/smuggled.py"
+commit_all "A plan, and 120 lines of code with it"
+out="$(resolve docs/plan-and-code)"
+expect_rc "a plan branch that also carries code is capped" 1 $?
+expect_contains "says the exemption does not cover it" "$out" "touches something else"
+
+# A small plans-only branch was always fine, and still is.
+on_branch docs/tiny-plan
+printf '\nA one-line note.\n' >> "$R/docs/plans/draft-saving.md"
+commit_all "Tweak a plan"
+expect_rc "a small plans-only branch is still exempt" 0 "$(resolve docs/tiny-plan >/dev/null; echo $?)"
+
 # -------------------------------------------------- unmatched slug -> failure
 on_branch feat/unrelated
 echo "z = 3" > "$R/src/demo_app/z.py"; commit_all work
 resolve feat/unrelated >/dev/null 2>&1
 expect_rc "unmatched branch still fails" 1 $?
+
+# ------------------------------------- every real plan in the tree must parse
+# A malformed plan must fail on the pull request that writes it. Before this, a
+# plan was only parsed when some branch resolved to it — so the error surfaced
+# later, on a pull request whose author never touched the document it named.
+git -C "$R" switch -q main
+out="$( cd "$R" && .github/scripts/plan-lint.sh 2>&1 )"
+expect_rc "a tree of readable plans passes the lint" 0 $?
+
+# The shipped _TEMPLATE.md is placeholders BY DESIGN and the parser rejects it
+# on purpose. A check that parsed it would have been red the day it was added
+# and switched off soon after — that exact check was proposed once and caught by
+# chance. Underscore-prefixed files are skipped, and this is what says so.
+expect_not_contains "the placeholder template is skipped" "$out" "_TEMPLATE"
+if [[ -f "$R/docs/plans/_TEMPLATE.md" ]]; then
+  ok "the placeholder template is present to be skipped"
+else no "the placeholder template is present to be skipped"; fi
+
+# And the template must not carry a heading that LOOKS like a slice without
+# being one. `## Slices` was exactly that, and every plan copied from the
+# skeleton inherited it. This is the check that can be run against the shipped
+# template — unlike parsing it, which never could be.
+bad="$(grep -nE '^#+[[:space:]]*Slice' "$R/docs/plans/_TEMPLATE.md" \
+  | grep -vE '^[0-9]+:#+[[:space:]]*Slice[[:space:]]' || true)"
+if [[ -z "$bad" ]]; then
+  ok "no heading in the template masquerades as a slice"
+else
+  no "no heading in the template masquerades as a slice" "$bad"
+fi
+
+cat > "$R/docs/plans/unreadable.md" <<'EOF'
+---
+slug: unreadable
+---
+# Unreadable — Plan
+## Slice 1 — thing
+- **Files:** src/demo_app/u.py
+EOF
+out="$( cd "$R" && .github/scripts/plan-lint.sh 2>&1 )"
+expect_rc "a malformed plan fails the lint" 1 $?
+expect_contains "names the file that cannot be read" "$out" "docs/plans/unreadable.md"
+expect_contains "and carries the parser's own diagnosis" "$out" "declares no files"
+rm -f "$R/docs/plans/unreadable.md"
 
 # ------------------------------- metrics use the BASE plan, not the edited one
 git -C "$R" switch -q feat/draft-saving
