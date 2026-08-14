@@ -91,8 +91,15 @@ jobs:
           # Let git authenticate to GitHub with the token, if one is set.
           if [ -n "${TEMPLATE_TOKEN:-}" ]; then
             AUTH="https://x-access-token:${TEMPLATE_TOKEN}@github.com/"
-            git config --global url."$AUTH".insteadOf "https://github.com/"
-            git config --global url."$AUTH".insteadOf "git@github.com:"
+            # --add on every write after the first. These all set the SAME key,
+            # and a plain `git config` REPLACES a single-valued key instead of
+            # appending — so without --add each write silently deletes the one
+            # before it, leaving a single rewrite that matches nothing. Every
+            # command still succeeds and the step exits 0; the only symptom is
+            # copier's clone failing with "could not read Username" further
+            # down, which reads like a missing token and is not one.
+            git config --global       url."$AUTH".insteadOf "https://github.com/"
+            git config --global --add url."$AUTH".insteadOf "git@github.com:"
 
             # A project generated before the HTTPS convention may have recorded
             # an ssh:// _src_path naming a personal host alias from someone's
@@ -106,7 +113,7 @@ jobs:
               *ssh://git@*)
                 ALIAS="$(printf '%s' "$SRC" | sed -E 's#^.*ssh://(git@[^/]+)/.*#\1#')"
                 echo "template-sync: _src_path names '$ALIAS'; routing it through the token."
-                git config --global url."$AUTH".insteadOf "ssh://${ALIAS}/"
+                git config --global --add url."$AUTH".insteadOf "ssh://${ALIAS}/"
                 ;;
             esac
           fi

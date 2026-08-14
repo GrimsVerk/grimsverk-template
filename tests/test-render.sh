@@ -87,6 +87,23 @@ PYCHK
   else no "$lang secrets job can read pull requests" \
     "needs permissions: {contents: read, pull-requests: read}"; fi
 
+  # The token rewrites in template-sync must APPEND. They all set one config
+  # key, `url.<auth>.insteadOf`, and a plain `git config` replaces a
+  # single-valued key rather than adding to it — so every write after the first
+  # deletes its predecessor, leaving one rewrite that matches nothing. The step
+  # still exits 0; the failure surfaces later as copier's clone asking for a
+  # username, which reads as a missing or misscoped token and sends you
+  # auditing secrets instead of config. Counted rather than matched by name:
+  # exactly one plain write may exist, and every additional one must use --add.
+  plain="$(grep -cE '^[[:space:]]*git config --global[[:space:]]+url\."\$AUTH"\.insteadOf' "$ci" || true)"
+  added="$(grep -cE '^[[:space:]]*git config --global --add[[:space:]]+url\."\$AUTH"\.insteadOf' "$ci" || true)"
+  if [[ "$plain" -eq 1 && "$added" -ge 1 ]]; then
+    ok "$lang template-sync appends its insteadOf rewrites"
+  else
+    no "$lang template-sync appends its insteadOf rewrites" \
+      "found $plain plain and $added --add; expected 1 plain (the first) and the rest --add"
+  fi
+
   # Every workflow must parse as YAML.
   bad=""
   for wf in "$out"/.github/workflows/*.yml; do
