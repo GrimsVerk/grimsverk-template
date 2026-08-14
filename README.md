@@ -205,7 +205,7 @@ least once, and the checks first report at different times:
 | Check | Runs on | First reports after |
 | --- | --- | --- |
 | `checks` (python) / `test` (swift-ios), `secrets` | every push | your first push |
-| `plan`, `test-the-tests`, `review` | pull requests only | your first **PR** |
+| `plan`, `template-sync`, `test-the-tests`, `review` | pull requests only | your first **PR** |
 
 So most of the list cannot be marked required straight after step 4 — the names
 won't be in the dropdown yet. Hence the order:
@@ -215,6 +215,13 @@ Actions → New repository secret*, named `CLAUDE_CODE_OAUTH_TOKEN`. Get the
 value by running `claude setup-token` locally (uses your subscription, not a
 metered API key). Do this *before* making `review` required — the job fails
 closed without a credential, so every PR would block.
+
+**a2. Add the template read token.** Same place, named `TEMPLATE_TOKEN`: a
+fine-grained PAT with **Contents: Read-only** on `grimsverk-template`. The
+`template-sync` check fetches this template to verify an update, and a project's
+built-in CI token cannot reach another repository — without the secret that check
+fails closed and no template update can ever merge. See *Updating generated
+projects* below for how to create it, and note its expiry date somewhere.
 
 **b. Enable the merge settings.** *Settings → General → Pull Requests*:
 
@@ -264,7 +271,7 @@ would otherwise fail an empty commit that has no plan. Let every check run.
   private repos (the rule simply does not appear), but at one-PR-at-a-time — which
   the orchestration design already enforces — the friction is negligible.
 - **Require status checks to pass** → add `checks` (or `test` for swift-ios),
-  `secrets`, `plan`, `test-the-tests`, and `review`.
+  `secrets`, `plan`, `template-sync`, `test-the-tests`, and `review`.
 - **Do not enable** code scanning, code quality, coverage, or deployment rules.
   No workflow in this template emits those results, so every PR would wait
   forever on a check that never arrives.
@@ -406,13 +413,21 @@ this repository, at the merge that produced the version being pulled in — so n
 plan in the target project could ever describe it, and the `plan` check would
 block it forever.
 
+Every generated project ships a script that does the whole thing:
+
 ```sh
-git switch main && git pull
-git switch -c template/v0.5.0
-copier update --defaults
-git commit -am "Update from template v0.5.0"
-git push -u origin template/v0.5.0
+scripts/update-from-template.sh
 ```
+
+Run it on a clean default branch. It updates, works out which template version
+it landed on, branches as `template/<version>`, commits, pushes, and opens the
+pull request — no further input. `--no-pr` stops before the pull request;
+`--ref HEAD` pulls in a change that has merged here but is not tagged yet.
+
+It hands back to you in one case only: a **conflict**, where the template
+changed a file the project also changed. Copier leaves both versions in the file
+with markers around them and no script can pick a side. Nothing is committed at
+that point, so `git checkout -- .` backs the update out cleanly.
 
 The prefix exempts it from `plan` and hands verification to **`template-sync`**,
 which replays `copier update` from the PR's base commit and fails unless the
@@ -428,10 +443,21 @@ Two things to expect:
   own PR. That is the deadlock described above, working as intended — a change to
   your own gates is exactly what a human should look at. `template-sync` green is
   what makes that a read of the release notes rather than an audit of 40 files.
-- **A private template needs a token.** A project's built-in `GITHUB_TOKEN` is
-  scoped to that project and cannot fetch this repository. Add a fine-grained PAT
-  with read access here as the `TEMPLATE_TOKEN` secret in each generated repo, or
-  `template-sync` fails closed.
+- **Each project needs a `TEMPLATE_TOKEN` secret.** This template is private, and
+  a project's built-in CI token is scoped to that project — it cannot read
+  another repository. Without the secret, `template-sync` cannot fetch the
+  template and fails closed, so no update can merge.
+
+  Create it once at *Settings → Developer settings → Personal access tokens →
+  Fine-grained tokens*: **Repository access** limited to `grimsverk-template`,
+  **Permissions → Contents: Read-only**. Then add it as `TEMPLATE_TOKEN` under
+  *Settings → Secrets and variables → Actions* **in every generated repo** —
+  `GrimsVerk` is a personal account, not an organisation, so there is no
+  org-level secret to share one across projects.
+
+  Fine-grained tokens expire, a year at most. When this one does, template
+  updates start failing in every project simultaneously, and the error will not
+  say "expired token" in so many words. Note the date somewhere.
 
 > `--trust` is not needed for either command: this template renders files only
 > and runs no tasks or migrations. If a future version adds one, Copier will

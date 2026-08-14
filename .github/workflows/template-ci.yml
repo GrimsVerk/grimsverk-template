@@ -37,6 +37,7 @@ jobs:
           shellcheck --severity=warning \
                      template/.github/scripts/*.sh \
                      template/.claude/scripts/*.sh \
+                     template/scripts/*.sh \
                      tests/*.sh
 
   tests:
