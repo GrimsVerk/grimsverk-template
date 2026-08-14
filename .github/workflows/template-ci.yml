@@ -37,6 +37,7 @@ jobs:
           shellcheck --severity=warning \
                      template/.github/scripts/*.sh \
                      template/.claude/scripts/*.sh \
+                     template/scripts/*.sh \
                      tests/*.sh
 
   tests:
@@ -73,7 +74,10 @@ jobs:
         # Python package and the Swift type — so it is chosen deliberately here
         # rather than passed as an answer.
         run: |
-          copier copy --defaults --trust \
+          # --vcs-ref=HEAD or this renders the latest TAG, meaning CI would
+          # validate the previous release on every pull request and never the
+          # change being proposed.
+          copier copy --defaults --trust --vcs-ref=HEAD \
             --data language="${{ matrix.language }}" \
             --data description="Rendered by template CI" \
             --data code_owner="@grimsverk" \

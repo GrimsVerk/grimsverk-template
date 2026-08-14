@@ -28,7 +28,10 @@ command -v copier >/dev/null || { echo "  SKIP  copier not on PATH"; exit 0; }
 
 # Rendered into a directory named demo_app, because the project name (and so
 # the package directory the fixtures below write into) IS the directory name.
-copier copy --defaults --trust --quiet \
+# --vcs-ref=HEAD: copier renders the latest TAG from a git repo by default, so
+# without it these gates would be exercised against the last release rather than
+# the working tree. See the note in test-render.sh.
+copier copy --defaults --trust --quiet --vcs-ref=HEAD \
   --data language=python \
   --data code_owner="@grimsverk" \
   "$TEMPLATE" "$WORK/demo_app" >/dev/null 2>&1 \
