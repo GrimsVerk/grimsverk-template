@@ -40,7 +40,13 @@ path and the one or two edge cases that actually shape the design. -->
 Give every requirement a stable id (R1, R2, ...). Plans declare which ids they
 implement in their `covers:` field, which is what makes "is the design actually
 built?" a question a script can answer instead of a feeling. Never renumber an
-existing id — append. -->
+existing id — append.
+
+An id is the letter and digits, nothing else. Splitting R2 into R2a and R2b is
+the tempting move and it is rejected: `.github/scripts/coverage.sh` fails on any
+id it cannot parse, because it used to skip them instead — and a skipped id is
+neither counted as covered nor reported as missing, so it reads like a tracked
+requirement while being tracked by nothing. Append R3 and R4 instead. -->
 
 **Functional**
 - **R1** —

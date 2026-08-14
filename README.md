@@ -391,6 +391,16 @@ plan (a coder and a test-writer, each in its own git worktree), and one pull
 request. The orchestrator assembles the worker branches and opens the PR — it
 never merges; that stays mechanical, driven by the required checks going green.
 
+**The orchestration path has its own smoke test, and it is not in CI.**
+`tests/smoke-worker.sh [engine…]` spawns one trivial worker per engine against
+the real CLI and asserts it committed. It is deliberately outside `tests/run.sh`
+— it needs an authenticated engine and spends subscription budget — but it
+exists because this path shipped with four independently fatal faults, every one
+of which survived because nothing ever ran it until a human needed it. Run it
+after changing `spawn-worker.sh` and after any engine CLI upgrade;
+`tests/test-spawn-worker.sh` pins the script's own logic with stub engines on
+every push.
+
 Exactly one layer of spawning: the orchestrator drives every worker directly and
 never spawns another orchestrator. To build two features at once, open a second
 session — that keeps each orchestrator's context clean for assembly, and you

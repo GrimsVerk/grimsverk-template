@@ -72,6 +72,20 @@ for lang in python swift-ios; do
     else no "$lang ci.yml defines '$job'"; fi
   done
 
+  # Every plan in the tree must be parsed, not only the one this pull request
+  # resolves to. A plan is written on one pull request and resolved by a later
+  # one, so without this step a malformed plan stays invisible until some
+  # unrelated branch trips over it — and then the error names a document that
+  # branch never touched. Asserted on the wiring, because the script existing
+  # and the job calling it are two different things.
+  if grep -q 'plan-lint.sh' "$ci" 2>/dev/null; then ok "$lang plan job lints every plan"
+  else no "$lang plan job lints every plan"; fi
+
+  # Escape citations must resolve at the base commit. The script existing and
+  # the job calling it are two different things, so the wiring is asserted too.
+  if grep -q 'escape-refs.sh' "$ci" 2>/dev/null; then ok "$lang plan job resolves escape citations"
+  else no "$lang plan job resolves escape citations"; fi
+
   # The secrets job must be able to read pull requests. gitleaks-action lists a
   # PR's commits through the API, and the default token cannot — it answers 403
   # and the job dies before scanning anything, which is the worst shape a check
@@ -144,6 +158,75 @@ PYCHK
   else
     ok "$lang does not ship GLOSSARY.project.md"
   fi
+
+  # ------------------- rules that exist because something actually went wrong
+  #
+  # These are PRESENCE checks, and worth being clear about what that buys. They
+  # cannot tell whether an agent followed a rule — no check can read a prompt
+  # that was never written down. What they catch is the rule being dropped or
+  # reworded out of existence by a later template edit, silently, after the
+  # failure that produced it has been forgotten. Each line below cost a real
+  # failure downstream; the phrase asserted on is the load-bearing half.
+  ag="$out/AGENTS.md"
+  orch="$out/.claude/commands/orchestrate.md"
+  del="$out/.claude/commands/deliver.md"
+
+  # Whitespace-collapsed, because these documents are hard-wrapped prose: a
+  # phrase spans a line break wherever the paragraph happened to fill up, and a
+  # check that broke every time someone reflowed a paragraph would be switched
+  # off within a month.
+  says() { tr -s '[:space:]' ' ' < "$1" | grep -qF "$2"; }
+
+  # A recorded ratchet check must be demonstrated or marked unverified: an
+  # untested proposal in that column reads with the authority of a verified one.
+  if says "$ag" "red against the defect, green against the fix"
+  then ok "$lang AGENTS.md requires a demonstrated ratchet check"
+  else no "$lang AGENTS.md requires a demonstrated ratchet check"; fi
+
+  # Land the ratchet entry first, then the document citing it. The review gate
+  # reads escapes.md at the BASE commit, so a citation to an unmerged entry is
+  # false at the only moment it is checked — it blocked the same PR twice.
+  if says "$ag" "the ratchet entry first"
+  then ok "$lang AGENTS.md states the cross-reference ordering"
+  else no "$lang AGENTS.md states the cross-reference ordering"; fi
+
+  # And the ruling that keeps that ordering from being renegotiated per PR.
+  if says "$ag" "not relitigated"
+  then ok "$lang AGENTS.md records the ruling on combined PRs"
+  else no "$lang AGENTS.md records the ruling on combined PRs"; fi
+
+  # Escapes entries carry ids, citations point backward only, and the entry
+  # authorizes nothing — the three clauses that make the entry-first ordering
+  # cheap without giving a self-serving entry anything to buy.
+  if says "$ag" "Citations are by id, and they point backward only"
+  then ok "$lang AGENTS.md states the id citation rule"
+  else no "$lang AGENTS.md states the id citation rule"; fi
+  if says "$ag" "Entries are records, never authorization"
+  then ok "$lang AGENTS.md states that entries never authorize"
+  else no "$lang AGENTS.md states that entries never authorize"; fi
+  esc="$out/docs/escapes.md"
+  if grep -q '^| Id |' "$esc" 2>/dev/null
+  then ok "$lang escapes.md carries the id column"
+  else no "$lang escapes.md carries the id column"; fi
+  if says "$esc" "unverified — pending"
+  then ok "$lang escapes.md documents the stub lifecycle"
+  else no "$lang escapes.md documents the stub lifecycle"; fi
+
+  # Both blind workers get ONE contract, quoted verbatim. Asymmetric briefs made
+  # the two build to different contracts and disagree at assembly about a
+  # behaviour the plan never stated.
+  if says "$orch" "verbatim into both prompts"
+  then ok "$lang orchestrate.md requires a shared contract block"
+  else no "$lang orchestrate.md requires a shared contract block"; fi
+
+  # Wait until nothing is pending — never until the PR is no longer open. A
+  # failing PR never leaves the open state, so that condition makes red
+  # indistinguishable from still-running, and from success where nobody looks.
+  for f in "$orch" "$del"; do
+    if says "$f" "no check is still pending"
+    then ok "$lang $(basename "$f") states the wait condition"
+    else no "$lang $(basename "$f") states the wait condition"; fi
+  done
 
   # Every shipped script must be executable — CI invokes them by path.
   nonexec=""

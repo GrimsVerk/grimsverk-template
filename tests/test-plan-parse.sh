@@ -46,6 +46,40 @@ out="$(printf '%s\n' \
 expect_rc "asterisk bullets parse" 0 $?
 expect_contains "asterisk record has the file" "$out" "src/app/a.py"
 
+# ------------------------------------------- a plural section banner is not a slice
+# The defect this exists for. `## Slices` matched `^#+[[:space:]]*Slice`, so the
+# banner parsed as a slice declaring no files and no estimate and the whole plan
+# was rejected — and every plan copied from the shipped template carried it. The
+# symptom named neither the banner nor the template: the plan check failed, and
+# the review gate, handed an empty facts table it is told to trust, blocked on
+# that alone.
+out="$(printf '%s\n' \
+  '# Draft saving — Plan' \
+  '' \
+  '## Slices' \
+  '' \
+  '## Slice 1 — saves a draft' \
+  '- **Files:** `src/app/store.py`' \
+  '- **Estimate:** ~40 lines' \
+  | "$PARSE" 2>&1)"
+expect_rc "a plan with a '## Slices' banner still parses" 0 $?
+expect_contains "the real slice is found" "$out" "Slice 1 — saves a draft"
+expect_not_contains "the banner is not a slice" "$out" $'Slices\t'
+if [[ "$(printf '%s\n' "$out" | grep -c .)" -eq 1 ]]; then
+  ok "exactly one record comes out"
+else
+  no "exactly one record comes out" "$out"
+fi
+
+# Other headings that begin with the word are equally not slices.
+out="$(printf '%s\n' \
+  '## Slices' \
+  '## Slicing strategy' \
+  'prose about slices' \
+  | "$PARSE" 2>&1)"
+expect_rc "a plan of banners alone has no slices" 1 $?
+expect_contains "and says so plainly" "$out" "no slices found"
+
 # ------------------------------------------------------------- no slices at all
 out="$(printf '%s\n' '# A Plan' 'Some prose, no slices.' | "$PARSE" 2>&1)"
 expect_rc "plan with no slices is rejected" 1 $?
