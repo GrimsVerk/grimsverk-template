@@ -133,25 +133,34 @@ when you do. Never skip it for a slice with behaviour worth asserting on.
 Run them with background `&` + `wait` (or `xargs -P`), not one at a time.
 Defaults: engine `codex`, workspace-level sandbox. Keep the sandbox on — do NOT
 pass `--bypass-sandbox` unless the task genuinely requires it and you have said
-why. Collect each printed `WORKER_RESULT` line (id, branch, worktree, exit code).
+why. Collect each printed `WORKER_RESULT` line (id, branch, worktree, engine
+exit code, and `commits=<n>`).
+
+A spawn that exits **3** means the engine finished cleanly and committed
+nothing; a spawn that exits **2** failed before the worktree existed, and if it
+says *installed but not usable* the engine cannot authenticate — switch engines
+or sign in, and do not re-dispatch until it can.
 
 ## 4. Review, then assemble
 
 After the workers finish, for each one:
 
-- **Check it actually committed.** A branch with no commits beyond its base is a
-  **failed worker**, not a worker with nothing to say — most likely it edited
-  files and stopped without committing, and every one of those edits is about to
-  be discarded silently:
+- **Check it actually committed.** `spawn-worker.sh` now does this for you — it
+  exits 3 and prints `commits=0` when the engine returned cleanly having
+  committed nothing — but read the branch yourself as well, because "committed
+  something" is not "committed the slice":
 
   ```sh
   git -C <worktree> log --oneline feat/<slug>..HEAD   # empty => failure
   git -C <worktree> status --porcelain                # uncommitted leftovers
   ```
 
-  If the log is empty, treat the worker as errored: re-dispatch it once (with
-  the commit instruction made explicit) or discard it, and say so in your
-  report. Never let an empty branch pass as a success.
+  A branch with no commits beyond its base is a **failed worker**, not a worker
+  with nothing to say — most likely it edited files and stopped without
+  committing, or was refused every write and could not be told so. Treat it as
+  errored: re-dispatch it once (with the commit instruction made explicit) or
+  discard it, and say so in your report. Never let an empty branch pass as a
+  success.
 - Read its branch diff (`git -C <worktree> diff feat/<slug>...`) and its log
   under `.claude/orchestration-logs/<id>.log`.
 - Review the changes against `AGENTS.md` **and against the slice it was given** —
@@ -214,7 +223,7 @@ judgment.
 Clean up the worktrees you're done with:
 
 ```sh
-git worktree remove --force .claude/worktrees/<id>
+git worktree remove --force .worktrees/<id>
 git branch -D worker/<id>   # for discarded branches
 ```
 
