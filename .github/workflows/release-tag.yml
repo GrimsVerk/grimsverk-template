@@ -1,6 +1,6 @@
-name: Release tag
+name: Release
 
-# Tag every merge to main, automatically.
+# Tag AND release every merge to main, automatically.
 #
 # WHY THIS EXISTS. Copier resolves a template to its latest **tag**, not to the
 # tip of main. So a change that merges without a tag reaches no new project and
@@ -16,12 +16,18 @@ name: Release tag
 #   - anything else                                               -> patch
 # The subject of a squash or merge commit is the pull request title, so the PR
 # title is what controls the bump in practice.
+#
+# TAG vs RELEASE. Copier only needs the tag — it resolves refs. The GitHub
+# release is the human-facing half: it is what shows as "Latest" on the
+# repository page and what carries generated notes. Creating one without the
+# other leaves the repo looking stale even though the template moved, which is
+# exactly what happened to v0.4.1.
 
 on:
   push:
     branches: [main]
 
-# Needed to create and push the tag.
+# Needed to push the tag and create the release.
 permissions:
   contents: write
 
@@ -50,7 +56,19 @@ jobs:
           # the workflow re-triggering on its own tag push, and it also makes a
           # manual re-run a no-op rather than a duplicate bump.
           if existing="$(git tag --points-at HEAD | head -1)" && [ -n "$existing" ]; then
-            echo "HEAD is already tagged as $existing — nothing to do."
+            echo "HEAD is already tagged as $existing."
+            # Tagging and releasing are two API calls, so a failure between them
+            # leaves a tag with no release — and a plain "already tagged, done"
+            # would never repair it. Re-running the workflow fixes it instead.
+            if gh release view "$existing" >/dev/null 2>&1; then
+              echo "Release $existing already exists — nothing to do."
+            else
+              echo "Tag $existing has no release; creating it."
+              gh release create "$existing" \
+                --title "$existing" \
+                --generate-notes \
+                --latest=true
+            fi
             exit 0
           fi
 
@@ -72,11 +90,11 @@ jobs:
 
             if echo "$subject" | grep -qE '^[a-z]+(\([^)]*\))?!:' \
                || echo "$body" | grep -qE 'BREAKING[ -]CHANGE'; then
-              major=$((major + 1)); minor=0; patch=0; bump=major
+              major=$((major + 1)); minor=0; patch=0; bump="major"
             elif echo "$subject" | grep -qE '^feat(\([^)]*\))?:'; then
-              minor=$((minor + 1)); patch=0; bump=minor
+              minor=$((minor + 1)); patch=0; bump="minor"
             else
-              patch=$((patch + 1)); bump=patch
+              patch=$((patch + 1)); bump="patch"
             fi
             next="v${major}.${minor}.${patch}"
             echo "Bump: $bump -> $next"
@@ -89,4 +107,15 @@ jobs:
           $(git log -1 --pretty=%s)"
           git push origin "$next"
 
-          echo "Tagged $next" >> "$GITHUB_STEP_SUMMARY"
+          # A tag alone is enough for Copier, which resolves refs — but it is
+          # invisible on the repository page and carries no notes. The release
+          # is the human-facing half: it shows as "Latest", and --generate-notes
+          # writes the changelog from the merged pull requests since the last
+          # one. --latest=true is explicit rather than relying on GitHub's
+          # inference, so a backfilled or out-of-order tag cannot displace it.
+          gh release create "$next" \
+            --title "$next" \
+            --generate-notes \
+            --latest=true
+
+          echo "Tagged and released $next" >> "$GITHUB_STEP_SUMMARY"
