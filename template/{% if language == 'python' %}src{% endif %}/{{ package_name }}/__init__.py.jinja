@@ -1,3 +1,23 @@
-"""{{ project_name }}{% if description %}: {{ description }}{% endif %}."""
+{#-
+  The description is free text and lands on a line ruff measures. Two bugs
+  this shape avoids:
+
+  1. Line length. A one-line docstring `"""name: description."""` overflowed
+     ruff's 100-column limit on a 72-character description, so the generated
+     project failed its own CI on the very first push, before a line of code
+     existed. The summary line is now the name alone, and the description is
+     wordwrapped well inside the limit set in pyproject.toml.
+  2. A doubled period. The template appended `.` to a description that already
+     ended in one, giving `...AMD mobo..`. `trim('.')` strips whatever is there
+     so exactly one is emitted.
+-#}
+{% if description -%}
+"""{{ project_name }}.
+
+{{ description | trim | trim('.') | wordwrap(88) }}.
+"""
+{%- else -%}
+"""{{ project_name }}."""
+{%- endif %}
 
 __version__ = "0.1.0"

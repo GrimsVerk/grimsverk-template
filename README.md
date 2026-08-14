@@ -9,53 +9,128 @@ Supported languages:
 - `python` — uv-managed package, src layout, ruff + mypy + pytest
 - `swift-ios` — SwiftUI iOS app, XcodeGen-managed project, SwiftFormat + SwiftLint
 
+## Before you start: GitHub Pro is required
+
+> **The gate design does not work on a Free plan private repository.** Branch
+> protection and rulesets are Pro-only for private repos, and *everything* here
+> depends on them: required status checks, `CODEOWNERS` enforcement, auto-merge.
+> You will get all the way to step 6, open the ruleset page, and find nothing to
+> configure.
+>
+> Two ways through:
+>
+> - **Pay for GitHub Pro.** Per-user, and it covers every private repo on the
+>   account — one subscription, not one per project.
+> - **Make the repo public.** Branch protection is free on public repos. Note
+>   what that means here: this template ships no `LICENSE` by design, so a public
+>   repo is public **and unlicensed** — readable by anyone, with no permissions
+>   granted to anyone.
+
 ## Starting a new project
 
 **You never clone this template.** Copier reads it from GitHub and *renders* a
 fresh project into a new local directory. That directory is not a git repo and
 has no remote — you turn it into one and push it to a brand-new, empty GitHub
-repo. Steps 1–4 get you a working local project; step 5 turns on the merge
-gates, and its order matters (see below).
+repo. Steps 1–5 get you a working local project on GitHub; step 6 turns on the
+merge gates, and its order matters.
 
-### 0. Install Copier (once per machine)
+Set the project name once. **Every command below uses `$PROJECT`, so nothing
+after this needs editing** — copy them verbatim.
 
 ```sh
-uv tool install copier   # or: pipx install copier
+PROJECT=find_best_mobo
 ```
+
+> `$PROJECT` lives in the shell that set it. Open a new terminal, or come back
+> tomorrow, and you need to run that line again before any command below works.
+
+### 0. System readiness (once per machine)
+
+```sh
+# Arch
+sudo pacman -S uv git github-cli
+```
+
+```sh
+# macOS
+brew install uv git gh
+```
+
+Then, either OS — `copier` and `pre-commit` are installed as **machine tools**,
+not project dependencies:
+
+```sh
+uv tool install copier
+uv tool install pre-commit
+```
+
+`pre-commit` bootstraps its own isolated environments for each hook, so it does
+not belong in a project's dependencies. It also has to work for the `swift-ios`
+scaffold, which has no Python virtual environment to install into at all.
+
+You also need the **Claude Code CLI** for `claude setup-token` in step 6a — see
+[the install docs](https://docs.claude.com/en/docs/claude-code/setup).
+
+**Verify SSH.** Everything downstream depends on this answering with your name:
+
+```sh
+ssh -T git@github.com-grimsverk
+```
+
+Expect `Hi GrimsVerk! You've successfully authenticated...`. If instead you get
+a permission error, stop and fix the key before going further — every git and
+`gh` command below will fail in ways that look like something else.
+
+> `ssh -T git@github.com` (without the `-grimsverk` alias) failing is **normal**
+> and not a problem. The alias is what carries the right key; the bare host has
+> no key attached.
+
+**Verify the GitHub CLI:**
+
+```sh
+gh auth status
+```
+
+It must show `GrimsVerk`. If not, `gh auth login` and answer:
+**SSH** for the protocol · **Skip** the public key upload (the key is already on
+the account, and uploading asks for an `admin:public_key` scope the CLI does not
+need) · **Login with a web browser**.
+
+> The browser grant follows whichever account is *currently signed in*. If that
+> is not GrimsVerk, you will authorise the wrong account without being told.
+> Check the browser session first.
 
 ### 1. Generate the project
 
 ```sh
-copier copy gh:GrimsVerk/grimsverk-template my-project
-cd my-project
+copier copy git+ssh://git@github.com-grimsverk/GrimsVerk/grimsverk-template.git $PROJECT
+cd $PROJECT
 ```
 
-Copier asks six questions:
+> Do not use `gh:GrimsVerk/grimsverk-template`. That shorthand expands to an
+> HTTPS URL, which prompts for a password — and passwords have not worked for
+> git operations since 2021, so it fails after asking.
+
+**The project name is not a question.** It is `$PROJECT`, the directory you just
+named: the repo name, the Python package, and the name in every generated
+document. Copier asks four questions:
 
 | Question | Notes |
 | --- | --- |
-| `project_name` | Human-readable, e.g. `My App` |
-| `project_slug` | Defaults to a slugified `project_name`; used for the repo, package, and paths |
 | `language` | `python` or `swift-ios` |
-| `description` | One line; lands in the README and package metadata |
-| `auto_merge` | `true` (default) = green PRs merge themselves. Choose `false` for anything real people download, or that touches payments, secrets, or user data |
-| `code_owner` | Required. A real `@handle` or `@org/team` — GitHub silently ignores `CODEOWNERS` entries that don't resolve |
+| `description` | One line; lands in the README, the package metadata, and the module docstring |
+| `auto_merge` | `true` (default) = green PRs merge themselves. Choose `false` for anything real people download, or that touches payments, secrets, or user data — those keep a human merge |
+| `code_owner` | Defaults to `@GrimsVerk`. Owns the merge gates in `CODEOWNERS`: changes to CI, the review check, pre-commit and the rule files need this owner's review, even under auto-merge. Must be a real `@handle` or `@org/team` — GitHub silently ignores entries that don't resolve |
 
-### 2. Bootstrap the toolchain
+If the directory name cannot be a Python package name, generation stops before
+writing anything and tells you so. `find_best_mobo` and `find-best-mobo` are both
+fine; `My App 2.0` is not.
 
-```sh
-uv sync                                            # python
-brew install xcodegen swiftformat swiftlint \
-  && xcodegen generate                             # swift-ios
-```
+### 2. Make it a git repo
 
-Then, either language:
-
-```sh
-pre-commit install
-```
-
-### 3. Make it a git repo
+`git init` comes **before** `pre-commit install`, because `pre-commit install`
+writes into `.git/hooks/` and fails with `FatalError: git failed` outside a
+repository.
 
 ```sh
 git init -b main
@@ -66,74 +141,165 @@ git commit -m "Initial scaffold from grimsverk-template"
 The generated `AGENTS.md` forbids committing directly to `main`; this initial
 scaffold commit is the one exception, made before the gates exist.
 
-### 4. Create an empty GitHub repo and push
-
-Create the repo with **no** README, `.gitignore`, or license — any of those
-gives it a commit your local `main` doesn't have, and the first push is
-rejected. Either use the web UI and then:
+**Check the commit went in under the right identity:**
 
 ```sh
-git remote add origin git@github.com:GrimsVerk/my-project.git
+git log -1 --format='%an <%ae>'
+```
+
+It must show the GrimsVerk identity — the conditional include in `~/.gitconfig`
+handles that for anything under `~/code/GrimsVerk/`. If it shows something else,
+fix it now:
+
+```sh
+git config user.email 'your-grimsverk-email'
+git commit --amend --reset-author --no-edit
+```
+
+One command now, or a `git filter-repo` run over a whole history later.
+
+### 3. Bootstrap the toolchain
+
+```sh
+uv sync              # python
+pre-commit install
+```
+
+```sh
+brew install xcodegen swiftformat swiftlint   # swift-ios
+xcodegen generate
+pre-commit install
+```
+
+### 4. Create the GitHub repo
+
+```sh
+gh repo create GrimsVerk/$PROJECT --private --source=.
+git remote set-url origin git@github.com-grimsverk:GrimsVerk/$PROJECT.git
 git push -u origin main
 ```
 
-…or do both at once:
+The `set-url` line is not optional and not a fix for a failure. `gh repo create`
+will report that it added a `git@github.com:` remote — that plain host has no key
+attached, so a push against it fails. Rewriting it to the `github.com-grimsverk`
+alias is what makes the push work.
+
+> Do **not** use `gh repo create --remote=origin --push`. It sets the remote to
+> the keyless plain host and pushes in the same breath, so it fails with no
+> opportunity to correct the URL first.
+
+### 5. Confirm the first CI run
+
+Watch the push land green before configuring anything else — the checks have to
+report once before they can be marked required.
 
 ```sh
-gh repo create my-project --private --source=. --remote=origin --push
+gh run watch
 ```
 
-### 5. Turn on the gates — in this order
+### 6. Turn on the gates — in this order
 
 GitHub only lets you mark a status check *required* after it has reported at
-least once, and the two gates first report at different times:
+least once, and the checks first report at different times:
 
 | Check | Runs on | First reports after |
 | --- | --- | --- |
-| `checks` (python) / `test` (swift-ios) | every push | your first push |
-| `review` | pull requests only | your first **PR** |
+| `checks` (python) / `test` (swift-ios), `secrets` | every push | your first push |
+| `plan`, `test-the-tests`, `review` | pull requests only | your first **PR** |
 
-So `review` cannot be marked required straight after step 4 — it won't be in
-the dropdown yet. Hence:
+So most of the list cannot be marked required straight after step 4 — the names
+won't be in the dropdown yet. Hence the order:
 
 **a. Add the review credential first.** *Settings → Secrets and variables →
 Actions → New repository secret*, named `CLAUDE_CODE_OAUTH_TOKEN`. Get the
-value by running `claude setup-token` locally (needs the Claude Code CLI; it
-uses your subscription, not a metered API key). Do this *before* making
-`review` required — the job fails closed without a credential, so every PR
-would block.
+value by running `claude setup-token` locally (uses your subscription, not a
+metered API key). Do this *before* making `review` required — the job fails
+closed without a credential, so every PR would block.
 
-**b. Enable the merge settings.** *Settings → General → Pull Requests*: tick
-**Allow auto-merge**, and leave **Allow merge commits** on. Merge commits are
-what make the one-line revert in the generated README work, so keep them even
-when `auto_merge` is `false`.
+**b. Enable the merge settings.** *Settings → General → Pull Requests*:
 
-**c. Open one throwaway PR** so the `review` check registers:
+- **Allow auto-merge** — on. Without it, `auto-merge.yml` cannot arm anything.
+- **Allow merge commits** — on (the default). Merge commits are what make the
+  one-line `git revert -m 1 <merge-sha>` rollback work, so keep them even when
+  `auto_merge` is `false`.
+- **Automatically delete head branches** — on. Off by default, and every
+  orchestrated feature leaves a stale branch behind without it.
+
+**c. Open one throwaway PR** so the PR-only checks register:
 
 ```sh
-git checkout -b setup-gates
-git commit --allow-empty -m "Register the review check"
-git push -u origin setup-gates
+git checkout -b chore/register-checks
+git commit --allow-empty -m "Register the pull-request checks"
+git push -u origin chore/register-checks
+gh pr create --fill
 ```
 
-Open the PR on GitHub and let both checks run.
+The `chore/` prefix matters: it exempts the branch from the `plan` check, which
+would otherwise fail an empty commit that has no plan. Let every check run.
 
-**d. Now add branch protection** (*Settings → Branches → Add branch ruleset*,
-or classic *Add rule*) on `main`:
+**d. Add the ruleset.** *Settings → Rules → New ruleset → New branch ruleset*.
 
-- Require a pull request before merging — with **Required approvals: `0`**
-- **Require review from Code Owners** ✅
-- Require status checks to pass ✅ → select `checks` (or `test` for swift-ios),
-  `secrets`, `plan`, `test-the-tests`, **and** `review`
+- **Target branches — this is empty by default and enforces nothing.** Add
+  target → **Include default branch**. A saved ruleset with no target displays
+  `This ruleset does not target any resources and will not be applied`, which is
+  easy to read past. Prefer *Include default branch* over naming `main`: it is a
+  pointer, so it survives a default-branch rename.
+- **Enforcement status: Active.** Not *Disabled*, and not *Evaluate* —
+  *Evaluate* reports what it *would* have blocked and blocks nothing.
+- **Restrict deletions** and **Block force pushes** — leave both on. Block force
+  pushes is what protects the revert-based rollback. A deliberate history rewrite
+  means toggling the rule off and back on, which is the intended amount of
+  friction.
+- **Do NOT enable "Require linear history."** It sits directly beside rules you
+  do want, and it blocks merge commits — which breaks `git revert -m 1`, the
+  rollback the whole auto-merge design leans on.
+- **Bypass list** — leave it empty. Anyone on it can push straight past every
+  rule below; an empty list means the rules apply to you too, which is the point
+  when you are the only author. It can be edited on a live ruleset whenever you
+  actually need an exception.
+- **Require a pull request before merging** — on, with **Required approvals: 0**
+  and **Require review from Code Owners** on.
+- **Require branches to be up to date before merging** — recommended on. The
+  merge queue that normally absorbs its friction is not available on Pro for
+  private repos (the rule simply does not appear), but at one-PR-at-a-time — which
+  the orchestration design already enforces — the friction is negligible.
+- **Require status checks to pass** → add `checks` (or `test` for swift-ios),
+  `secrets`, `plan`, `test-the-tests`, and `review`.
+- **Do not enable** code scanning, code quality, coverage, or deployment rules.
+  No workflow in this template emits those results, so every PR would wait
+  forever on a check that never arrives.
 
-> The approvals number is the setting to get right. Anything ≥ 1 gates *every*
-> PR on a human approval, and auto-merge never fires. `0` **plus** *Require
-> review from Code Owners* is the intent: ordinary PRs merge on green, while
-> PRs touching the gate paths in `CODEOWNERS` still need your approval.
+> The approvals number is the setting most likely to be got wrong. Anything ≥ 1
+> gates *every* PR on a human approval, and auto-merge never fires. `0` **plus**
+> *Require review from Code Owners* is the intent: ordinary PRs merge on green,
+> while PRs touching the gate paths in `CODEOWNERS` still need your approval.
 
-**e. Merge or close the setup-gates PR.**
+**e. Merge or close the throwaway PR.**
 
-### 6. Start working
+> **Changing the required-check list does not re-evaluate open PRs.** A PR opened
+> before you edited the list keeps waiting on the old one, forever, with no
+> indication why. Close and reopen it, or push an empty commit, to re-evaluate.
+
+### The CODEOWNERS self-approval deadlock
+
+**GitHub never requests review from, or accepts an approval by, the author of a
+pull request.** You own the gate paths in `CODEOWNERS` and you author every pull
+request, so **a PR that touches `.github/`, `AGENTS.md`, `docs/plans/` or the
+other owned paths cannot be merged normally.** Code Owners review is required,
+and the only eligible reviewer is you, and you are disqualified.
+
+This is GitHub working as designed, not a misconfiguration, and there is no
+setting that fixes it. The ways through:
+
+- **Admin bypass** — merge it yourself with admin rights, which is what the
+  bypass list exists for if you decide to use it.
+- **Toggle the ruleset to Disabled**, merge, and switch it back to Active.
+
+Expect this the first time you change a workflow. It is the cost of having the
+gate paths owned at all, and the alternative — leaving them unowned — is what the
+whole design is built to avoid.
+
+### 7. Start working
 
 Run `/design` in the project and rant your idea at it — it writes
 `docs/DESIGN.md`, which the review gate then checks every PR against. After
@@ -238,6 +404,27 @@ existing project.
 > and runs no tasks or migrations. If a future version adds one, Copier will
 > refuse and tell you to re-run with `--trust`.
 
+## Releases and versions
+
+**Tagging is automatic.** Every merge to `main` is tagged by
+`.github/workflows/release-tag.yml`; there is nothing to run by hand. The bump is
+patch by default, and the merged pull request's **title** escalates it: a `feat:`
+prefix bumps the minor, `BREAKING` or a `feat!:`-style `!` bumps the major.
+
+This matters because **Copier resolves a template to its latest tag, not to the
+tip of `main`.** That is why `copier copy` and `.copier-answers.yml` show a
+version like `v0.4.0` rather than a commit. It also used to be a trap: a change
+could merge, sit untagged on `main`, and reach no new project and no
+`copier update` — which is exactly how `find_best_mobo` came to be generated from
+`v0.3.0` while `main` was several merges ahead of it. The workflow closes that.
+
+To test a template change that has merged but is not tagged yet — or to try an
+unmerged branch — point Copier at a ref explicitly:
+
+```sh
+copier update --vcs-ref=HEAD
+```
+
 ## Layout
 
 ```
@@ -288,3 +475,6 @@ belongs to the template repo and never leaks into generated projects.
    `ci.yml.jinja`, `.gitignore.jinja`, `README.md.jinja`,
    `AGENTS.md.jinja` (Enforcement + Language-specific sections), and
    `.claude/settings.json.jinja`.
+4. Add the language to the matrix in `.github/workflows/template-ci.yml`, and
+   check that `description` — the one free-text answer — cannot overflow any
+   line length the new language's linter enforces. That bug has shipped twice.

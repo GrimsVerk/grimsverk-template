@@ -69,18 +69,18 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv tool install copier
       - name: Render a project
-        # An awkward project_name on purpose: the slug is derived from it and
-        # feeds both the Python package name and the Swift type name.
+        # The destination directory name IS the project name — it feeds the
+        # Python package and the Swift type — so it is chosen deliberately here
+        # rather than passed as an answer.
         run: |
           copier copy --defaults --trust \
-            --data project_name="My Second App" \
             --data language="${{ matrix.language }}" \
             --data description="Rendered by template CI" \
             --data code_owner="@grimsverk" \
-            . /tmp/rendered
+            . /tmp/my_second_app
       - name: The rendered project must pass its own gate
         if: matrix.language == 'python'
-        working-directory: /tmp/rendered
+        working-directory: /tmp/my_second_app
         run: |
           uv sync
           uv run ruff check .
