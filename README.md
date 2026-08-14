@@ -85,6 +85,26 @@ a permission error, stop and fix the key before going further — every git and
 > and not a problem. The alias is what carries the right key; the bare host has
 > no key attached.
 
+**Route the template's HTTPS URL over SSH.** You will generate projects from
+`https://github.com/GrimsVerk/grimsverk-template.git` — because that is the URL
+CI has to be able to fetch — but your key is what authenticates you locally. One
+rule bridges the two:
+
+```sh
+git config --global \
+  url."ssh://git@github.com-grimsverk/GrimsVerk/grimsverk-template.git".insteadOf \
+  "https://github.com/GrimsVerk/grimsverk-template.git"
+```
+
+It is scoped to that single URL, so no other GitHub remote is affected. Check it
+with `git config --global --get-regexp insteadOf`.
+
+> This lives in `~/.gitconfig`, so it is **per machine** — a new laptop needs it
+> again, and the symptom there is a password prompt on `copier copy` or
+> `copier update`. Do not "fix" that by generating from the SSH URL instead: that
+> writes the alias into `_src_path`, which resolves on exactly one machine and
+> breaks `template-sync` for everyone including CI.
+
 **Verify the GitHub CLI:**
 
 ```sh
@@ -103,13 +123,25 @@ need) · **Login with a web browser**.
 ### 1. Generate the project
 
 ```sh
-copier copy git+ssh://git@github.com-grimsverk/GrimsVerk/grimsverk-template.git $PROJECT
+copier copy https://github.com/GrimsVerk/grimsverk-template.git $PROJECT
 cd $PROJECT
 ```
 
-> Do not use `gh:GrimsVerk/grimsverk-template`. That shorthand expands to an
-> HTTPS URL, which prompts for a password — and passwords have not worked for
-> git operations since 2021, so it fails after asking.
+**Use the `https://` URL, even though you authenticate over SSH.** Copier records
+whatever URL you type into `.copier-answers.yml` as `_src_path`, and that value
+is later read by *CI* — which has no SSH key and cannot resolve a host alias from
+your personal `~/.ssh/config`. Hand it an `ssh://git@github.com-grimsverk/…` URL
+and the `template-sync` check fails with `Could not resolve hostname` before
+copier even starts, and no token can fix it.
+
+The `insteadOf` rule from step 0 is what makes this work on your machine: git
+quietly routes that one HTTPS URL back over SSH, so your key is still what
+authenticates. Neither side has to know about the other.
+
+> Do not use `gh:GrimsVerk/grimsverk-template` either. That shorthand also
+> expands to HTTPS, but it is not the URL your `insteadOf` rule matches, so it
+> prompts for a password — and passwords have not worked for git operations
+> since 2021.
 
 Copier asks five questions, and the first one answers itself:
 

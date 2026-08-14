@@ -72,6 +72,21 @@ for lang in python swift-ios; do
     else no "$lang ci.yml defines '$job'"; fi
   done
 
+  # The secrets job must be able to read pull requests. gitleaks-action lists a
+  # PR's commits through the API, and the default token cannot — it answers 403
+  # and the job dies before scanning anything, which is the worst shape a check
+  # can fail in: present, red, and having checked nothing. Asserted here because
+  # the symptom looks like a broken action rather than a missing permission.
+  if python3 - "$ci" <<'PYCHK'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+p = d["jobs"]["secrets"].get("permissions") or {}
+sys.exit(0 if p.get("pull-requests") == "read" and p.get("contents") == "read" else 1)
+PYCHK
+  then ok "$lang secrets job can read pull requests"
+  else no "$lang secrets job can read pull requests" \
+    "needs permissions: {contents: read, pull-requests: read}"; fi
+
   # Every workflow must parse as YAML.
   bad=""
   for wf in "$out"/.github/workflows/*.yml; do
