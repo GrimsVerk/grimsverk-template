@@ -13,13 +13,37 @@ Scope, if the owner named one (otherwise: the whole design):
 
 $ARGUMENTS
 
-## 0. Preconditions
+## 0. Preconditions, and which mode you're in
 
 - `docs/DESIGN.md` exists and the owner has approved it. If it's still a
   skeleton or a draft nobody signed off, **stop** — run `/design` first.
 - Its §5 requirements have ids (`R1`, `R2`, …) and its §13 success criteria have
   ids (`S1`, `S2`, …). If not, add them and get the owner to confirm; everything
   below is keyed on them.
+
+**Pick a mode with the owner before starting.** Two shapes, and the difference is
+where the owner's attention gets spent:
+
+- **Alternating** (default). Plan one milestone, build it, then plan the next
+  with what you learned. The owner is in the loop at each milestone. Right for
+  work where the design might be wrong — a novel algorithm, an unfamiliar
+  domain, anything where building the first piece teaches you something about
+  the third.
+- **Batch.** Plan *every* milestone up front, land all the plans in **one**
+  `docs/` pull request, take one approval, then run the build queue to the end
+  without stopping. Right for work whose shape is already known — a port, a
+  CRUD app, a refactor you can see the end of.
+
+Batch requires no different gates: the plans still exist before the code that
+implements them, `CODEOWNERS` still reviewed them, and each feature branch still
+resolves to its plan. What changes is only how many times the owner is asked.
+
+**Say the cost out loud when proposing batch.** Planning everything before
+building anything means milestone 4's plan was written by someone who had not
+built milestones 1–3 — that is *waterfall*, and vertical slices exist precisely
+to avoid it. Batch also moves the owner's oversight from "approve each plan" to
+"verify the built system against §13", which makes those success criteria
+load-bearing. If §13 is vague, batch mode is the wrong choice; fix §13 first.
 
 ## 1. See what's left
 
@@ -38,35 +62,64 @@ Read the exit code, they mean different things:
   ids, and planning against a design that has none produces plans whose coverage
   can never be checked.
 
-## 2. Plan the next milestone
+## 2. Plan
 
-Take the next milestone from `docs/DESIGN.md` §12 and run `/plan` for it,
-covering as many of the unplanned requirements as that milestone genuinely
-delivers. Set the plan's `covers:` to exactly those ids — padding it makes the
-coverage report lie in the one direction that hurts.
+**Alternating mode:** take the *next* milestone from `docs/DESIGN.md` §12.
+**Batch mode:** work through *every* remaining milestone here, one `/plan` run
+each, before building anything.
 
-**The uncertainty gate is a hard stop.** `/plan` lists what it had to guess at
-and waits for the owner's ruling. Do not skip it, do not answer on the owner's
-behalf, and do not proceed to step 3 without rulings. This is the only gate that
-catches building the wrong thing correctly, and everything downstream is
-incapable of noticing.
+Either way, run `/plan` per milestone, covering as many of the unplanned
+requirements as that milestone genuinely delivers. Set each plan's `covers:` to
+exactly those ids — padding it makes the coverage report lie in the one
+direction that hurts.
 
-**Then land the plan before building it.** The plan merges on its own
-`docs/`-prefixed pull request, reviewed by the owner via `CODEOWNERS`. Wait for
-that merge — step 3 branches off the default branch and CI's `plan` check fails
-any pull request whose plan is not already at its base commit. A plan that
-arrives with its own implementation is a description, not a specification, and
-the review gate would be checking the work against a document the work wrote.
+**The uncertainty gate stops only when it has something to say.** `/plan` lists
+what it had to guess at and waits for a ruling; if the list is genuinely empty
+because everything derived from the design, it records that and continues. Never
+answer on the owner's behalf, and never empty the list to avoid waiting — this is
+the only gate that catches building the wrong thing correctly, and everything
+downstream is incapable of noticing. In batch mode, collect the questions from
+*all* the milestones and ask them in one pass rather than interrupting per plan.
 
-## 3. Build it
+**Then land the plans before building.** Plans merge on a `docs/`-prefixed pull
+request, reviewed by the owner via `CODEOWNERS` — one PR carrying one plan in
+alternating mode, one PR carrying all of them in batch. Wait for that merge:
+step 3 branches off the default branch, and CI's `plan` check fails any pull
+request whose plan is not already at its base commit. A plan that arrives with
+its own implementation is a description, not a specification, and the review gate
+would be checking the work against a document the work wrote.
 
-Run `/orchestrate <slug>` — or several slugs, if their plans touch disjoint
-files and the total worker count fits the cap (remember each slice spawns a
-coder *and* a test-writer, so budget two per slice).
+## 3. Build
 
-`/orchestrate` opens one pull request per feature and stops. **So do you.**
+Run `/orchestrate <slug>` for one feature. It builds that feature, opens one
+pull request, and stops — **so do you**, in alternating mode.
+
+In **batch mode**, work the queue: one `/orchestrate` per plan, in milestone
+order, waiting for each feature's pull request to go green before starting the
+next. Sequential, not parallel — an orchestrator drives one feature, and running
+two means two sessions, which is the owner's call to make, not yours.
 
 ## 4. Wait for the pipeline
+
+> **⚠ OPEN QUESTION — RAISE THIS WITH THE OWNER BEFORE A LONG UNATTENDED RUN.**
+>
+> This step says "wait" without saying *how*, and nobody has decided yet. Each
+> feature costs minutes of CI plus an LLM review, and in batch mode that repeats
+> per plan, so an unattended run is mostly waiting. The options have real
+> tradeoffs and the owner wants to pick:
+>
+> - **idle** — end the turn and let the owner resume. Costs nothing, but the run
+>   is not actually unattended.
+> - **poll** — re-check every N seconds. Unattended, but spends budget on
+>   information that usually has not changed, and that budget is shared with the
+>   review gate you are waiting for.
+> - **something else** — a scheduled wake-up, a webhook, or a stop-and-report at
+>   each PR boundary.
+>
+> Until this is decided: **stop at the pull request and report**, rather than
+> guessing. Say plainly that you are stopping because the waiting strategy is
+> undecided, and offer the options above. Delete this block once the owner rules,
+> and record the ruling in `docs/DECISIONS.md`.
 
 PRs merge when their required checks go green — CI, `plan`, `test-the-tests`,
 and the review gate. That is mechanical and none of it is yours to drive. Do not
@@ -87,8 +140,12 @@ What you *may* do while waiting:
 
 ## 5. Loop
 
-Back to step 1. Continue until `coverage.sh` reports every requirement covered
-and all those plans have merged.
+**Alternating mode:** back to step 1 — plan the next milestone with what this one
+taught you. **Batch mode:** back to step 3, the next plan in the queue; the
+planning is already done and the owner is not waiting on you.
+
+Continue until `coverage.sh` reports every requirement covered and all those
+plans have merged.
 
 Stop the loop early and go to the owner if: the design turns out to be wrong or
 incomplete, two milestones in a row need rulings you can't get, or the same

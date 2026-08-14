@@ -1,56 +1,54 @@
 ---
-description: Build a planned feature (or several small ones) in parallel, each on its own branch, and open a PR per feature
+description: Build one planned feature in parallel worker agents and open a pull request for it
 ---
 
-> **Budget first.** The cap is ~8 concurrent workers and every slice spawns two
-> — a coder and a test-writer. So a 4-slice plan is 8 workers, the entire
-> budget, and **one feature at a time is the normal case**. Running several at
-> once only fits when their plans are small *and* touch disjoint files. If in
-> doubt, sequence them: a feature that waits costs you time, while a fan-out
-> that starves the review gate costs you the checks that catch the output.
-
 You are the **orchestrator**. Drive the single-layer orchestration described in
-`.claude/orchestration.md` (read it first if you have not). The features to
-build — one or more plan slugs:
+`.claude/orchestration.md` (read it first if you have not).
+
+**One feature per orchestrator.** You build the single feature named below,
+start to finish. If more than one slug is given, take the first, build it, and
+say plainly that the others need their own session — the owner runs a second
+`/orchestrate` in a second window for those. Do not try to juggle two features
+here: the reason is in `.claude/orchestration.md`, and it is about keeping your
+own context clean for assembly, which is the step that degrades silently.
+
+The feature to build — one plan slug:
 
 $ARGUMENTS
 
 Follow these steps.
 
-## 1. Load the plans
+## 1. Load the plan
 
-Each feature must already have a plan at `docs/plans/<slug>.md`. If one doesn't,
-**stop and write it first** (`/plan`) — planning is not optional for non-trivial
-work, and CI's `plan` check will fail any PR that can't be matched to a plan.
+The feature must already have a plan at `docs/plans/<slug>.md`, and that plan
+must already be merged — CI's `plan` check fails any PR whose plan is not at its
+base commit. If there is no plan, **stop and write it first** (`/plan`); if there
+is one but it hasn't landed yet, stop and land it.
 
-Read each plan. Its **slices are the subtasks** — do not invent a second
-decomposition. One worker per slice.
+Read the plan. Its **slices are the subtasks** — do not invent a second
+decomposition.
 
-If a plan's slices are not scoped to disjoint files, fix the plan rather than
+If the plan's slices are not scoped to disjoint files, fix the plan rather than
 working around it here.
 
-## 2. Check the features don't collide
+## 2. Check the budget before spawning
 
-If you were given more than one slug, compare the declared files across their
-plans:
+Two limits from `.claude/orchestration.md`, and they are not the same limit:
 
-```sh
-grep -h '^- \*\*Files:\*\*' docs/plans/<slug-a>.md docs/plans/<slug-b>.md
-```
+- **12 concurrent workers** — machine and subscription. Workers share the rate
+  limit with the PR review gate, and that gate fails closed, so over-spawning
+  can leave you unable to merge what you just built.
+- **6 slices assembled in one session** — your context. Assembly reads every
+  diff and reconciles every code/test pair, and it degrades quietly rather than
+  failing.
 
-Any file claimed by two features means their PRs will conflict on merge, and
-neither PR's checks will have seen the combination. **Run those features
-sequentially instead**, and say that you're doing so. Only genuinely disjoint
-features run at once.
+A 3–5 slice plan sits inside both. If this plan has more than 6 slices, say so:
+that is the plan telling you it is really two features, and the fix is to split
+the plan, not to push through.
 
-Check the totals before spawning: **cap total concurrent workers at ~8** across
-all features. Rate limits are shared by the workers and by every PR's review
-gate, so over-spawning starves the checks that are supposed to catch the output.
-If the total exceeds the cap, run fewer features at once.
+## 3. Create the branch, then spawn the workers
 
-## 3. Per feature: create the branch, then spawn its workers
-
-For each feature, get onto its branch. Create it off the default branch the
+Get onto the feature's branch. Create it off the default branch the
 first time; switch to it if it already exists, because **dispatching a fix into
 an open pull request runs this same command** (`/deliver` step 4) and must not
 fail on a branch that is already there:
@@ -120,26 +118,26 @@ Spawn every worker **in parallel**, each via the primitive:
 .claude/scripts/spawn-worker.sh --id <slug>-<n>-tests --base feat/<slug> --prompt "<test prompt>" &
 ```
 
-Pairing **doubles the worker count** — a 4-slice feature is 8 processes, which
-is the whole concurrency cap. Budget for it: run fewer slices at once, or fewer
-features. You may skip the pair and let the coder write its own tests for a
+Pairing **doubles the worker count** — a 5-slice feature is 10 processes, close
+to the 12 cap. You may skip the pair and let the coder write its own tests for a
 slice that delivers no real logic (pure scaffolding, config, a rename); say so
 when you do. Never skip it for a slice with behaviour worth asserting on.
 
 - `--id <slug>-<n>` becomes the branch `worker/<slug>-<n>`, keeping every branch
   traceable to its plan.
 - `--base feat/<slug>` is **required**, not optional. It defaults to the current
-  HEAD, which is silently wrong once a second feature exists — workers would
-  branch off another feature's code and carry it into this PR.
+  HEAD, which is whatever you happen to have checked out — pass it explicitly so
+  a worker cannot branch off the wrong commit and carry unrelated code into
+  this PR.
 
 Run them with background `&` + `wait` (or `xargs -P`), not one at a time.
 Defaults: engine `codex`, workspace-level sandbox. Keep the sandbox on — do NOT
 pass `--bypass-sandbox` unless the task genuinely requires it and you have said
 why. Collect each printed `WORKER_RESULT` line (id, branch, worktree, exit code).
 
-## 4. Per feature: review, then assemble
+## 4. Review, then assemble
 
-After a feature's workers finish, for each one:
+After the workers finish, for each one:
 
 - **Check it actually committed.** A branch with no commits beyond its base is a
   **failed worker**, not a worker with nothing to say — most likely it edited
@@ -204,7 +202,7 @@ After a feature's workers finish, for each one:
   description rather than several workers' fragments stitched together. Fix it
   yourself if not; it is the file the owner reads.
 
-## 5. Per feature: open a PR, then stop
+## 5. Open the PR, then stop
 
 Push `feat/<slug>` and open **one** pull request for it. **Do not merge it.**
 Your job ends here: the merge is the pipeline's, triggered by the required checks
@@ -222,6 +220,8 @@ git branch -D worker/<id>   # for discarded branches
 
 ## 6. Report
 
-Per feature: what each worker was asked to build, which branches you assembled,
-which you discarded and why, and the PR link. Then, across features: anything you
-sequenced rather than parallelised and why, and any plan you had to fix.
+What each worker was asked to build, which branches you assembled, which you
+discarded and why, and the PR link. Then: any slice whose code and tests
+disagreed and how you resolved it, and any plan wording you had to fix. If other
+slugs were passed and you deferred them, name them and say they need their own
+session.

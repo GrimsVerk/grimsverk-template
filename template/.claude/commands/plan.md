@@ -15,6 +15,13 @@ that are easy to skip and are the whole point:
 
 1. **Run the uncertainty gate before writing any slices.** List what you had to
    guess at, stop, and wait for a ruling. Record the rulings in the plan.
+
+   If the list is genuinely **empty** — every decision derived from
+   `docs/DESIGN.md`, nothing guessed — say so in that section and continue
+   without stopping. Do not manufacture a question to have something to ask.
+   Equally, do not empty the list to avoid waiting: the owner reviews the plan
+   before it merges, and a plan that claims certainty it did not have is the one
+   failure this gate exists to catch.
 2. **Slice vertically** — each slice delivers something observable end-to-end.
 3. **Land the plan on its own pull request, before any code exists.** Commit it
    on a `docs/`-prefixed branch — exempt from the plan check, which is what the

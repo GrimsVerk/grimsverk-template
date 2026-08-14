@@ -23,7 +23,15 @@ leaves nothing testable until the end, when steering is most expensive. Each
 slice declares the files it touches, its type and method signatures, and a line
 estimate. Before writing any slices, list the decisions you had to guess at
 rather than derive, and stop for the owner's ruling — then record the rulings in
-the plan. The estimate is a **tripwire, not a target**: never compress code,
+the plan.
+
+**The stop is conditional on there being something to stop for.** If every
+decision was derived from `docs/DESIGN.md` rather than guessed, write "no
+uncertainties — every decision derived from the design" in that section and keep
+going. A gate that fires when it has nothing to report trains people to click
+through it, which is how it stops working on the day it matters. The plan is
+still reviewed by the owner before it merges, so a falsely empty list is visible
+where it counts. The estimate is a **tripwire, not a target**: never compress code,
 drop error handling, or thin tests to come in under it. An overrun does not fail
 the build; CI reports the delta and the reviewer asks whether it was justified.
 
