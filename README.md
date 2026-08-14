@@ -406,10 +406,15 @@ existing project.
 
 ## Releases and versions
 
-**Tagging is automatic.** Every merge to `main` is tagged by
-`.github/workflows/release-tag.yml`; there is nothing to run by hand. The bump is
-patch by default, and the merged pull request's **title** escalates it: a `feat:`
-prefix bumps the minor, `BREAKING` or a `feat!:`-style `!` bumps the major.
+**Tagging and releasing are automatic.** Every merge to `main` gets a tag *and*
+a GitHub release from `.github/workflows/release-tag.yml`; there is nothing to
+run by hand. The bump is patch by default, and the merged pull request's
+**title** escalates it: a `feat:` prefix bumps the minor, a `feat!:`-style `!`
+or a `BREAKING CHANGE:` footer bumps the major.
+
+Copier only needs the tag — it resolves refs. The release is the human-facing
+half: it is what appears as **Latest** on the repository page and what carries
+the generated notes.
 
 This matters because **Copier resolves a template to its latest tag, not to the
 tip of `main`.** That is why `copier copy` and `.copier-answers.yml` show a
