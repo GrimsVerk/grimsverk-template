@@ -263,6 +263,30 @@ projects* below for how to create it, and note its expiry date somewhere.
 - **Automatically delete head branches** — on. Off by default, and every
   orchestrated feature leaves a stale branch behind without it.
 
+  **This setting alone does not cover auto-merge, and the reason is worth
+  knowing.** GitHub does not create workflow runs from events caused by the
+  built-in `GITHUB_TOKEN` — a guard against a workflow triggering itself. So an
+  auto-merge armed with that token completes as `github-actions[bot]`, the
+  `pull_request: closed` event dispatches nothing, and nothing cleans up.
+  Observed downstream as twenty-two stale branches from bot merges alongside two
+  human merges that tidied up correctly, which reads exactly like the setting
+  being broken and is not.
+
+  Two answers, and they compose:
+
+  - **Optional: set an `AUTO_MERGE_TOKEN` secret** — a fine-grained PAT scoped
+    to this repository with `pull-requests: write` and `contents: write`.
+    `auto-merge.yml` prefers it over `GITHUB_TOKEN`, so merges are attributed to
+    you, the close event fires, and cleanup happens immediately. It bypasses
+    nothing — branch protection and required checks still apply — but it acts as
+    you, so scope it narrowly and note its expiry.
+  - **Always on: the scheduled sweep** in `auto-merge.yml` deletes branches whose
+    pull requests have merged, daily. Scheduled runs are not suppressed by the
+    token rule, so this works with no secret configured. It skips any branch an
+    open pull request still uses as head or base, and never touches a
+    closed-but-unmerged branch — that work is unmerged by definition and the
+    branch is often the only copy.
+
 **c. Open one throwaway PR** so the PR-only checks register:
 
 ```sh
