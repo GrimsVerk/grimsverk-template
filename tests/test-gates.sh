@@ -277,6 +277,47 @@ expect_contains "payload labels its sources" "$payload" "as of the base commit"
 expect_contains "payload carries the facts region" "$payload" "MECHANICAL FACTS"
 expect_contains "payload carries blind-test facts" "$payload" "blind-test authorship"
 
+# ------------------- a template sync tells the reviewer what it is looking at
+# Without this the review gate blocks EVERY template update that touches a
+# workflow — which is most of them, since shipping the gates is what a template
+# is for. Blocking on paths alone would forbid the project from ever receiving a
+# gate improvement. The reviewer is not asked to trust the branch name: it is
+# told that `template-sync`, a separate REQUIRED check, replays copier update
+# and fails unless the tree is byte-for-byte the result, so the merge is
+# conditional on that whatever the reviewer concludes.
+cat > "$WORK/bin/claude" <<'STUB'
+#!/usr/bin/env bash
+cat > "$REVIEW_PAYLOAD"
+echo "REVIEW_VERDICT: PASS"
+STUB
+chmod +x "$WORK/bin/claude"
+git -C "$R" switch -q main
+git -C "$R" switch -qc template/v9.9.9
+printf '\n# a template-owned change\n' >> "$R/AGENTS.md"
+commit_all "Update from template v9.9.9"
+( cd "$R" && PATH="$WORK/bin:$PATH" REVIEW_PAYLOAD="$WORK/tpl-payload.txt" \
+  BASE_SHA="$BASE3" HEAD_SHA="$(git rev-parse HEAD)" HEAD_REF=template/v9.9.9 \
+  .github/scripts/review.sh >/dev/null 2>&1 )
+tpl="$(cat "$WORK/tpl-payload.txt" 2>/dev/null || echo "")"
+# Asserted on wording unique to the FACT, naming this branch. The label and the
+# check's name both appear in the instructions, which every payload carries — so
+# matching either would have been true of every review ever run, including one
+# where the fact was never emitted. That is exactly the toothless-check failure
+# this repository keeps logging, and it happened here on the first attempt.
+expect_contains "a template branch is announced to the reviewer" "$tpl" \
+  "this pull request is on the branch 'template/v9.9.9'"
+expect_contains "and names the check that actually verifies it" "$tpl" \
+  "replays \`copier update\` from the base commit and fails unless this tree is"
+expect_contains "the prompt carries the carve-out" "$tpl" \
+  "forbids the project from ever receiving a gate"
+
+# ...and an ordinary branch gets no such FACT, or the exemption would be
+# available to anything. Asserted on the fact's own wording rather than on the
+# label: the label also appears in the instructions, which every payload
+# carries, so matching it would be true of every review ever run.
+expect_not_contains "an ordinary branch gets no sync fact" "$payload" \
+  "this pull request is on the branch"
+
 # --------------------------------------------------- delimiters carry a nonce
 # A fixed delimiter can be forged by diff content. The nonce is generated after
 # the diff is read, so it cannot be predicted; the prompt tells the reviewer
