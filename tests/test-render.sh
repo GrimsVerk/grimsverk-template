@@ -394,10 +394,49 @@ PYCHK
   # like the repository setting being broken, and is not.
   am="$out/.github/workflows/auto-merge.yml"
   if [[ -f "$am" ]]; then
-    if grep -q -- '--delete-branch' "$am"
-    then ok "$lang auto-merge deletes the head branch"
-    else no "$lang auto-merge deletes the head branch" \
-      "the repository setting does not cover an API-armed auto-merge"; fi
+    # A dedicated job keyed on closed+merged, NOT a flag. `gh pr merge --auto
+    # --delete-branch` is a no-op: gh deletes the branch itself after merging,
+    # and with --auto it never merges, so the step never runs. It exits 0 and
+    # says nothing, which is how that fix survived a whole release looking
+    # correct. Asserted on the job, and on the flag being GONE, so the no-op
+    # cannot creep back in as reassurance.
+    if python3 -c "
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+j = d['jobs'].get('delete-merged-branch') or {}
+cond = j.get('if', '')
+sys.exit(0 if \"merged == true\" in cond and 'closed' in cond else 1)
+" "$am"
+    then ok "$lang auto-merge deletes a merged head branch"
+    else no "$lang auto-merge deletes a merged head branch" \
+      "needs a delete-merged-branch job keyed on closed AND merged"; fi
+
+    if python3 -c "
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+sys.exit(0 if 'closed' in d[True]['pull_request']['types'] else 1)
+" "$am"
+    then ok "$lang auto-merge listens for the close event"
+    else no "$lang auto-merge listens for the close event" \
+      "without it the delete job can never fire"; fi
+
+    # Matched on the RUN line, not anywhere in the file: the comment explaining
+    # why the flag is useless names it, and a bare grep would read that
+    # explanation as the mistake it warns about.
+    if grep -E '^[[:space:]]*run:.*gh pr merge' "$am" | grep -q -- '--delete-branch'
+    then no "$lang auto-merge does not rely on the no-op flag" \
+      "gh pr merge --auto --delete-branch never deletes anything"
+    else ok "$lang auto-merge does not rely on the no-op flag"; fi
+
+    # The arming job must not fire on close, or every merged pull request
+    # re-arms auto-merge on itself.
+    if python3 -c "
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+sys.exit(0 if \"!= 'closed'\" in d['jobs']['arm-auto-merge'].get('if', '') else 1)
+" "$am"
+    then ok "$lang arming skips the close event"
+    else no "$lang arming skips the close event"; fi
   fi
 
   # Every shipped script must be executable — CI invokes them by path.
