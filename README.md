@@ -416,7 +416,16 @@ protection**:
 - a runaway-loop cap of 150.
 
 `docs/VISION.md` is the tiebreaker: what you value, in order, and what you would
-trade away. It is `CODEOWNERS`-owned and **no agent may edit it**. That pairing
+trade away. It is `CODEOWNERS`-owned and **no agent may edit it**.
+
+**Write it whenever suits you, as long as it is done before the first plan.**
+`/design` offers it up front and takes "after the design" for an answer — often
+the better order, since a vision written before you have seen the design is a
+guess about your own priorities. The deadline is implementation, and
+implementation starts at the plan, so `.github/scripts/vision-complete.sh` fails
+a pull request that adds or edits a plan while any section is still empty.
+Design-doc pull requests pass freely. Delete a section you do not want rather
+than leaving it blank, and delete the file entirely to opt out of the oracle. That pairing
 is the whole mechanism — when a decision comes out wrong, you edit the statement
 that produced it rather than arguing with the decision, and every future decision
 moves with it.

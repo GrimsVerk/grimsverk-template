@@ -36,6 +36,19 @@ where it counts. The estimate is a **tripwire, not a target**: never compress co
 drop error handling, or thin tests to come in under it. An overrun does not fail
 the build; CI reports the delta and the reviewer asks whether it was justified.
 
+**`docs/VISION.md` must be finished before a plan lands, and not before that.**
+The vision does not have to be written before the design — writing it after is
+often the better order, because by then the owner knows what the thing is, where
+a vision written first is a guess about their own priorities. What must not
+happen is implementation starting while it is empty, and implementation starts
+at the plan. This is checked, not asked for: a pull request that adds or edits a
+plan fails while any `##` section of `docs/VISION.md` is still empty
+(`.github/scripts/vision-complete.sh`). Design-doc pull requests pass freely,
+which is what makes deferring the vision safe rather than merely tolerated. A
+section the project does not want is DELETED rather than left blank — an absent
+section reads as a decision, an empty one as an omission — and deleting the
+whole file is how a project opts out of the oracle.
+
 **A plan opens with a decision-complete summary.** One document, not two: a
 short plan the owner approves and a long one an agent builds from will drift,
 and then the approval covered something that was not built. So the plan starts

@@ -10,8 +10,14 @@ The structure to follow is `docs/DESIGN.md` (the skeleton already in this
 repo). Write the completed doc back into `docs/DESIGN.md`, replacing the
 skeleton.
 
-**Two documents, not one.** Fill in `docs/VISION.md` first, by asking — see
-"First, the vision file" in `docs/idea-to-design-doc.md`. It is a different
+**Two documents, not one.** `docs/VISION.md` must be filled in by asking — see
+"The vision file" in `docs/idea-to-design-doc.md`. **Offer it at the start, and
+accept "after the design" as an answer**: a vision written before the user has
+seen the design is a guess about their own priorities, where one written after
+is a judgement about a thing they now understand. If they defer, say so in your
+report and ask again the moment the design doc is written. The deadline is not
+the design — it is the first plan, and that is checked
+(`.github/scripts/vision-complete.sh`). It is a different
 question from the design: what matters when two reasonable designs disagree, and
 what the user would trade away. Do not infer it from their idea, and do not
 produce a confident-looking file from guesses — every unattended design decision
