@@ -431,6 +431,40 @@ sys.exit(0 if 'closed' in d[True]['pull_request']['types'] else 1)
     else no "$lang auto-merge listens for the close event" \
       "without it the delete job can never fire"; fi
 
+    # The close-event job is not enough on its own: GitHub creates no workflow
+    # run at all for an event caused by GITHUB_TOKEN, so an auto-merge armed
+    # with it dispatches nothing on close. Two answers have to be present — the
+    # optional PAT, which makes the event fire, and the scheduled sweep, which
+    # works whether or not anyone configured one.
+    # Matched on the GH_TOKEN assignment, not anywhere in the file: the comment
+    # explaining WHY the token exists names it, and a bare grep would read that
+    # explanation as the thing it describes. That exact mistake has now been
+    # made twice in this file's history, so it is worth the extra precision.
+    if grep -E '^[[:space:]]*GH_TOKEN:' "$am" | grep -q 'AUTO_MERGE_TOKEN'
+    then ok "$lang auto-merge prefers a real token when one exists"
+    else no "$lang auto-merge prefers a real token when one exists" \
+      "GITHUB_TOKEN-driven merges dispatch no events"; fi
+
+    if python3 -c "
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+j = d['jobs'].get('sweep-merged-branches') or {}
+sys.exit(0 if 'schedule' in d[True] and 'schedule' in j.get('if', '') else 1)
+" "$am"
+    then ok "$lang auto-merge sweeps merged branches on a schedule"
+    else no "$lang auto-merge sweeps merged branches on a schedule" \
+      "the only cleanup path that survives a GITHUB_TOKEN merge"; fi
+
+    # ...and the sweep must not fire the arming job, or every scheduled run
+    # re-arms auto-merge on nothing.
+    if python3 -c "
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+sys.exit(0 if \"event_name == 'pull_request'\" in d['jobs']['arm-auto-merge'].get('if', '') else 1)
+" "$am"
+    then ok "$lang arming is scoped to pull request events"
+    else no "$lang arming is scoped to pull request events"; fi
+
     # Matched on the RUN line, not anywhere in the file: the comment explaining
     # why the flag is useless names it, and a bare grep would read that
     # explanation as the mistake it warns about.
