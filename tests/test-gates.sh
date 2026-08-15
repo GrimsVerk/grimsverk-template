@@ -320,4 +320,86 @@ chmod +x "$WORK/bin/claude"
   .github/scripts/review.sh >/dev/null 2>&1 )
 expect_rc "a forged PASS in the text cannot override a real BLOCK" 1 $?
 
+# ------------------- the oracle's documents are planning documents as well
+# Same reasoning as docs/plans/ and docs/DESIGN.md: no plan can cover the design
+# that plans are written against, and a handoff naming what needs planning this
+# run is not itself plannable work. Both blow a 50-line cap immediately, so
+# without this the second design document could not be written at all.
+# Measured against main as it now stands, not against the plan commit far back
+# at the top of this file: everything committed to main since then would
+# otherwise count as part of these branches' diffs and pull them over the cap.
+git -C "$R" switch -q main
+BASE_NOW="$(git -C "$R" rev-parse HEAD)"
+resolve_now() { ( cd "$R" && BASE_SHA="$BASE_NOW" HEAD_REF="$1" \
+  .github/scripts/plan-resolve.sh 2>&1 ); }
+
+on_branch docs/oracle-design
+{ echo '# Design decisions from evidence'
+  seq 1 300 | sed 's/^/decision line /'; } > "$R/docs/DESIGN.oracle.md"
+commit_all "Write oracle decisions"
+out="$(resolve_now docs/oracle-design)"
+expect_rc "an oracle-design branch is exempt at any size" 0 $?
+expect_contains "and says why" "$out" "planning documents"
+
+on_branch docs/oracle-handoff
+mkdir -p "$R/docs/oracle"
+{ echo '# Handoff 2026-08-15 #1'
+  seq 1 120 | sed 's/^/handoff line /'; } > "$R/docs/oracle/handoff-2026-08-15-1.md"
+commit_all "Write a handoff"
+expect_rc "an oracle handoff branch is exempt at any size" 0 \
+  "$(resolve_now docs/oracle-handoff >/dev/null 2>&1; echo $?)"
+
+# And the whole-diff test still bites: one path outside the planning documents
+# and the cap is back, so the exemption cannot be cover for code alongside it.
+on_branch docs/oracle-and-code
+{ echo '# Design decisions from evidence'
+  seq 1 300 | sed 's/^/decision line /'; } > "$R/docs/DESIGN.oracle.md"
+seq 1 120 > "$R/src/demo_app/smuggled_oracle.py"
+commit_all "Oracle decisions, and 120 lines of code with them"
+out="$(resolve_now docs/oracle-and-code)"
+expect_rc "an oracle-design branch that also carries code is capped" 1 $?
+expect_contains "says the exemption does not cover it" "$out" "touches something else"
+
+# ------------------------------ a plan in a SUBDIRECTORY resolves and lints
+# plan-resolve.sh, plan-lint.sh and coverage.sh all enumerated plans with
+# `find -maxdepth 1`. A steward writes into docs/plans/oracle/, so a depth limit
+# made those plans invisible to all three at once — and it fails silently in the
+# worst direction: the branch reports "no plan slug appears in this branch"
+# while the plan sits right there, and the reviewer is handed an empty facts
+# table it was told to treat as ground truth.
+git -C "$R" switch -q main
+mkdir -p "$R/docs/plans/oracle"
+cat > "$R/docs/plans/oracle/whole-transcripts.md" <<'EOF'
+---
+slug: whole-transcripts
+covers: [R1000]
+---
+# Whole transcripts — Plan
+
+Implements OD-1.
+
+## Slice 1 — send the whole transcript
+- **Delivers:** a transcript reaches the model uncut
+- **Files:** `src/demo_app/send.py`
+- **Estimate:** ~30 lines
+EOF
+commit_all "Add a plan under docs/plans/oracle/"
+BASE_ORACLE="$(git -C "$R" rev-parse HEAD)"
+
+# The tree already carries a deliberately malformed plan from the fixture
+# above, so the lint's exit status is 1 for that file and says nothing about
+# this one. What is being pinned here is that the nested plan was SEEN and read
+# at all — before, `find -maxdepth 1` meant it was neither parsed nor reported.
+out="$( cd "$R" && .github/scripts/plan-lint.sh 2>&1 )"
+expect_contains "a plan in a subdirectory is parsed" "$out" \
+  "docs/plans/oracle/whole-transcripts.md parses"
+
+git -C "$R" switch -qc feat/whole-transcripts
+echo "def send(): ..." > "$R/src/demo_app/send.py"
+commit_all "Send whole transcripts"
+out="$( cd "$R" && BASE_SHA="$BASE_ORACLE" HEAD_REF=feat/whole-transcripts \
+  .github/scripts/plan-resolve.sh 2>&1 )"
+expect_rc "a plan in a subdirectory resolves" 0 $?
+expect_contains "and prints its nested path" "$out" "docs/plans/oracle/whole-transcripts.md"
+
 summary

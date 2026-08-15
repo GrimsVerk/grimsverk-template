@@ -137,4 +137,86 @@ EOF
 out="$(run)"
 expect_rc "a design with no ids is a setup problem" 2 $?
 
+# ------------------------------------------- the SECOND design document
+# docs/DESIGN.oracle.md is the evidence-driven ledger an agent may append to
+# unattended. Requirements are the union of both documents: before this, a plan
+# covering an oracle requirement was reported as "an id the design doesn't
+# define", which reads as a typo and is not one — and the requirement itself was
+# invisible to the coverage report that decides whether a project is finished.
+design <<'EOF'
+# Design
+## 5. Requirements
+- **R1** — the first thing
+EOF
+cat > "$R/docs/DESIGN.oracle.md" <<'EOF'
+# Design decisions from evidence
+
+## OD-1 — send whole transcripts rather than excerpts
+
+- **Date:** 2026-08-15
+- **Evidence:** ESC-1
+- **Requirements added:** R1000
+- **Requirements superseded:** (none)
+- **Rationale:** excerpting measured 4.8x more expensive than the whole
+  transcript, so R5 is wrong. R5 is named here and is NOT defined here.
+EOF
+plan everything "R1, R1000"
+out="$(run)"
+expect_rc "a requirement defined only in the oracle document is covered" 0 $?
+expect_contains "counts both documents" "$out" "Covered: 2/2"
+expect_not_contains "and does not report it as undefined" "$out" "doesn't define"
+
+# A requirement the oracle declared and nobody planned is a GAP, exactly like
+# one of the owner's. The union has to work in both directions or the report
+# quietly under-counts the work left.
+plan everything "R1"
+out="$(run)"
+expect_rc "an unplanned oracle requirement is a gap" 1 $?
+expect_contains "names it" "$out" "R1000"
+
+# Ids mentioned in a decision's PROSE are not definitions. The oracle document
+# is dated decisions rather than a requirements section, and its rationales
+# legitimately name ids they did not define — a superseded one, above. Reading
+# the whole file would invent R5 as an oracle requirement and then report it
+# as unplanned forever.
+expect_not_contains "prose in a rationale does not define a requirement" "$out" "R5"
+
+# The malformed-id rule applies there too, and says which document.
+cat > "$R/docs/DESIGN.oracle.md" <<'EOF'
+# Design decisions from evidence
+
+## OD-1 — a decision with a broken id
+
+- **Requirements added:** **R1000a**
+EOF
+out="$(run)"
+expect_rc "a malformed id in the oracle document is an error" 2 $?
+expect_contains "names the id" "$out" "R1000a"
+expect_contains "and names the document it is in" "$out" "docs/DESIGN.oracle.md"
+rm -f "$R/docs/DESIGN.oracle.md"
+
+# ----------------------------------- plans in a subdirectory are not invisible
+# plan-resolve.sh, plan-lint.sh and coverage.sh all enumerated plans with
+# `find -maxdepth 1`. A steward's plans live under docs/plans/oracle/, so the
+# depth limit made them invisible to all three — silently, which is the worst
+# way for a coverage report to be wrong: it reads as "nothing covers R1000"
+# while the plan that covers it sits right there.
+design <<'EOF'
+# Design
+## 5. Requirements
+- **R1** — the first thing
+EOF
+rm -f "$R/docs/plans/everything.md"
+mkdir -p "$R/docs/plans/oracle"
+cat > "$R/docs/plans/oracle/nested.md" <<'EOF'
+---
+slug: nested
+covers: [R1]
+---
+# Nested — Plan
+EOF
+out="$(run)"
+expect_rc "a plan in a subdirectory is found" 0 $?
+expect_contains "and credited by name" "$out" "covered by  nested"
+
 summary
