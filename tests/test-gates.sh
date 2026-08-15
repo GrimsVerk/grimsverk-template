@@ -394,6 +394,19 @@ out="$(resolve_now docs/oracle-design)"
 expect_rc "an oracle-design branch is exempt at any size" 0 $?
 expect_contains "and says why" "$out" "planning documents"
 
+# The vision doc is the same case as the design doc, and it was missed: it is
+# CODEOWNERS-owned, no plan can cover it, and a filled-in one is well over a
+# hundred lines. Without this the single document the oracle arrangement depends
+# on was the one document that could not be written — caught downstream by a
+# real branch failing at 114 added lines.
+on_branch docs/vision
+{ echo '# Vision'
+  seq 1 150 | sed 's/^/vision line /'; } > "$R/docs/VISION.md"
+commit_all "Write the vision"
+out="$(resolve_now docs/vision)"
+expect_rc "a vision-doc branch is exempt at any size" 0 $?
+expect_contains "and says why" "$out" "planning documents"
+
 on_branch docs/oracle-handoff
 mkdir -p "$R/docs/oracle"
 { echo '# Handoff 2026-08-15 #1'
