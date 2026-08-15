@@ -55,6 +55,18 @@ else
   ok "the shipped design skeleton passes its own coverage gate"
 fi
 
+# The shipped ORACLE skeleton must contribute no requirements either, and this
+# is the check that was missing when it shipped. That document explains its own
+# schema in an indented code block, example ids and all, so a rule matching the
+# `**Requirements added:**` label anywhere defined R1000 and R1001 in every
+# generated project on day one — two requirements no plan would ever cover, that
+# no amount of work could clear, and that made "the project is done" permanently
+# unreachable. coverage.sh is not a CI gate, so nothing went red; it just quietly
+# reported work that did not exist.
+out="$( cd "$R" && .github/scripts/coverage.sh 2>&1 )"
+expect_not_contains "the oracle skeleton defines no phantom R1000" "$out" "R1000"
+expect_not_contains "the oracle skeleton defines no phantom R1001" "$out" "R1001"
+
 mkdir -p "$R/docs/plans"
 cat > "$R/docs/plans/draft-saving.md" <<'EOF'
 ---
