@@ -113,6 +113,29 @@ read_at_base() {
 # a wiring fault surfaces as one clearly-named red check rather than two.
 PLAN_PATH="$(HEAD_REF="${HEAD_REF:-}" "${HERE}/plan-resolve.sh" 2>/dev/null || true)"
 
+# Is this a template sync? The reviewer has to be told, or it blocks every
+# template update that touches a workflow — which is most of them, since the
+# template's whole job is shipping the gates. It is not asked to take the
+# branch name on trust: `template-sync` is a REQUIRED check that replays
+# `copier update` and fails unless the tree is byte-for-byte the result, so a
+# hand edit cannot merge whatever this review concludes. That is the same
+# reasoning that makes plan-resolve.sh step aside for these branches.
+#
+# The replay is NOT re-run here. It needs copier, which this job does not
+# install, and duplicating a required check inside a soft one buys nothing: the
+# merge is already conditional on the real one being green.
+TEMPLATE_SYNC_NOTE=""
+case "${HEAD_REF:-}" in
+  template/*)
+    TEMPLATE_SYNC_NOTE="TEMPLATE SYNC: this pull request is on the branch \
+'${HEAD_REF}'. The separate REQUIRED check \`template-sync\` replays \
+\`copier update\` from the base commit and fails unless this tree is \
+byte-for-byte the result, so gate-path edits here are the TEMPLATE's output \
+and this pull request cannot merge unless that is mechanically true. See \
+criterion 5 in your instructions."
+    ;;
+esac
+
 # Section delimiters carry a per-run random nonce. Without one, the delimiters
 # are a fixed string that appears verbatim in this script — so a diff could
 # contain its own "===== END ... =====" line followed by forged instructions,
@@ -155,6 +178,8 @@ This is a broken gate, not an absence of findings. Treat it as blocking.")
 $("${HERE}/blind-tests.sh" 2>&1 \
   || echo "!!!!! blind-tests.sh FAILED — no blind-authorship facts were computed.
 This is a broken gate, not an absence of findings. Treat it as blocking.")
+
+${TEMPLATE_SYNC_NOTE}
 
 ===== END MECHANICAL FACTS [$NONCE] =====
 
