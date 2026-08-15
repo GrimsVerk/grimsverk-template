@@ -100,6 +100,11 @@ for lang in python swift-ios; do
   if grep -q 'vision-complete.sh' "$ci" 2>/dev/null; then ok "$lang plan job checks the vision is finished"
   else no "$lang plan job checks the vision is finished"; fi
 
+  # The design and the vision are landed by their owner. CODEOWNERS gives their
+  # approval on a diff someone else opened; this gives their authorship.
+  if grep -q 'owner-authored.sh' "$ci" 2>/dev/null; then ok "$lang plan job checks who opened an owned-document PR"
+  else no "$lang plan job checks who opened an owned-document PR"; fi
+
   # The secrets job must be able to read pull requests. gitleaks-action lists a
   # PR's commits through the API, and the default token cannot — it answers 403
   # and the job dies before scanning anything, which is the worst shape a check
@@ -284,20 +289,37 @@ PYCHK
   if says "$ora" "it never marks a decision pending"
   then ok "$lang oracle ledger states that nothing is left pending"
   else no "$lang oracle ledger states that nothing is left pending"; fi
-  # Transcription vs authorship. "No agent may edit it" was the original
-  # wording and it made the file unwritable: /design fills it in by interviewing
-  # the owner, which is an agent editing it, so the review gate correctly
-  # blocked the only path the file has. The distinction is what has to survive,
-  # in both documents and in the reviewer's own instructions.
-  if says "$out/docs/VISION.md" "An agent may only TRANSCRIBE it"
-  then ok "$lang VISION.md separates transcription from authorship"
-  else no "$lang VISION.md separates transcription from authorship"; fi
-  if says "$ag" "an agent may only TRANSCRIBE it"
-  then ok "$lang AGENTS.md separates transcription from authorship"
-  else no "$lang AGENTS.md separates transcription from authorship"; fi
+  # WRITING versus LANDING. Two earlier wordings failed in opposite directions:
+  # "no agent may edit it" made the file unwritable, since /design fills it in
+  # by interviewing the owner; the transcription carve-out that replaced it let
+  # an agent land the design, which leaves docs/DESIGN.oracle.md with no reason
+  # to exist. The line that survives is the branch/pull-request boundary, and it
+  # has to read the same way in all three documents.
+  if says "$out/docs/VISION.md" "An agent may WRITE this file. Only the owner LANDS it"
+  then ok "$lang VISION.md separates writing from landing"
+  else no "$lang VISION.md separates writing from landing"; fi
+  if says "$ag" "WRITTEN by agents and LANDED by the owner"
+  then ok "$lang AGENTS.md separates writing from landing"
+  else no "$lang AGENTS.md separates writing from landing"; fi
+  if says "$ag" "has no reason to exist"
+  then ok "$lang AGENTS.md gives the reason, not just the rule"
+  else no "$lang AGENTS.md gives the reason, not just the rule"; fi
+
+  # ...and the reviewer must NOT have the carve-out any more, or it would wave
+  # through the very pull request the new check exists to stop.
   if says "$out/.github/review-prompt.md" "must not be blocked for being agent-opened"
-  then ok "$lang review prompt lets a vision transcription through"
-  else no "$lang review prompt lets a vision transcription through"; fi
+  then no "$lang review prompt no longer carves out the vision" \
+    "the v0.4.17 carve-out lets an agent land the design"
+  else ok "$lang review prompt no longer carves out the vision"; fi
+  if says "$out/.github/review-prompt.md" "have no carve-out at all"
+  then ok "$lang review prompt defers to the owner-authored check"
+  else no "$lang review prompt defers to the owner-authored check"; fi
+
+  # /design must stop at a pushed branch. An agent that opens the pull request
+  # wastes a run and lands nothing.
+  if says "$out/.claude/commands/design.md" "Do not open the pull request"
+  then ok "$lang design command stops at a pushed branch"
+  else no "$lang design command stops at a pushed branch"; fi
 
   # /design must ELICIT the vision rather than infer it. Every unattended design
   # decision has to quote a statement from docs/VISION.md, so a confident-looking
