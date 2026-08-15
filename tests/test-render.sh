@@ -284,9 +284,20 @@ PYCHK
   if says "$ora" "it never marks a decision pending"
   then ok "$lang oracle ledger states that nothing is left pending"
   else no "$lang oracle ledger states that nothing is left pending"; fi
-  if says "$out/docs/VISION.md" "No agent may edit it"
-  then ok "$lang VISION.md says no agent edits it"
-  else no "$lang VISION.md says no agent edits it"; fi
+  # Transcription vs authorship. "No agent may edit it" was the original
+  # wording and it made the file unwritable: /design fills it in by interviewing
+  # the owner, which is an agent editing it, so the review gate correctly
+  # blocked the only path the file has. The distinction is what has to survive,
+  # in both documents and in the reviewer's own instructions.
+  if says "$out/docs/VISION.md" "An agent may only TRANSCRIBE it"
+  then ok "$lang VISION.md separates transcription from authorship"
+  else no "$lang VISION.md separates transcription from authorship"; fi
+  if says "$ag" "an agent may only TRANSCRIBE it"
+  then ok "$lang AGENTS.md separates transcription from authorship"
+  else no "$lang AGENTS.md separates transcription from authorship"; fi
+  if says "$out/.github/review-prompt.md" "must not be blocked for being agent-opened"
+  then ok "$lang review prompt lets a vision transcription through"
+  else no "$lang review prompt lets a vision transcription through"; fi
 
   # /design must ELICIT the vision rather than infer it. Every unattended design
   # decision has to quote a statement from docs/VISION.md, so a confident-looking
