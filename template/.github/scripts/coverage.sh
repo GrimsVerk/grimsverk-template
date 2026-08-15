@@ -78,12 +78,20 @@ done
 #     ids they did NOT define — a superseded one, for instance — so reading the
 #     whole file would invent requirements out of prose.
 #
+#     The line must START with a list marker, and that is not cosmetic. The
+#     shipped ledger skeleton documents its own schema in an INDENTED code
+#     block, example ids and all — so a rule that matched the label anywhere
+#     defined R1000 and R1001 in every generated project on day one, as
+#     requirements no plan would ever cover and that no amount of work could
+#     clear. Column-anchoring excludes the indented example and matches every
+#     real decision, which writes the field at column 0.
+#
 # A document that has neither shape simply contributes nothing.
 ids_from() {
   awk '
     /^## 5\./ { in5 = 1; next }
     /^## /    { in5 = 0 }
-    in5 || /\*\*Requirements added:\*\*/ {
+    in5 || /^[-*] \*\*Requirements added:\*\*/ {
       line = $0
       if (!in5) sub(/^.*\*\*Requirements added:\*\*/, "", line)
       while (match(line, /\*\*R[0-9]+\*\*/)) {
