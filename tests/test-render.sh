@@ -309,6 +309,36 @@ PYCHK
   then ok "$lang AGENTS.md states the glossary lifecycle"
   else no "$lang AGENTS.md states the glossary lifecycle"; fi
 
+  # The two unattended roles, and the clauses that keep them narrow. These are
+  # presence checks: they cannot make an agent obey a rule, but they catch the
+  # rule being reworded out of existence by a later template edit, long after
+  # the reasoning behind it has been forgotten.
+  orc_doc="$out/.claude/commands/oracle.md"
+  stw="$out/.claude/commands/steward.md"
+  for f in "$orc_doc" "$stw"; do
+    if [[ -f "$f" ]]; then ok "$lang ships $(basename "$f")"
+    else no "$lang ships $(basename "$f")"; fi
+  done
+  if says "$orc_doc" "You spawn nothing"
+  then ok "$lang oracle.md states that the oracle does not spawn"
+  else no "$lang oracle.md states that the oracle does not spawn"; fi
+  if says "$orc_doc" "Never mark a decision pending"
+  then ok "$lang oracle.md states that nothing is left pending"
+  else no "$lang oracle.md states that nothing is left pending"; fi
+  if says "$orc_doc" "One clarification round"
+  then ok "$lang oracle.md bounds the clarification loop"
+  else no "$lang oracle.md bounds the clarification loop"; fi
+  if says "$stw" "You decide nothing"
+  then ok "$lang steward.md states that the steward decides nothing"
+  else no "$lang steward.md states that the steward decides nothing"; fi
+
+  # The orchestrator spawns the stewards, not the oracle. An agent that both
+  # ruled on the design and hired the labour to act on its own ruling is the one
+  # arrangement this repository refuses everywhere else.
+  if says "$orch" "You spawn the stewards; the oracle does not"
+  then ok "$lang orchestrate.md keeps deciding and commissioning apart"
+  else no "$lang orchestrate.md keeps deciding and commissioning apart"; fi
+
   # Both blind workers get ONE contract, quoted verbatim. Asymmetric briefs made
   # the two build to different contracts and disagree at assembly about a
   # behaviour the plan never stated.

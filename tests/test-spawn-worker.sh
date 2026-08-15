@@ -114,6 +114,76 @@ expect_not_contains "the bypass does not also narrow the tools" "$out" "acceptEd
 out="$("$SPAWN" --id x --prompt hi --engine claude --model sonnet --print-command 2>&1)"
 expect_contains "the model is passed through" "$out" "sonnet"
 
+# ------------------------------------------------------------------- roles
+# --role carries the model, the effort and the tool grants for a kind of work,
+# so those defaults live in one place instead of in whichever prompt happened to
+# spawn the agent. Pinned here for the same reason every other flag is: the
+# script is the only thing that says what an agent may reach, and a silent drift
+# in it looks exactly like nothing having changed.
+role_cmd() { "$SPAWN" --id x --prompt hi --engine claude --role "$1" --print-command 2>&1; }
+
+out="$(role_cmd coder)"
+expect_contains "the coder runs on opus" "$out" "claude-opus-5"
+expect_contains "the coder runs at medium effort" "$out" "medium"
+expect_contains "the coder may still write files" "$out" "acceptEdits"
+
+# The test-writer is a tier ABOVE the coder, deliberately. Blind authorship
+# assumes two peers: making the test side cheaper quietly turns the shared
+# contract into whatever the coder happened to think it said. This assertion is
+# the thing that would notice the two being levelled to save money.
+out="$(role_cmd test-writer)"
+expect_contains "the test-writer runs at high effort" "$out" "high"
+tw_effort="$(printf '%s\n' "$out" | grep -A1 -- '--effort' | tail -1)"
+co_effort="$(role_cmd coder | grep -A1 -- '--effort' | tail -1)"
+if [[ "$tw_effort" == "high" && "$co_effort" == "medium" ]]; then
+  ok "the test-writer is not cheaper than the coder"
+else
+  no "the test-writer is not cheaper than the coder" "coder=$co_effort test-writer=$tw_effort"
+fi
+
+# The oracle writes the one design document an agent may write unattended. Its
+# grants are the first of two enforcements — the CI checks are what bind — but
+# a grant that quietly widened to every path would remove the cheap half.
+out="$(role_cmd oracle)"
+expect_contains "the oracle runs on fable" "$out" "claude-fable-5"
+expect_contains "the oracle may write its ledger" "$out" "Write(docs/DESIGN.oracle.md)"
+expect_contains "the oracle may write a handoff" "$out" "Write(docs/oracle/**)"
+expect_not_contains "the oracle does not get blanket edit acceptance" "$out" "acceptEdits"
+expect_not_contains "the oracle cannot write plans" "$out" "docs/plans"
+
+out="$(role_cmd steward)"
+expect_contains "the steward may write oracle plans" "$out" "Write(docs/plans/oracle/**)"
+expect_not_contains "the steward cannot write the ledger" "$out" "DESIGN.oracle.md"
+expect_not_contains "the steward cannot write a handoff" "$out" "docs/oracle/**"
+
+for role in reviewer explore; do
+  out="$(role_cmd "$role")"
+  expect_not_contains "the $role cannot write" "$out" "Write("
+  expect_not_contains "the $role cannot commit" "$out" "git commit"
+done
+expect_contains "explore runs at low effort" "$(role_cmd explore)" "low"
+
+# An explicit flag beats the role's default: the role is where a default lives,
+# not a lock.
+out="$("$SPAWN" --id x --prompt hi --engine claude --role coder --model sonnet \
+  --effort max --print-command 2>&1)"
+expect_contains "an explicit model overrides the role" "$out" "sonnet"
+expect_not_contains "and replaces it rather than adding to it" "$out" "claude-opus-5"
+expect_contains "an explicit effort overrides the role" "$out" "max"
+
+# A typo must not land on the engine's own defaults — a wide tool grant and
+# whatever model was configured, which is the opposite of naming a role.
+out="$("$SPAWN" --id x --prompt hi --engine claude --role codr --print-command 2>&1)"
+expect_rc "an unknown role fails fast" 2 $?
+expect_contains "and lists the known roles" "$out" "Known roles:"
+
+# Every role names a Claude model and codex spells effort differently, so the
+# mismatch is refused rather than applied and left to fail deep inside the run
+# as an unrecognised model — the same misdiagnosis shape as the --full-auto bug.
+out="$("$SPAWN" --id x --prompt hi --engine codex --role coder --print-command 2>&1)"
+expect_rc "a role on the codex engine fails fast" 2 $?
+expect_contains "and says which engine roles are defined for" "$out" "'claude' engine"
+
 # ------------------------------------------------- a worker that commits works
 out="$(STUB_MODE=commit spawn --id ok-1 --prompt "build the thing" --engine codex)"
 rc=$?
