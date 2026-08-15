@@ -86,6 +86,14 @@ for lang in python swift-ios; do
   if grep -q 'escape-refs.sh' "$ci" 2>/dev/null; then ok "$lang plan job resolves escape citations"
   else no "$lang plan job resolves escape citations"; fi
 
+  # The oracle's ledger is the one design document an agent may write while
+  # nobody is awake. It is deliberately NOT behind CODEOWNERS — ownership there
+  # would stop overnight work, which is the point of having it — so this check
+  # is the only thing standing in for the owner. A wiring slip here does not
+  # fail loudly: it leaves the document writable and unchecked.
+  if grep -q 'oracle-decisions.sh' "$ci" 2>/dev/null; then ok "$lang plan job checks oracle decisions"
+  else no "$lang plan job checks oracle decisions"; fi
+
   # The secrets job must be able to read pull requests. gitleaks-action lists a
   # PR's commits through the API, and the default token cannot — it answers 403
   # and the job dies before scanning anything, which is the worst shape a check
@@ -132,10 +140,28 @@ PYCHK
   co="$out/.github/CODEOWNERS"
   if grep -q '@grimsverk' "$co" 2>/dev/null; then ok "$lang CODEOWNERS resolves the handle"
   else no "$lang CODEOWNERS resolves the handle"; fi
-  for path in /AGENTS.md /docs/DESIGN.md /docs/plans/ /.github/; do
-    if grep -q "^$path" "$co" 2>/dev/null; then ok "$lang CODEOWNERS covers $path"
+  for path in /AGENTS.md /docs/DESIGN.md /docs/plans/ /.github/ /docs/VISION.md; do
+    if grep -qE "^${path}[[:space:]]+@" "$co" 2>/dev/null; then ok "$lang CODEOWNERS covers $path"
     else no "$lang CODEOWNERS covers $path"; fi
   done
+
+  # And the paths that must NOT be owned. Ownership on any of these would stop
+  # overnight work, which is the whole point of the arrangement: they are
+  # constrained by a required check, which needs nobody awake, rather than by a
+  # code owner, who does. /docs/plans/ above would otherwise swallow the
+  # steward's directory, since a directory rule covers everything beneath it —
+  # the unowned line that releases it is easy to drop and fails silently.
+  for path in /docs/plans/oracle/ /docs/DESIGN.oracle.md /docs/oracle/; do
+    if grep -qE "^${path}[[:space:]]+@" "$co" 2>/dev/null; then
+      no "$lang CODEOWNERS leaves $path unowned" "an owner would stop unattended work"
+    else ok "$lang CODEOWNERS leaves $path unowned"; fi
+  done
+  if grep -qE '^/docs/plans/oracle/[[:space:]]*$' "$co" 2>/dev/null; then
+    ok "$lang CODEOWNERS explicitly releases /docs/plans/oracle/"
+  else
+    no "$lang CODEOWNERS explicitly releases /docs/plans/oracle/" \
+      "without it the /docs/plans/ rule owns it by inheritance"
+  fi
 
   # The glossary must ship, with both lists present — the "learned" section is
   # the half that stops the agent over-explaining, so a file missing it is
@@ -150,6 +176,24 @@ PYCHK
   else
     no "$lang ships GLOSSARY.md"
   fi
+
+  # Both new documents must ship, and the vision file must be the tiebreaker
+  # rather than a second requirements list — the oracle cites it by sentence.
+  for f in docs/VISION.md docs/DESIGN.oracle.md; do
+    if [[ -f "$out/$f" ]]; then ok "$lang ships $f"
+    else no "$lang ships $f"; fi
+  done
+
+  # The shipped oracle ledger must pass the gate it ships with, on day one, in a
+  # project that has no decisions and no evidence. A skeleton whose own example
+  # rows parsed as real decisions would fail every generated project instantly.
+  ( cd "$out" && git init -q -b main . >/dev/null 2>&1 \
+    && git config user.email t@e.invalid && git config user.name T \
+    && git add -A >/dev/null 2>&1 && git commit -qm scaffold >/dev/null 2>&1 \
+    && BASE_SHA="$(git rev-parse HEAD)" .github/scripts/oracle-decisions.sh >/dev/null 2>&1 )
+  if [[ $? -eq 0 ]]; then ok "$lang shipped oracle skeleton passes its own gate"
+  else no "$lang shipped oracle skeleton passes its own gate" \
+    "$( cd "$out" && BASE_SHA="$(git rev-parse HEAD)" .github/scripts/oracle-decisions.sh 2>&1 | head -5 )"; fi
 
   # The PROJECT glossary must NOT ship. It is created on first use, which is
   # precisely what keeps `copier update` from ever conflicting with it.
@@ -211,6 +255,59 @@ PYCHK
   if says "$esc" "unverified — pending"
   then ok "$lang escapes.md documents the stub lifecycle"
   else no "$lang escapes.md documents the stub lifecycle"; fi
+
+  # The second design document, and the three clauses that make an unattended
+  # writer safe: evidence must already have landed, decisions are append-only,
+  # and each names the vision statement it leaned on — which is what lets the
+  # owner steer by editing that statement instead of arguing with decisions one
+  # at a time. Dropping any one of them leaves a document an agent may write
+  # freely, which is the failure worth catching by presence.
+  ora="$out/docs/DESIGN.oracle.md"
+  if says "$ag" "The design is two documents"
+  then ok "$lang AGENTS.md states there are two design documents"
+  else no "$lang AGENTS.md states there are two design documents"; fi
+  if says "$ora" "cites evidence that exists at the **base commit**"
+  then ok "$lang oracle ledger requires landed evidence"
+  else no "$lang oracle ledger requires landed evidence"; fi
+  if says "$ora" "Append-only, and superseded rather than revised"
+  then ok "$lang oracle ledger states the append-only rule"
+  else no "$lang oracle ledger states the append-only rule"; fi
+  if says "$ora" "Vision statement relied on"
+  then ok "$lang oracle ledger requires the vision citation"
+  else no "$lang oracle ledger requires the vision citation"; fi
+  if says "$ora" "it never marks a decision pending"
+  then ok "$lang oracle ledger states that nothing is left pending"
+  else no "$lang oracle ledger states that nothing is left pending"; fi
+  if says "$out/docs/VISION.md" "No agent may edit it"
+  then ok "$lang VISION.md says no agent edits it"
+  else no "$lang VISION.md says no agent edits it"; fi
+
+  # The owner answers as they read, so an early instruction may be overtaken by
+  # a later paragraph of the same message. Acting on the first paragraph is how
+  # an agent builds something the fourth paragraph cancelled.
+  if says "$ag" "The owner replies as they read, not after"
+  then ok "$lang AGENTS.md states how the owner writes"
+  else no "$lang AGENTS.md states how the owner writes"; fi
+  if says "$ag" "The last word on a point wins"
+  then ok "$lang AGENTS.md states that the last word wins"
+  else no "$lang AGENTS.md states that the last word wins"; fi
+
+  # A plan opens with a summary the owner can approve from ALONE. Without the
+  # promotion rule the summary decays into an abstract, and then reading the
+  # whole plan is once again the only safe way to approve one.
+  if says "$ag" "decision-complete summary"
+  then ok "$lang AGENTS.md requires a decision-complete plan summary"
+  else no "$lang AGENTS.md requires a decision-complete plan summary"; fi
+  if says "$ag" "it may never introduce one"
+  then ok "$lang AGENTS.md states the promotion rule"
+  else no "$lang AGENTS.md states the promotion rule"; fi
+
+  # The project glossary is a staging buffer that gets wiped, not a permanent
+  # home for vocabulary. An agent that believes otherwise treats the wipe as
+  # data loss and works around it.
+  if says "$ag" "staging buffer, not a record"
+  then ok "$lang AGENTS.md states the glossary lifecycle"
+  else no "$lang AGENTS.md states the glossary lifecycle"; fi
 
   # Both blind workers get ONE contract, quoted verbatim. Asymmetric briefs made
   # the two build to different contracts and disagree at assembly about a

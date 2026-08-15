@@ -351,6 +351,8 @@ recipe that is the real safety net under auto-merge.
 AGENTS.md            agent guidelines (CLAUDE.md is a one-line pointer to it)
 GLOSSARY.md          how agents talk to you + the vocabulary you've settled
 docs/DESIGN.md       design doc skeleton + the /design interview kit
+docs/VISION.md       what you value and what you'd trade away — the tiebreaker
+docs/DESIGN.oracle.md  design decisions an agent may make from logged evidence
 .github/             CI, the LLM review gate, CODEOWNERS, auto-merge
 .pre-commit-config.yaml
 .claude/             optional convenience layer — deletable, nothing breaks
@@ -370,9 +372,14 @@ It is deliberately **two** files. `GLOSSARY.md` ships from the template and is
 replaced wholesale by `copier update`, so projects never edit it.
 `GLOSSARY.project.md` is created on first use inside a project, grows there, and
 — because the template never ships it — can never be clobbered by an update.
-When a project's list has grown usefully, fold its words into the template's
-`GLOSSARY.md` and delete them from the project file; every other project picks
-them up on its next `copier update`.
+`GLOSSARY.project.md` is a **staging buffer, not a record**: it exists only
+because a project session may not have this repository attached, so it is the
+one place a word can be added mid-project. When its list has grown usefully,
+fold the words into the template's `GLOSSARY.md` and **wipe the project file
+back to empty**; they return to that project, and reach every other project, on
+the next `copier update`. There are deliberately no lasting project-specific
+glossaries. Sequence the wipe with the update that carries the words back down —
+wiping first leaves the project with no definitions in between.
 
 ## Design-doc workflow
 
@@ -381,6 +388,38 @@ project and run the `/design` slash command (or just point the agent at
 `docs/idea-to-design-doc.md`), rant your idea at it, answer its questions,
 and it writes the finished doc into `docs/DESIGN.md`. `docs/DESIGN.md` is
 the skeleton and single source of truth for the doc's shape.
+
+## The second design document
+
+`docs/DESIGN.md` is yours: `CODEOWNERS` puts it behind your review, so a design
+change waits for you. That is correct — it is the standard every pull request is
+judged against — and it is also why unattended work stops at the first thing the
+evidence contradicts. Real runs produce evidence that the design is wrong, and
+without somewhere for that to land, it queues up until you are free.
+
+`docs/DESIGN.oracle.md` is where it lands. Append-only, mechanically checked, and
+deliberately **not** owned — ownership there would stop overnight work, which is
+the point of having it. Requirements are the union of both documents; oracle ids
+start at **R1000** because they share one integer space with yours.
+
+What makes it safe is `.github/scripts/oracle-decisions.sh`, wired into the
+existing `plan` job so **no new required check has to be added to branch
+protection**:
+
+- every decision cites evidence that already landed — an `ESC-<n>` from
+  `docs/escapes.md` or a `BL-<n>` from `docs/BACKLOG.md`. A design change can
+  only ever *metabolise something logged*; it can never be invented;
+- decisions are append-only, superseded rather than revised, with increasing ids;
+- each carries a date, its evidence, the requirement ids it adds or supersedes,
+  the alternatives weighed, its rationale, and **the `docs/VISION.md` statement
+  it relied on**;
+- a runaway-loop cap of 150.
+
+`docs/VISION.md` is the tiebreaker: what you value, in order, and what you would
+trade away. It is `CODEOWNERS`-owned and **no agent may edit it**. That pairing
+is the whole mechanism — when a decision comes out wrong, you edit the statement
+that produced it rather than arguing with the decision, and every future decision
+moves with it.
 
 ## Orchestration (optional Claude layer)
 
