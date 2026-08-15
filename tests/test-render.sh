@@ -94,6 +94,12 @@ for lang in python swift-ios; do
   if grep -q 'oracle-decisions.sh' "$ci" 2>/dev/null; then ok "$lang plan job checks oracle decisions"
   else no "$lang plan job checks oracle decisions"; fi
 
+  # An unfilled docs/VISION.md goes red nowhere on its own — it fails overnight,
+  # in the role that exists to keep work moving. The script existing and the job
+  # calling it are two different things.
+  if grep -q 'vision-complete.sh' "$ci" 2>/dev/null; then ok "$lang plan job checks the vision is finished"
+  else no "$lang plan job checks the vision is finished"; fi
+
   # The secrets job must be able to read pull requests. gitleaks-action lists a
   # PR's commits through the API, and the default token cannot — it answers 403
   # and the job dies before scanning anything, which is the worst shape a check
@@ -290,6 +296,16 @@ PYCHK
   if says "$idea" "Ask me for it; do not infer it"
   then ok "$lang design kit asks for the vision rather than inferring it"
   else no "$lang design kit asks for the vision rather than inferring it"; fi
+
+  # ...but does not force it BEFORE the design. Writing the vision after the
+  # design is often the better order — one written first is a guess about your
+  # own priorities. The deadline is the first plan, not the design doc.
+  if says "$idea" "offer both, take my answer, and come back to it if I deferred"
+  then ok "$lang design kit offers the vision either side of the design"
+  else no "$lang design kit offers the vision either side of the design"; fi
+  if says "$idea" "must be finished"
+  then ok "$lang design kit puts the deadline at the plan"
+  else no "$lang design kit puts the deadline at the plan"; fi
   if says "$idea" "What would you trade away?"
   then ok "$lang design kit asks what the owner would trade away"
   else no "$lang design kit asks what the owner would trade away"; fi
