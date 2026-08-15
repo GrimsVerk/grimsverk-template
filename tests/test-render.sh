@@ -282,6 +282,21 @@ PYCHK
   then ok "$lang VISION.md says no agent edits it"
   else no "$lang VISION.md says no agent edits it"; fi
 
+  # /design must ELICIT the vision rather than infer it. Every unattended design
+  # decision has to quote a statement from docs/VISION.md, so a confident-looking
+  # file assembled from guesses is worse than an empty one — it gets cited.
+  idea="$out/docs/idea-to-design-doc.md"
+  dsg="$out/.claude/commands/design.md"
+  if says "$idea" "Ask me for it; do not infer it"
+  then ok "$lang design kit asks for the vision rather than inferring it"
+  else no "$lang design kit asks for the vision rather than inferring it"; fi
+  if says "$idea" "What would you trade away?"
+  then ok "$lang design kit asks what the owner would trade away"
+  else no "$lang design kit asks what the owner would trade away"; fi
+  if says "$dsg" "Two documents, not one"
+  then ok "$lang design command writes the vision too"
+  else no "$lang design command writes the vision too"; fi
+
   # The owner answers as they read, so an early instruction may be overtaken by
   # a later paragraph of the same message. Acting on the first paragraph is how
   # an agent builds something the fourth paragraph cancelled.
@@ -354,6 +369,20 @@ PYCHK
     then ok "$lang $(basename "$f") states the wait condition"
     else no "$lang $(basename "$f") states the wait condition"; fi
   done
+
+  # Auto-merge must ask for the branch deletion explicitly. The repository
+  # setting is what the merge UI pre-fills for a human; an auto-merge armed
+  # through the API records its own delete-branch choice, and that is what
+  # GitHub honours. Without the flag every auto-merged branch survives its own
+  # pull request while human merges clean up correctly — which reads exactly
+  # like the repository setting being broken, and is not.
+  am="$out/.github/workflows/auto-merge.yml"
+  if [[ -f "$am" ]]; then
+    if grep -q -- '--delete-branch' "$am"
+    then ok "$lang auto-merge deletes the head branch"
+    else no "$lang auto-merge deletes the head branch" \
+      "the repository setting does not cover an API-armed auto-merge"; fi
+  fi
 
   # Every shipped script must be executable — CI invokes them by path.
   nonexec=""
