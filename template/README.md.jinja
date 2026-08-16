@@ -90,6 +90,34 @@ auto-merge (armed by `.github/workflows/auto-merge.yml`, completed by GitHub
 when checks pass — as a merge commit, preserving history).{% else %}Both gates run on every PR, but this project does **not** auto-merge: a human
 performs the final merge once the checks are green.{% endif %}
 
+## Unattended delivery
+
+Once `docs/DESIGN.md` and `docs/VISION.md` have landed, the whole loop — plan,
+build, merge, next — can run with nobody watching. Two frontends, one phase
+detector (`.claude/scripts/deliver-phase.sh`), chosen by which you start:
+
+```sh
+.claude/scripts/deliver-loop.sh          # local: waits on `gh pr checks --watch`
+```
+
+or `/deliver-loop` in a Claude Code web session, which waits on PR events and
+scheduled check-ins instead of holding a turn open. Before dispatching
+anything, the driver runs `.github/scripts/unattended-ready.sh`, which reads
+the *repository's* configuration back and **refuses** a run that cannot
+succeed, naming each missing setting.
+
+Your three jobs, and the loop never adds a fourth: land the design and vision;
+optionally steer mid-run by editing those two documents (they are the steering
+lever — every oracle ruling quotes `docs/VISION.md`, so editing a sentence
+moves everything downstream); review at the end. Mid-run questions go to the
+oracle, not to you: HIGH-risk uncertainties block planning until a ruling
+lands, LOW-risk ones proceed on a recorded default (`docs/DECISIONS.md` ships
+the rulings behind this). Every stop states its reason — the same failure
+three times, the budget allowance spent (`--budget-points`, with `--max-prs` /
+`--max-hours` as hard backstops), or a green pull request only you can merge —
+and the morning read is `.claude/deliver-loop/run.md` plus
+`docs/acceptance.md`'s pending-on-owner list.
+
 ## Repository setup (manual, once)
 
 These are GitHub settings the template can't set from inside the repo. Enable

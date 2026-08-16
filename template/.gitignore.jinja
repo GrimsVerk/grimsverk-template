@@ -1,6 +1,8 @@
 .DS_Store
 # Claude Code orchestration (transient; produced by .claude/scripts/spawn-worker.sh)
 .claude/orchestration-logs/
+# Delivery-driver run state and reports (transient; .claude/scripts/deliver-loop.sh)
+.claude/deliver-loop/
 # Worker worktrees live OUTSIDE .claude/, which Claude Code protects — a worker
 # sandboxed under it is refused every write, silently. See spawn-worker.sh.
 .worktrees/

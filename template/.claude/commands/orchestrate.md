@@ -295,6 +295,18 @@ After the workers finish, for each one:
 
 ## 5. Open the PR, then stop
 
+**Before opening it, review your own diff the way the gate will** (ESC-16:
+three of four recent escapes were found by use, after merge, because nothing
+looked before the pull request existed). If a review credential is reachable —
+`CLAUDE_CODE_OAUTH_TOKEN` in the environment, or you can run the gate's script
+locally — run `.github/scripts/review.sh` against your assembled diff and act
+on blocking findings now, before a CI run is spent on them. If no credential
+is reachable, do the written pre-flight instead: name each rule in `AGENTS.md`
+the diff touches, state in one line how the diff complies, and stop on any
+line you cannot write honestly — fix it rather than arguing with the gate
+later. This pre-check is never authorization to merge; it exists to make the
+gate's red runs rare, not to replace them.
+
 Push `feat/<slug>` and open **one** pull request for it. **Do not merge it.**
 The merge is the pipeline's, triggered by the required checks going green — CI,
 `plan`, `test-the-tests`, and the review soft gate (and, where enabled, GitHub

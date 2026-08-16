@@ -123,6 +123,35 @@ grant constrains one agent in one worktree; the required checks constrain every
 route to the default branch. Treat a narrow grant as a way to make the intended
 path the easy one, never as the thing standing between an agent and a document.
 
+## The unattended loop
+
+The **delivery driver** is what runs the pipeline while nobody is awake. It is
+a scheduler, not an agent: deterministic tooling the owner starts, holding no
+model and making no judgment beyond branching on exit codes. That places it
+exactly where "You opening a second window" sits above — the owner knows what
+is running, because the owner started it — so the one-layer rule survives
+untouched: the driver opens sessions, and only an orchestrator session spawns
+workers.
+
+Two frontends, one brain. The phase logic lives once, in
+`.claude/scripts/deliver-phase.sh` (read-only: it recomputes the project's
+state from the tree and the open pull requests every time, because recomputed
+state cannot go stale). `.claude/scripts/deliver-loop.sh` drives it from a
+local terminal, waiting mechanically on `gh pr checks --watch`;
+`/deliver-loop` drives it from a Claude Code web session, waiting on events —
+a PR subscription plus a scheduled check-in — because a hosted session holding
+a turn open to watch CI spends its lifetime on nothing. The owner chooses a
+mode by choosing which entry point to start.
+
+The phase order encodes the authority chain: an open pull request holds
+everything (one PR in flight); unruled HIGH uncertainties, then unmetabolised
+evidence, wake the **oracle**; landed decisions without plans get
+**stewards**; uncovered owner requirements get a **plan**; merged plans
+without merged features get an **orchestrator**; and a fully built design
+gets the acceptance pass. Every stop states its reason — repeated failure
+signature, budget spent, blocked on the owner — and the run's record is
+`.claude/deliver-loop/run.md`.
+
 ## The one-layer rule
 
 There is **exactly one** level of spawning: the orchestrator spawns workers;

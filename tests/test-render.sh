@@ -339,6 +339,35 @@ PYCHK
   if says "$ora" "(no vision statement decided this)"
   then ok "$lang oracle ledger documents the no-vision class"
   else no "$lang oracle ledger documents the no-vision class"; fi
+
+  # The delivery driver. deliver.md carried an unresolved OPEN QUESTION block
+  # that told every unattended run to stop at each pull request; the ruling
+  # replaced it, and its reappearance would silently reinstate the stop.
+  if grep -q "OPEN QUESTION" "$del" 2>/dev/null
+  then no "$lang deliver.md no longer carries the open question" \
+    "the waiting strategy is ruled in docs/DECISIONS.md"
+  else ok "$lang deliver.md no longer carries the open question"; fi
+  for f in .claude/scripts/deliver-loop.sh .claude/scripts/deliver-phase.sh \
+           .claude/scripts/budget-probe.sh .claude/commands/deliver-loop.md; do
+    if [[ -f "$out/$f" ]]; then ok "$lang ships $f"
+    else no "$lang ships $f"; fi
+  done
+  for f in deliver-loop deliver-phase budget-probe; do
+    if [[ -x "$out/.claude/scripts/$f.sh" ]]; then ok "$lang $f.sh is executable"
+    else no "$lang $f.sh is executable"; fi
+  done
+  if grep -q '^\.claude/deliver-loop/' "$out/.gitignore"
+  then ok "$lang gitignores the driver's run state"
+  else no "$lang gitignores the driver's run state"; fi
+  # ESC-16: the orchestrator looks at its own diff the way the gate will,
+  # BEFORE the pull request exists — three of four recent escapes were found
+  # by use because nothing looked earlier.
+  if says "$orch" "review your own diff the way the gate will"
+  then ok "$lang orchestrate.md requires the pre-PR self-review"
+  else no "$lang orchestrate.md requires the pre-PR self-review"; fi
+  if says "$del" "wait until no check is still pending, never until the pull request is no longer open"
+  then ok "$lang deliver.md keeps the exit condition"
+  else no "$lang deliver.md keeps the exit condition"; fi
   # WRITING versus LANDING. Two earlier wordings failed in opposite directions:
   # "no agent may edit it" made the file unwritable, since /design fills it in
   # by interviewing the owner; the transcription carve-out that replaced it let

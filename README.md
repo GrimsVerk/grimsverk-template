@@ -202,6 +202,44 @@ xcodegen generate
 pre-commit install
 ```
 
+### 4–6, scripted: `scripts/setup-github.sh`
+
+Everything from here through step 6 is one idempotent run of the script every
+generated project ships:
+
+```sh
+scripts/setup-github.sh --ssh-host github.com-grimsverk --app --verify
+```
+
+It creates the repository and pushes (step 4), sets the merge settings and
+prompts for the missing secrets (silently — a value never touches an argument
+list or a log), creates or updates the `grimsverk-gates` ruleset with the
+required checks for the project's language (step 6), and with `--verify` runs
+the throwaway-PR dance so every PR-only check reports once. Re-running it
+finishes a partial setup instead of duplicating anything. Afterwards, read the
+configuration back before trusting it:
+
+```sh
+.github/scripts/unattended-ready.sh
+```
+
+**What stays manual, each for a security reason rather than a missing
+feature:** typing the secret *values* (`claude setup-token` is an interactive
+OAuth flow, and the script never fetches or stores a credential), minting the
+two fine-grained PATs and creating the GitHub App in the GitHub UI (token
+minting is a human credential decision, and the App form has no API — `--app`
+prints the exact URL and permission list), `gh auth login`'s browser grant, and
+the Pro-vs-public choice at the top of this file.
+
+The REST API accepts required-check contexts that have not reported yet — the
+"must report once" constraint is a UI-dropdown limitation — which is what lets
+the script create the ruleset before the first pull request. That claim is
+flagged unverified-live in the script header; `--verify` is the belt to its
+braces.
+
+Steps 4–6 below remain as the reference for what the script does and for doing
+it by hand.
+
 ### 4. Create the GitHub repo
 
 ```sh
@@ -492,13 +530,27 @@ leaving an artifact the next one checks against:
 | `/design` | `docs/DESIGN.md` — what and why, requirements `R1…`, criteria `S1…` | the owner, through the interview itself |
 | `/plan` | `docs/plans/<slug>.md` — vertical slices, files, signatures, estimates | the owner, at a hard uncertainty stop, then by merging the plan |
 | `/orchestrate` | one branch and PR per feature; per slice a coder and a blind test-writer in parallel | CI, `plan`, `test-the-tests`, the review gate |
-| `/deliver` | drives the loop, then `docs/acceptance.md` | the owner, for anything an agent can't observe |
+| `/deliver` | drives the loop attended, then `docs/acceptance.md` | the owner, for anything an agent can't observe |
+| `deliver-loop.sh` / `/deliver-loop` | the same loop **unattended**: phase-detects, dispatches one session at a time, waits mechanically on CI | `unattended-ready.sh` (refuses an impossible run), then every gate above; stops say why (pattern, budget, blocked-on-owner) |
 
 Plans land before the code that implements them, on their own `docs/` pull
 request — `CODEOWNERS` puts `docs/plans/` behind your review, so merging a plan
 *is* the ruling on it, and CI rejects any PR whose plan isn't already at its
 base commit. No agent merges at any point; merges are triggered by checks going
 green.
+
+**Unattended, the owner's three jobs are the whole surface**: land the vision
+and design, optionally steer mid-run by editing those two documents (they stay
+owner-authored — that is the steering lever), and review at the end. Everything
+between runs through the driver: `.claude/scripts/deliver-loop.sh` locally, or
+the `/deliver-loop` command in a Claude Code web session — same phase detector,
+so the modes cannot drift. Mid-run rulings the owner used to make belong to the
+oracle: uncertainties are filed as `BL-<n>` backlog items and ruled as `OD-<n>`
+decisions (HIGH-risk ones block planning until ruled; LOW proceed on a recorded
+default), and unattended plans land on the un-owned `docs/plans/oracle/` path,
+constrained mechanically — they can implement landed requirements and can never
+propose work. The rulings behind all of this ship pre-recorded in every
+generated project's `docs/DECISIONS.md`.
 
 **One feature per orchestrator.** `/orchestrate` builds a single feature start to
 finish. To work on two at once, open a second session and run it there — each

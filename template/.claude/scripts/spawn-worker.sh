@@ -210,6 +210,11 @@ ORACLE_TOOLS=(
 STEWARD_TOOLS=(
   "Read" "Grep" "Glob"
   "Write(docs/plans/oracle/**)" "Edit(docs/plans/oracle/**)"
+  # The backlog is in the steward's reach for two documented duties: an
+  # objection to a decision goes to docs/BACKLOG.md (steward.md), and the
+  # unattended planner — which runs under this role — files uncertainties
+  # there as BL-<n> items for the oracle to rule on (plan.md, the gate).
+  "Write(docs/BACKLOG.md)" "Edit(docs/BACKLOG.md)"
   "${GIT_TOOLS[@]}"
 )
 READ_ONLY_TOOLS=("Read" "Grep" "Glob")
