@@ -75,6 +75,17 @@ jobs:
         run: |
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
             .github/scripts/escape-refs.sh
+      - name: The escape ledger is append-only
+        # docs/escapes.md has said "never rewrite an entry" since it existed,
+        # and the oracle ledger gets that promise ENFORCED — the asymmetry was
+        # ESC-15. The escape ledger is the oracle's other evidence source, and
+        # an agent editing an inconvenient row would change what a landed
+        # decision's citation means. Corrections still pass: a correction is an
+        # APPENDED row repeating the id, which is the file's own documented
+        # lifecycle.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            .github/scripts/escapes-append-only.sh
       - name: Oracle decisions are append-only and evidence-backed
         # docs/DESIGN.oracle.md is the one design document an agent may write
         # unattended, so it is deliberately NOT behind CODEOWNERS — ownership
@@ -118,6 +129,16 @@ jobs:
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
           HEAD_SHA="$(git rev-parse HEAD)" \
             .github/scripts/vision-complete.sh
+      - name: Unattended readiness (advisory)
+        # ADVISORY, never red: `|| true` is the whole policy. The binding run
+        # of this script is the delivery driver's preflight, where it REFUSES;
+        # here it only surfaces repository-settings drift in the log, because
+        # settings live outside every file a pull request can diff. Some lines
+        # will read "cannot list" — the CI token cannot see secrets, and that
+        # is expected here, not a finding.
+        env:
+          GH_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+        run: .github/scripts/unattended-ready.sh || true
 
   # The other half of the planning story. A `template/` branch is exempt from
   # the `plan` check above, because a template update is specified in the
