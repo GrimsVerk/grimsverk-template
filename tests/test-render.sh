@@ -497,6 +497,26 @@ sys.exit(0 if 'closed' in d[True]['pull_request']['types'] else 1)
     else no "$lang auto-merge prefers a real token when one exists" \
       "GITHUB_TOKEN-driven merges dispatch no events"; fi
 
+    # The App outranks the PAT outranks the built-in token, on the SAME
+    # GH_TOKEN line — the App has its own rate budget and its merges are not
+    # authored as the owner (docs/DECISIONS.md). Order matters: a ladder that
+    # reaches the PAT first quietly keeps the shared-budget problem.
+    if grep -E '^[[:space:]]*GH_TOKEN:' "$am" \
+       | grep -qE 'app-token.*AUTO_MERGE_TOKEN.*GITHUB_TOKEN'
+    then ok "$lang auto-merge tries App, then PAT, then built-in token"
+    else no "$lang auto-merge tries App, then PAT, then built-in token"; fi
+    if grep -q 'create-github-app-token' "$am"
+    then ok "$lang auto-merge can mint an App token"
+    else no "$lang auto-merge can mint an App token"; fi
+
+    # Arming retries with backoff and, on giving up, says WHEN the limit
+    # resets. The GraphQL limit is hourly and per-identity; an unattended run
+    # opening a PR every twenty minutes meets it repeatedly, so a single
+    # failed arm is not an edge case and must not be a red check.
+    if grep -q 'retrying in' "$am" && grep -q 'rate_limit' "$am"
+    then ok "$lang arming retries and reports the rate-limit reset"
+    else no "$lang arming retries and reports the rate-limit reset"; fi
+
     if python3 -c "
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
