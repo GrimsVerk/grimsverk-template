@@ -1,6 +1,18 @@
-<!-- Status: APPROVED — the merged synthesis of this document's earlier draft and
-     docs/plans/unattended-operation.md. Owner rulings recorded inside. Implementation
-     in progress on this branch; line references are to commit 44a686c. -->
+<!-- Status: IMPLEMENTED — the merged synthesis of this document's earlier draft
+     and docs/plans/unattended-operation.md, built across six commits on this
+     branch (skeletons 4f332e7, readiness+bootstrap af02227, App identity
+     b471c0a, oracle wiring c58e19f, dual-mode driver 6f7d84a, lifecycle
+     fixture 750ae85). Owner rulings recorded inside and shipped in
+     template/docs/DECISIONS.md.jinja. Line references are to commit 44a686c
+     and have drifted; the shipped files are now the source of truth.
+
+     Still UNVERIFIED-LIVE, each flagged in its file's header, to observe on
+     the first real project: a branch actually vanishing under the App token
+     (closes ESC-21); REST ruleset creation before checks first report
+     (setup-github.sh --verify is the fallback); budget-probe.sh against a
+     real subscription (hard backstops hold either way); one live
+     smoke-worker probe of the driver's session command lines; /deliver-loop
+     web mode, once, watched. -->
 
 # Unattended loop — merged plan (supersedes both drafts on the branch)
 
