@@ -1,9 +1,16 @@
 ---
 slug: unattended-operation
-status: draft
+status: superseded
 created: 2026-08-16
 covers: []
 ---
+
+<!-- Superseded by docs/automation-loop-plan.md, the owner-approved merge of
+     this plan and that document's earlier draft. This plan's sequencing
+     (prove the merge cycle live → readiness check → the stops come out),
+     its readiness check, rate-limit slice, no-vision decision class, and
+     lifecycle fixture all survive there; its open rulings are ruled. Kept
+     unedited below as the record of what was proposed. -->
 
 # Unattended operation — Plan
 

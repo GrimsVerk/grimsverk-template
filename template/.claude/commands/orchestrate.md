@@ -36,14 +36,26 @@ One steward per decision, in parallel, each given exactly one `OD-<n>`:
 
 ```sh
 .claude/scripts/spawn-worker.sh --id steward-<od> --role steward \
-  --engine claude --base docs/oracle-plans --prompt "<steward prompt>" &
+  --engine claude --base main --prompt "<steward prompt>" &
 ```
 
 The steward prompt is `.claude/commands/steward.md` plus the decision id. Read
 which decisions the handoff says NOT to act on yet, and do not act on them.
+Stewards branch off the **default branch** — their plans depend on the landed
+ledger, not on any feature's code.
 
 Their plans land on their own pull requests, before any code, exactly like every
-other plan. Only then does a feature branch off to build one. If the handoff
+other plan. The steward's branch is `worker/steward-<od>`, which neither the
+`docs/` carve-out nor slug resolution recognises — so push its head under a
+`docs/`-prefixed name and open the pull request from that:
+
+```sh
+git push origin worker/steward-<od>:docs/oracle-plan-<slug>
+gh pr create --head docs/oracle-plan-<slug> --fill
+```
+
+A diff confined to planning documents is exempt from the plan gate's size cap at
+any size, which these pull requests satisfy by construction. Only then does a feature branch off to build one. If the handoff
 names a decision that makes an *existing* plan partly wrong, say so in your
 report — reworking that plan is the owner's call, not yours.
 

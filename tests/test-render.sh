@@ -195,6 +195,36 @@ PYCHK
     else no "$lang ships $f"; fi
   done
 
+  # The evidence sources and the oracle's directories must exist on day one.
+  # AGENTS.md, oracle.md, steward.md and deliver.md all point at these; before
+  # they shipped, a fresh project started with half the oracle's evidence space
+  # nonexistent and every pointer dangling.
+  for f in docs/BACKLOG.md docs/DECISIONS.md docs/oracle/.gitkeep \
+           docs/plans/oracle/.gitkeep; do
+    if [[ -f "$out/$f" ]]; then ok "$lang ships $f"
+    else no "$lang ships $f"; fi
+  done
+
+  # The shipped backlog must contain no literal BL id. oracle-decisions.sh
+  # greps the WHOLE file for the id pattern with no column anchoring, so an
+  # example id in the skeleton is phantom evidence in every project on day one
+  # — the ESC-19 failure shape, one file over. Talk about ids as BL-<n> only.
+  if grep -qE 'BL-[0-9]+' "$out/docs/BACKLOG.md" 2>/dev/null; then
+    no "$lang backlog skeleton has no phantom evidence id" \
+      "$(grep -nE 'BL-[0-9]+' "$out/docs/BACKLOG.md" | head -3)"
+  else
+    ok "$lang backlog skeleton has no phantom evidence id"
+  fi
+
+  # The steward's base branch must be real. orchestrate.md used to name
+  # docs/oracle-plans, a branch nothing creates — a worker based on it dies at
+  # checkout, deep inside a headless run.
+  if grep -q 'docs/oracle-plans' "$out/.claude/commands/orchestrate.md" 2>/dev/null; then
+    no "$lang orchestrate.md names no phantom base branch"
+  else
+    ok "$lang orchestrate.md names no phantom base branch"
+  fi
+
   # The shipped oracle ledger must pass the gate it ships with, on day one, in a
   # project that has no decisions and no evidence. A skeleton whose own example
   # rows parsed as real decisions would fail every generated project instantly.

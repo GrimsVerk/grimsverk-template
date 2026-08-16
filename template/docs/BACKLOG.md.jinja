@@ -1,0 +1,45 @@
+# Backlog — {{ project_name }}
+
+The standing queue of what *might* be built, as opposed to a plan, which covers
+the one change being built now. Three sections, and what separates them is who
+has ruled:
+
+- **Approved** — the owner has said yes. An agent working unattended implements
+  these top to bottom, and keeps going until the list is done or it is truly
+  blocked (`AGENTS.md`, "Work queue").
+- **Proposed** — ideas, written as text, **never coded unprompted**. They move
+  up when the owner moves them.
+- **Uncertainties awaiting oracle ruling** — questions a plan raised that the
+  design did not answer, filed here so the oracle can rule on them
+  (`.claude/commands/plan.md`, the uncertainty gate). Each carries the
+  planner's proposed default and its risk class. An item leaves this section
+  only by being cited from a decision in `docs/DESIGN.oracle.md` — the ruling
+  is recorded there, never edited in here.
+
+**Give items ids** — `BL-<n>`, the next unused integer — if you want them
+citable. The oracle's gate (`.github/scripts/oracle-decisions.sh`) treats an id
+in this file as evidence a decision may cite, and an item with no id is not
+evidence as far as the check is concerned. Two rules follow from being an
+evidence source:
+
+- **Never delete an id a decision cites.** A citation is resolved against this
+  file at the pull request's base commit, and removing the item it points at
+  turns a landed decision's evidence into a dangling reference. Strike an item
+  by marking it done or withdrawn in place.
+- **Never ship or paste an id you did not mean.** The check greps this whole
+  file for the id pattern, so a stray id in prose is phantom evidence — write
+  the pattern with `<n>` when talking *about* ids, as this paragraph does.
+
+## Approved
+
+_(nothing yet)_
+
+## Proposed
+
+_(nothing yet)_
+
+## Uncertainties awaiting oracle ruling
+
+_(nothing yet — filed by `/plan` when a design leaves a question open; format:_
+_`BL-<n>` — the question, the proposed default, HIGH or LOW risk, and one line_
+_on why that class.)_
