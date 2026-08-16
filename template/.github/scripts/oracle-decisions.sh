@@ -64,6 +64,7 @@
 #   PLANS_DIR       default: docs/plans        (oracle plans in <dir>/oracle/)
 #   LEDGER          default: docs/escapes.md
 #   BACKLOG         default: docs/BACKLOG.md
+#   DESIGN_DOC      default: docs/DESIGN.md    (for the covers-only plan rule)
 #   MAX_DECISIONS   default: 150
 #   REQ_OFFSET      default: 1000
 
@@ -76,6 +77,7 @@ ORACLE_DIR="${ORACLE_DIR:-docs/oracle}"
 PLANS_DIR="${PLANS_DIR:-docs/plans}"
 LEDGER="${LEDGER:-docs/escapes.md}"
 BACKLOG="${BACKLOG:-docs/BACKLOG.md}"
+DESIGN_DOC="${DESIGN_DOC:-docs/DESIGN.md}"
 MAX_DECISIONS="${MAX_DECISIONS:-150}"
 REQ_OFFSET="${REQ_OFFSET:-1000}"
 
@@ -187,6 +189,32 @@ for id in "${HEAD_IDS[@]:-}"; do
     fi
   done
 
+  # 3b. The vision field carries the steering, so its VALUE has a shape, not
+  # just a presence: either a verbatim quote from docs/VISION.md — recognisable
+  # by its quotation marks — or the one explicit opt-out, verbatim:
+  #
+  #     (no vision statement decided this)
+  #
+  # The opt-out exists for the ruling class the vision genuinely does not
+  # decide — an uncertainty a plan filed, say — which under the old rule could
+  # not be written at all without paraphrasing something into existence. It is
+  # a class, not an escape hatch: using it obliges the decision to say what
+  # else was weighed, because guessing is allowed and guessing SILENTLY is not
+  # (docs/DECISIONS.md, the mid-run authority ruling).
+  vision_value="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Vision statement relied on:\*\*[[:space:]]*//p' | head -1)"
+  if [[ -n "$vision_value" ]]; then
+    if [[ "$vision_value" == "(no vision statement decided this)" ]]; then
+      alts_value="$(printf '%s\n' "$block" \
+        | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Alternatives considered:\*\*[[:space:]]*//p' | head -1)"
+      if [[ "$alts_value" == *"(none)"* ]]; then
+        fail "$id uses the no-vision class with no alternatives — say what else was weighed and why it lost, or the owner cannot see what a different vision sentence would have changed"
+      fi
+    elif [[ "$vision_value" != *'"'* ]]; then
+      fail "$id's vision field neither quotes a statement nor declares '(no vision statement decided this)' — a paraphrase is the decision restating itself"
+    fi
+  fi
+
   # 1. Evidence must exist at the base commit.
   evidence_line="$(printf '%s\n' "$block" \
     | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Evidence:\*\*[[:space:]]*//p' | head -1)"
@@ -236,10 +264,50 @@ done < <(git -C "$ROOT" ls-tree -r --name-only "$BASE_SHA" -- "$ORACLE_DIR" 2>/d
          | grep -E '/handoff-[^/]+\.md$' || true)
 
 # ------------------------------------------------- plans built on a decision
-# A steward writes plans under docs/plans/oracle/. Each must name the decision
-# it implements, and that decision must already have landed — the same
-# backward-only rule the ledger itself follows.
+# Plans under docs/plans/oracle/ are the ones that merge with nobody awake, so
+# each must trace to something owner-controlled that ALREADY LANDED. Two
+# accepted forms, and nothing else:
+#
+#   1. a steward's plan, citing a decision id (`OD-<n>`) that exists at the
+#      base commit — the original rule;
+#   2. a milestone plan the unattended loop landed here, citing no decision
+#      but whose `covers:` list consists solely of requirement ids that exist
+#      at the base commit in either design document. Both documents are
+#      owner-controlled ($DESIGN_DOC by owner-authored.sh, $ORACLE_DOC by the
+#      evidence rule above), so this is still "the design layer rules": the
+#      plan implements requirements somebody already landed, it does not
+#      propose them. The requirement-id extraction mirrors coverage.sh —
+#      section 5 ids for the design doc, column-anchored `Requirements added`
+#      lines for the ledger — so the two checks cannot disagree about what a
+#      requirement is.
 ORACLE_PLANS="$ROOT/$PLANS_DIR/oracle"
+
+# Requirement ids that exist at the base commit, lazily built on first use.
+BASE_REQS=""
+base_reqs() {
+  if [[ -z "$BASE_REQS" ]]; then
+    show_base "$DESIGN_DOC"  > "$WORK/base-design.md"
+    # base-oracle.md already holds the ledger at base.
+    BASE_REQS="$(awk '
+      /^## 5\./ { in5 = 1; next }
+      /^## /    { in5 = 0 }
+      in5 || /^[-*] \*\*Requirements added:\*\*/ {
+        line = $0
+        if (!in5) sub(/^.*\*\*Requirements added:\*\*/, "", line)
+        while (match(line, /\*\*R[0-9]+\*\*/)) {
+          print substr(line, RSTART + 2, RLENGTH - 4)
+          line = substr(line, RSTART + RLENGTH)
+        }
+        if (!in5) {
+          n = split(line, parts, /[^A-Za-z0-9]+/)
+          for (i = 1; i <= n; i++) if (parts[i] ~ /^R[0-9]+$/) print parts[i]
+        }
+      }' "$WORK/base-design.md" "$BASE_DOC" | sort -u)"
+    [[ -n "$BASE_REQS" ]] || BASE_REQS=$'\n'
+  fi
+  printf '%s\n' "$BASE_REQS"
+}
+
 if [[ -d "$ORACLE_PLANS" ]]; then
   while IFS= read -r f; do
     [[ -z "$f" ]] && continue
@@ -247,7 +315,17 @@ if [[ -d "$ORACLE_PLANS" ]]; then
     rel="${f#"$ROOT"/}"
     mapfile -t PLAN_CITES < <(grep -oE '\bOD-[0-9]+\b' "$f" | sort -u)
     if [[ ${#PLAN_CITES[@]} -eq 0 ]]; then
-      fail "$rel cites no oracle decision — a plan under $PLANS_DIR/oracle/ implements a decision, it does not propose one"
+      # Form 2: no decision cited, so the covers list must carry the trace.
+      covers_line="$(sed -n 's/^covers:[[:space:]]*//p' "$f" | head -1)"
+      mapfile -t COVERS < <(printf '%s\n' "$covers_line" | grep -oE 'R[0-9]+' | sort -u)
+      if [[ ${#COVERS[@]} -eq 0 ]]; then
+        fail "$rel cites no oracle decision and covers no requirement — a plan here implements a landed OD-<n>, or covers requirement ids that already landed in $DESIGN_DOC or $ORACLE_DOC; it never proposes work"
+        continue
+      fi
+      for req in "${COVERS[@]}"; do
+        grep -qxF "$req" <(base_reqs) \
+          || fail "$rel covers $req, which exists in neither design document at the base commit — a plan implements requirements somebody landed, it does not propose them"
+      done
       continue
     fi
     resolved=0

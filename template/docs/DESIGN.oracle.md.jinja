@@ -75,7 +75,18 @@ and edit *that*, instead of guessing which of ten statements was doing the work
 and arguing with each decision one at a time.
 
 Quote the statement. Do not paraphrase it — a paraphrase is the decision
-restating itself.
+restating itself, and the check refuses a vision field with neither quotation
+marks nor the one explicit opt-out:
+
+    (no vision statement decided this)
+
+That opt-out exists for the ruling class the vision genuinely does not decide —
+an uncertainty a plan filed, most often — which otherwise could not be written
+at all without paraphrasing a statement into existence. Using it moves the
+weight onto **Alternatives considered**: what else was weighed and why it lost,
+so the owner can still see what a different vision sentence would have changed.
+The check refuses the opt-out with `(none)` there. Guessing is allowed;
+guessing silently is not.
 
 ## What the check enforces
 
@@ -83,11 +94,15 @@ restating itself.
 
 - every new decision cites evidence that exists at the **base commit**;
 - every new decision carries all seven fields, non-empty;
+- the vision field either quotes a statement or declares the no-vision class,
+  and the class demands real alternatives;
 - a decision present at the base commit is neither modified nor removed;
 - ids are unique and increasing;
 - added requirement ids are at or above R1000;
 - at most 150 decisions (a runaway-loop backstop, not a real bound);
-- plans under `docs/plans/oracle/` cite a decision that has already landed;
+- plans under `docs/plans/oracle/` cite a decision that has already landed, or
+  cover only requirement ids that already exist in a design document — either
+  way a plan there implements landed work, it never proposes any;
 - a handoff under `docs/oracle/` is never modified after it is written.
 
 ## The one stop

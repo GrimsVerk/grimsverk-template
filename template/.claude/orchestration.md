@@ -13,11 +13,13 @@ project (docs, CI, and pre-commit are untouched).
 - **Command:** `/orchestrate <feature slug>` (see `.claude/commands/orchestrate.md`).
 - **Primitive:** `.claude/scripts/spawn-worker.sh` (one worker per call).
 
-Two further roles exist for unattended runs, and the orchestrator spawns both:
-the **oracle** (`/oracle`), which corrects `docs/DESIGN.oracle.md` from logged
-evidence and leaves a handoff, and the **steward** (`/steward`), which turns one
-of its decisions into a plan. The oracle spawns nothing — see "Deciding and
-commissioning are separate" below.
+Two further roles exist for unattended runs: the **oracle** (`/oracle`), which
+corrects `docs/DESIGN.oracle.md` from logged evidence and rules on filed
+uncertainties, leaving a handoff; and the **steward** (`/steward`), which turns
+one of its decisions into a plan. Their commissioner is the orchestrator in an
+attended session, or the delivery driver (`deliver-loop.sh`) in an unattended
+run — either way the oracle spawns nothing, see "Deciding and commissioning are
+separate" below.
 
 ## The shape
 
@@ -66,7 +68,35 @@ one agent and then gone, where a file under `docs/oracle/` is still there when
 someone asks why a plan exists.
 
 It costs nothing structurally. The orchestrator was already the single place
-that knows what is running, and this keeps it that way.
+that knows what is running, and this keeps it that way. In an unattended run
+the commissioner is the delivery driver — deterministic tooling rather than an
+agent — which separates deciding from commissioning even further, not less.
+
+## Mid-run authority: the design layer rules
+
+Plans derive only from the design layer, and new work enters through one chain,
+never sideways:
+
+```
+evidence (ESC-<n>, BL-<n>)  →  oracle amends docs/DESIGN.oracle.md   (own PR)
+                            →  plan                                  (own PR)
+                            →  code                                  (own PR)
+```
+
+Nothing an agent thinks of mid-run becomes work directly. It is logged as
+evidence, the oracle decides what the design should say, a plan implements the
+decision, and only then does code exist. Uncertainties travel the same road: a
+plan that had to guess files the question as a `BL-<n>`, and the oracle rules
+it — by risk class, see `AGENTS.md`'s Planning rule — so the answer is a
+recorded decision quoting the vision (or explicitly declaring the vision
+silent), never a private judgment inside one plan.
+
+Each arrow is enforced, not promised: the oracle's ledger takes only
+evidence-backed appends (`oracle-decisions.sh`), unattended plans must cite a
+landed decision or cover landed requirements (same check), and code resolves to
+a landed plan (the `plan` check). The owner steers the whole chain from the
+top, by editing `docs/VISION.md` and `docs/DESIGN.md` — which stay owner-landed
+— and reviews the built system at the end. Nothing mid-run waits on them.
 
 ## Roles: model, effort, and reach
 

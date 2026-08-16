@@ -49,6 +49,14 @@
 # it. A pattern with NO owner clears ownership for the paths it matches, and
 # later rules win — so this line, and only this line, releases the oracle's
 # planning directory. Everything else under /docs/plans/ stays owned.
+#
+# This un-owned path carries TWO kinds of plan: the steward's (citing an
+# OD-<n>) and the milestone plans the unattended delivery driver lands (citing
+# none, but covering only requirement ids that already exist in a design
+# document). oracle-decisions.sh enforces both shapes, which is what replaces
+# the owner's review here: a plan on this path can implement landed work and
+# can never propose any. Attended plans stay under /docs/plans/ proper, where
+# merging past this file IS the owner's ruling.
 /docs/plans/oracle/
 
 # The append-only ledgers. Their value is that entries are never quietly

@@ -177,6 +177,42 @@ expect_rc "a decision missing the vision field fails" 1 $?
 expect_contains "names the field" "$out" "Vision statement relied on"
 git -C "$R" reset -q --hard HEAD~1
 
+# ------------------------------------- the vision field's value has a shape
+# A paraphrase — prose with no quotation marks and no opt-out marker — is the
+# decision restating itself, and it breaks the steering: the owner cannot find
+# the sentence that produced it.
+decision 2 "ESC-1" "R1001" \
+  | sed 's/^- \*\*Vision statement relied on:\*\*.*/- **Vision statement relied on:** the vision generally favours cheapness/' \
+  >> "$R/docs/DESIGN.oracle.md"
+commit "Add a decision that paraphrases the vision"
+out="$(run)"
+expect_rc "a paraphrased vision field fails" 1 $?
+expect_contains "and says a paraphrase is the decision restating itself" "$out" \
+  "a paraphrase is the decision restating itself"
+git -C "$R" reset -q --hard HEAD~1
+
+# The no-vision class: a ruling the vision genuinely does not decide (an
+# uncertainty a plan filed, say). Legal with alternatives spelled out...
+decision 2 "BL-1" "R1001" \
+  | sed 's/^- \*\*Vision statement relied on:\*\*.*/- **Vision statement relied on:** (no vision statement decided this)/' \
+  >> "$R/docs/DESIGN.oracle.md"
+commit "Add a no-vision-class decision with alternatives"
+expect_rc "the no-vision class passes with alternatives weighed" 0 \
+  "$(run >/dev/null; echo $?)"
+git -C "$R" reset -q --hard HEAD~1
+
+# ...and refused when the alternatives are "(none)": guessing is allowed,
+# guessing silently is not.
+decision 2 "BL-1" "R1001" \
+  | sed 's/^- \*\*Vision statement relied on:\*\*.*/- **Vision statement relied on:** (no vision statement decided this)/' \
+  | sed 's/^- \*\*Alternatives considered:\*\*.*/- **Alternatives considered:** (none)/' \
+  >> "$R/docs/DESIGN.oracle.md"
+commit "Add a no-vision-class decision with no alternatives"
+out="$(run)"
+expect_rc "the no-vision class with no alternatives fails" 1 $?
+expect_contains "and says what the owner loses" "$out" "cannot see what a different vision sentence"
+git -C "$R" reset -q --hard HEAD~1
+
 # ------------------------------------------------------ an empty field -> fail
 decision 2 "ESC-1" "R1001" \
   | sed 's/^- \*\*Rationale:\*\*.*/- **Rationale:**/' >> "$R/docs/DESIGN.oracle.md"
@@ -228,12 +264,34 @@ EOF
 commit "Add an oracle plan citing OD-1"
 expect_rc "a plan citing a landed decision passes" 0 "$(run >/dev/null; echo $?)"
 
+# Form 2 (the unattended loop's milestone plans): no decision cited, but every
+# covers: id already landed in a design document — R1000 landed via OD-1 — so
+# the plan still traces to the owner-controlled design layer and passes.
 sed -i 's/Implements OD-1./Implements nothing in particular./' \
   "$R/docs/plans/oracle/whole-transcripts.md"
-commit "Strip the citation"
+commit "Strip the citation, keep landed covers"
+expect_rc "a citation-less plan covering LANDED requirements passes" 0 \
+  "$(run >/dev/null; echo $?)"
+git -C "$R" reset -q --hard HEAD~1
+
+# ...but covers: must not smuggle work in. An id in neither design document is
+# a proposal wearing a plan's clothes, which is exactly what the rule refuses.
+sed -i 's/Implements OD-1./Implements nothing in particular./; s/covers: \[R1000\]/covers: [R1000, R7]/' \
+  "$R/docs/plans/oracle/whole-transcripts.md"
+commit "Cover a requirement nobody landed"
 out="$(run)"
-expect_rc "an oracle plan citing no decision fails" 1 $?
-expect_contains "says a plan implements rather than proposes" "$out" "it does not propose one"
+expect_rc "a citation-less plan covering an unlanded requirement fails" 1 $?
+expect_contains "and names the invented id" "$out" "covers R7"
+git -C "$R" reset -q --hard HEAD~1
+
+# And with neither form — no citation, no covers — the message names both.
+# (Applied to the pristine citing plan, restored by the resets above.)
+sed -i 's/Implements OD-1./Implements nothing in particular./; s/covers: \[R1000\]/covers: []/' \
+  "$R/docs/plans/oracle/whole-transcripts.md"
+commit "Strip both the citation and the covers"
+out="$(run)"
+expect_rc "a plan with neither citation nor covers fails" 1 $?
+expect_contains "and says a plan never proposes work" "$out" "never proposes work"
 git -C "$R" reset -q --hard HEAD~1
 
 sed -i 's/Implements OD-1./Implements OD-99./' \

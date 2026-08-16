@@ -319,6 +319,26 @@ PYCHK
   if says "$ora" "it never marks a decision pending"
   then ok "$lang oracle ledger states that nothing is left pending"
   else no "$lang oracle ledger states that nothing is left pending"; fi
+
+  # The mid-run authority chain, and the hybrid uncertainty rule that removed
+  # the 1am owner stop. Each phrase below is the load-bearing half of a ruling
+  # in docs/DECISIONS.md; a template edit that rewords one out of existence
+  # silently reinstates a stop (or removes a record) an unattended run depends
+  # on. "unsure means HIGH" is the tiebreak that keeps the fast path from
+  # eating the safe one; the no-vision class is what lets the oracle rule on
+  # questions the vision never answered instead of paraphrasing it.
+  if says "$ag" "unsure means HIGH"
+  then ok "$lang AGENTS.md carries the risk tiebreak"
+  else no "$lang AGENTS.md carries the risk tiebreak"; fi
+  if says "$ag" "One pipeline pull request in flight at a time"
+  then ok "$lang AGENTS.md states the one-open-PR rule"
+  else no "$lang AGENTS.md states the one-open-PR rule"; fi
+  if says "$out/.claude/commands/plan.md" "plan pending oracle rulings"
+  then ok "$lang plan.md routes unattended uncertainties to the oracle"
+  else no "$lang plan.md routes unattended uncertainties to the oracle"; fi
+  if says "$ora" "(no vision statement decided this)"
+  then ok "$lang oracle ledger documents the no-vision class"
+  else no "$lang oracle ledger documents the no-vision class"; fi
   # WRITING versus LANDING. Two earlier wordings failed in opposite directions:
   # "no agent may edit it" made the file unwritable, since /design fills it in
   # by interviewing the owner; the transcription carve-out that replaced it let

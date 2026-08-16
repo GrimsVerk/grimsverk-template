@@ -22,8 +22,17 @@ horizontal layer (all the storage, then all the CLI), because horizontal work
 leaves nothing testable until the end, when steering is most expensive. Each
 slice declares the files it touches, its type and method signatures, and a line
 estimate. Before writing any slices, list the decisions you had to guess at
-rather than derive, and stop for the owner's ruling — then record the rulings in
-the plan.
+rather than derive, and classify each by one contract test: **HIGH-risk** if
+the candidate answers change slice boundaries, a Signatures block, an external
+format or schema, or anything expensive to reverse — unsure means HIGH. Then
+who rules depends on who is awake. Attended, the owner rules on everything
+before slices are written, and the rulings are recorded in the plan.
+Unattended, the oracle rules: a HIGH uncertainty is filed as a `BL-<n>` under
+"Uncertainties awaiting oracle ruling" in `docs/BACKLOG.md` with the proposed
+default, and planning stops until a decision cites it; a LOW one proceeds on
+the recorded default and the oracle reviews it next cycle. Never silently —
+every guess is filed either way (`docs/DECISIONS.md`, the mid-run authority
+ruling).
 
 **The stop is conditional on there being something to stop for.** If every
 decision was derived from the design — `docs/DESIGN.md` and
@@ -35,6 +44,19 @@ still reviewed by the owner before it merges, so a falsely empty list is visible
 where it counts. The estimate is a **tripwire, not a target**: never compress code,
 drop error handling, or thin tests to come in under it. An overrun does not fail
 the build; CI reports the delta and the reviewer asks whether it was justified.
+
+**Mid-run authority.** Plans derive only from the design layer — `docs/DESIGN.md`
+and `docs/DESIGN.oracle.md`. When new work surfaces mid-run, it enters through
+the chain and never sideways: the oracle amends `docs/DESIGN.oracle.md` on its
+own pull request, a plan follows on its own pull request, then code. No agent
+plans work the design layer does not name, and no agent widens a plan to
+smuggle work past that rule — `.github/scripts/oracle-decisions.sh` enforces it
+mechanically on the unattended path. The owner steers an unattended run by
+editing `docs/VISION.md` and `docs/DESIGN.md` (which remain owner-landed), and
+reviews the built system at the end; nothing mid-run waits on them. **One
+pipeline pull request in flight at a time**: nothing is dispatched while one is
+open, which keeps every merge tested against the tree it will actually land on
+and keeps the review gate's budget for the pull request that needs it.
 
 **`docs/VISION.md` must be finished before a plan lands, and not before that.**
 The vision does not have to be written before the design — writing it after is
