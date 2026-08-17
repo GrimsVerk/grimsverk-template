@@ -298,6 +298,43 @@ expect_contains "grants on the command line (the ESC-5 lesson)" "$out" \
 expect_not_contains "merging is not in the orchestrator's reach" "$out" "gh pr merge"
 expect_not_contains "nor is a hard reset" "$out" "git reset"
 
+# THE ONE DOOR TO A NEW AGENT. The orchestrator's whole job is spawning paired
+# coder and test-writer workers, so it must be able to — and it must be able to
+# ONLY through spawn-worker.sh, because that script is where every property of a
+# worker is imposed: the per-role model and effort, the path-scoped write
+# grants, the authentication preflight, the worktree isolation, and the
+# empty-branch check. An agent that can start an engine directly hands it
+# whatever grants it likes and none of that applies.
+#
+# This pair was untested, and that is how it silently stopped being true:
+# `.claude/settings.json` carried `Bash(claude -p:*)` in its ALLOW list, which
+# put the door back without anything noticing. Nothing needed it — the engine
+# spawn-worker.sh launches is a subprocess of the script (spawn-worker.sh's
+# final `( cd "$WORKTREE" && "${CMD[@]}" )`), not a tool call, so the grant on
+# the script covers the whole path. Both halves are asserted here so the
+# permission and the bypass cannot drift apart again.
+expect_contains "the orchestrator CAN spawn workers" "$out" \
+  "Bash(.claude/scripts/spawn-worker.sh:*)"
+expect_not_contains "and cannot start an engine directly (claude)" "$out" "Bash(claude"
+expect_not_contains "nor codex" "$out" "Bash(codex"
+
+# And the roles it spawns really exist, so the grant above is not pointing at a
+# door that refuses the only two things the orchestrator needs.
+for role in coder test-writer; do
+  rout="$( cd "$R" && bash .claude/scripts/spawn-worker.sh --print-command \
+            --id probe --role "$role" --engine claude --base main --prompt x 2>&1 )"
+  if [[ "$rout" == *"claude"* ]]; then ok "spawn-worker accepts --role $role"
+  else no "spawn-worker accepts --role $role" "$rout"; fi
+done
+# The architect is the deliberate exception: not spawnable, so its authority
+# cannot be borrowed by a role that is.
+rout="$( cd "$R" && bash .claude/scripts/spawn-worker.sh --print-command \
+          --id probe --role architect --engine claude --base main --prompt x 2>&1 )" && rc=0 || rc=$?
+# spawn-worker's die() exits 2, the same code every other misuse gets — a
+# refusal, not a crash.
+expect_rc "and refuses --role architect" 2 "$rc"
+expect_contains "saying where the design is written instead" "$rout" "/design"
+
 # --------------------------------------------------------------- refusals
 echo dirt > "$R/uncommitted.txt"
 out="$(run_loop -- --dry-run)"
