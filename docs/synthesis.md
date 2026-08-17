@@ -10,6 +10,12 @@ decisions taken at the bottom. Nothing here is authorization: as
   now carries fifteen rulings in the owner's own words; Part 4 records what each
   decision became; Part 2 gains six findings that were not in any review,
   discovered while answering the owner's questions.
+- **Revision 3:** 2026-08-17 — everything ruled on is **implemented**, across
+  seven commits, with `ESC-26` … `ESC-33` recording each defect and the check
+  that now names it. The suite is green (19 files; `test-app-token.sh`,
+  `test-backlog-append-only.sh` and `test-budget-probe.sh` are new). What
+  remains is the six open items in Part 4 and the live run — see "Where this
+  stands" below.
 - **Covers:** `docs/plans/` (2 plans + 2 context documents) and `docs/reviews/`
   (5 sessions, 14 distinct documents — `testbed-vs-template-report.md` and
   `comparative-report.md` are byte-identical copies of one file)
@@ -18,6 +24,34 @@ decisions taken at the bottom. Nothing here is authorization: as
 > **On why the rulings are written down.** They were taken in a chat session and
 > exist nowhere else. `AGENTS.md` says chat is not storage. Part 5 is that rule
 > applied to this conversation.
+
+---
+
+## Where this stands
+
+Everything in Part 5 is built. Nothing in "Still open" is, and that is
+deliberate — the owner ruled those out of scope for this pass.
+
+| Ruling | Landed as |
+| --- | --- |
+| R1, R2 — oracle scope; architect role | `spawn-worker.sh` refuses `--role architect`; `settings.json` denies the two intent documents to every session; `CODEOWNERS`, review criterion 5 and `AGENTS.md` all name `.claude/` (`ESC-27`) |
+| R3, R4, R5 — no backlog gate; drift accepted; instrument it | `backlog-append-only.sh` + `docs/BACKLOG.done.md` + a "filed by" field, and no ownership on the backlog (`ESC-28`). The oracle cameras: verified vision quotes, the counter-argument field, HALT entries, and `docs/VISION.md` in the review payload |
+| R6, R7 — `_src_path`; repo access | `template-sync.sh` compares both fields (`ESC-31`) |
+| R8 — `test-the-tests` reports, never fails | a "did it RUN" fact in the review payload, and criterion 3 |
+| R9, R14 — driver identity; loud failure | `app-token.sh`, `mechanical_pr()` opens as the App, readiness refuses without it (`ESC-26`) |
+| R10–R12 — weekly, opt-in, ask every run | `budget-probe.sh` rebuilt; the driver asks and refuses without an answer (`ESC-32`) |
+| R13 — readiness blocks loudly | the preflight banner and the two STOP blocks |
+
+**Two things are true and unobserved.** No GitHub App exists yet, so the
+identity path ships dormant and refuses every unattended run until one does —
+which is the owner's ruling working as intended, not a defect. And `ESC-21`
+remains open: no branch has been observed to vanish under any identity, across
+five recorded attempts. Neither can be closed by a test.
+
+**The next action is unchanged and is now unblocked:** create the App, then one
+watched live run at `--max-prs 3`. That is what closes `ESC-21`, settles whether
+`require_code_owner_review` actually binds, and produces the evidence the two
+biggest open items are waiting on.
 
 ---
 
