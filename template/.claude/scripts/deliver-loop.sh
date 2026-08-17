@@ -35,16 +35,32 @@
 #      (deliver.md step 5's rule, mechanised)
 #   4  blocked on the owner: a green pull request only the owner can merge
 #      (gate paths are CODEOWNERS-owned), reported rather than waited out
-#   5  iteration cap
-#   6  budget spent: the percentage-point allowance (when the probe works — see
-#      budget-probe.sh) or a hard backstop (--max-prs, --max-hours)
+#   5  iteration limit, or the livelock guard
+#   6  allowance spent: the weekly percentage-point allowance, or a limit the
+#      owner set (--max-prs, --max-hours)
 #
-# Options:
-#   --max-iterations <n>   default 20
-#   --budget-points <n>    default 25 — max percentage points of subscription
-#                          utilization this run may consume (probe-dependent)
-#   --max-prs <n>          default 10 — hard backstop, probe or no probe
-#   --max-hours <n>        default 8  — hard backstop, probe or no probe
+# THE CEILING IS ASKED FOR, EVERY RUN. Nothing below has a default, because a
+# limit the owner did not choose is a limit they will not recognise when it
+# fires at 3am — and the numbers that used to be here (25 points, 10 pull
+# requests, 8 hours) were picked by the session that wrote the script. The rate
+# limit is the only stop that applies by default; the rest exist for a run
+# deliberately cut short ("give it twenty minutes; longer means something is
+# wrong"). With no limit at all the run refuses to start.
+#
+# Which question gets asked is decided by PROBING the usage gauge, not by
+# guessing the environment: a reading means a terminal, no reading means a web
+# session, and that is a fact rather than an inference.
+#
+# Options (all unset by default):
+#   --budget-points <n>    percentage points of the WEEKLY limit this run may
+#                          spend. The window is weekly on the owner's ruling,
+#                          and because the 5-hour window resets mid-run and
+#                          makes the delta go negative. Both weekly limits are
+#                          watched — the all-models one and the per-model one,
+#                          which has its own smaller cap and can bind first.
+#   --max-prs <n>          stop after this many pull requests
+#   --max-hours <n>        stop after this much wall clock
+#   --max-iterations <n>   stop after this many iterations
 #   --wait-for-owner       on a green owner-owned pull request, keep polling
 #                          instead of exiting 4
 #   --dry-run              detect and print the phase, dispatch nothing
@@ -72,12 +88,23 @@
 
 set -uo pipefail
 
-MAX_ITER=20; BUDGET_POINTS=25; MAX_PRS=10; MAX_HOURS=8
+# Every ceiling starts at zero — meaning "not set" — because the owner's ruling
+# is that no limit applies unless they chose it, and the run asks for one before
+# it starts. The previous defaults (25 points, 10 PRs, 8 hours) were invented by
+# the session that wrote this script; the owner chose none of them, and a stop
+# whose number nobody recognises is a stop nobody can act on at 3am.
+MAX_ITER=0; BUDGET_POINTS=0; MAX_PRS=0; MAX_HOURS=0
+# Not a budget: a livelock guard. Set far above any real run, it exists only so
+# a loop that makes no progress cannot spin forever. It is deliberately not
+# something the owner is asked about, because reaching it is a bug report rather
+# than a spent allowance — and the driver says so when it fires.
+HARD_MAX_ITER="${DELIVER_HARD_MAX_ITER:-200}"
+BUDGET_POINTS_SET=""; MAX_ITER_SET=""
 WAIT_FOR_OWNER=0; DRY_RUN=0; PRINT_PHASE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --max-iterations) MAX_ITER="${2:-}"; shift 2 ;;
-    --budget-points)  BUDGET_POINTS="${2:-}"; shift 2 ;;
+    --max-iterations) MAX_ITER="${2:-}"; MAX_ITER_SET=1; shift 2 ;;
+    --budget-points)  BUDGET_POINTS="${2:-}"; BUDGET_POINTS_SET=1; shift 2 ;;
     --max-prs)        MAX_PRS="${2:-}"; shift 2 ;;
     --max-hours)      MAX_HOURS="${2:-}"; shift 2 ;;
     --wait-for-owner) WAIT_FOR_OWNER=1; shift ;;
@@ -249,12 +276,86 @@ STEER_DESIGN="$(design_sha)"; STEER_VISION="$(vision_sha)"
 
 START_EPOCH="$(date +%s)"
 PR_COUNT=0
-BUDGET_START=""
-if out="$(.claude/scripts/budget-probe.sh 2>/dev/null)"; then
-  BUDGET_START="$(sed -n 's/^session=\([0-9.]*\).*/\1/p' <<<"$out")"
-  log "budget probe: starting at ${out} (allowance ${BUDGET_POINTS} points)"
+
+# ----------------------------------------------------------------- the ceiling
+# The owner's rulings, and they change the shape of this from what it was:
+#
+#   - the rate limit is the ONLY default stop. Pull requests, iterations and
+#     wall clock stay available, opt-in, for a run where an early answer is all
+#     that is wanted ("run 20 minutes; if it takes longer something is wrong").
+#   - ask EVERY run. No silent default: a number the owner did not choose is a
+#     number they will not recognise at 3am. The previous default of 25 points
+#     was invented by the session that wrote the script.
+#   - the window is WEEKLY. The 5-hour window resets mid-run and makes the delta
+#     go negative; the 7-day one rarely does.
+#
+# WHICH ENVIRONMENT — decided by PROBING the gauge, not by guessing. If a
+# reading comes back this is a terminal with a usage source; if it does not,
+# this is a web session or a machine with nothing configured. That is a fact
+# rather than an inference, so it cannot be wrong about a case nobody foresaw.
+BUDGET_START=""; BUDGET_START_MODEL=""; BUDGET_RESET=""
+if BUDGET_LINE="$(.claude/scripts/budget-probe.sh 2>/dev/null)"; then
+  read_field() { sed -n "s/.*\\b$1=\\([^ ]*\\).*/\\1/p" <<<"$BUDGET_LINE" | head -1; }
+  BUDGET_START="$(read_field week)"
+  BUDGET_START_MODEL="$(read_field week_model)"
+  BUDGET_RESET="$(read_field reset)"
+fi
+
+ask() { # ask <prompt> — one line from the owner, or empty when not a terminal
+  local reply=""
+  [[ -t 0 ]] || return 1
+  read -r -p "$1" reply || return 1
+  printf '%s' "$reply"
+}
+
+if [[ -n "$BUDGET_START" ]]; then
+  if [[ -z "${BUDGET_POINTS_SET:-}" ]]; then
+    banner
+    echo "  Usage gauge found. Current weekly use: ${BUDGET_START}%"
+    [[ "$BUDGET_START_MODEL" != "$BUDGET_START" ]] && \
+      echo "  Per-model weekly use: ${BUDGET_START_MODEL}% (its own cap — either can stop the run)"
+    echo "  Weekly window resets: ${BUDGET_RESET:-unknown}"
+    banner
+    reply="$(ask "  How many percentage points of your WEEKLY limit may this run spend? ")" || reply=""
+    if [[ "$reply" =~ ^[0-9]+$ ]] && [[ "$reply" -gt 0 ]]; then
+      BUDGET_POINTS="$reply"
+    else
+      die "no weekly allowance given, so this run has no ceiling.
+
+The rate limit is the only stop that applies by default, and it needs a number
+from you. Answer the prompt, or pass --budget-points <n>. If you want a run
+bounded some other way instead — for a short test, say — pass --max-hours,
+--max-prs or --max-iterations and those become the ceiling."
+    fi
+  fi
+  log "budget: weekly at ${BUDGET_START}% (model ${BUDGET_START_MODEL}%), allowance ${BUDGET_POINTS} points, window resets ${BUDGET_RESET:-unknown}"
 else
-  log "budget probe unavailable — ceiling is the hard backstops (${MAX_PRS} PRs, ${MAX_HOURS}h)"
+  # No gauge. Do not invent one — ask for the limits that CAN be counted here.
+  if [[ "$MAX_PRS" -eq 0 && "$MAX_HOURS" -eq 0 && -z "${MAX_ITER_SET:-}" ]]; then
+    banner
+    echo "  No usage gauge is reachable here (a web session, or no reader configured)."
+    echo "  So the percentage ceiling cannot apply, and this run needs a limit"
+    echo "  it CAN count. Give at least one; blank means no limit of that kind."
+    banner
+    p="$(ask "  Max pull requests   (blank = none): ")" || p=""
+    h="$(ask "  Max wall-clock hours (blank = none): ")" || h=""
+    i="$(ask "  Max iterations       (blank = none): ")" || i=""
+    [[ "$p" =~ ^[0-9]+$ ]] && MAX_PRS="$p"
+    [[ "$h" =~ ^[0-9]+$ ]] && MAX_HOURS="$h"
+    [[ "$i" =~ ^[0-9]+$ ]] && MAX_ITER="$i"
+    if [[ "$MAX_PRS" -eq 0 && "$MAX_HOURS" -eq 0 && "$MAX_ITER" -eq 0 ]]; then
+      die "no gauge and no limit, so nothing would ever stop this run.
+
+In a web session the subscription percentage cannot be read, so a ceiling has
+to be something countable here: pull requests, wall-clock hours, or iterations.
+Give at least one — at the prompt, or as --max-prs / --max-hours /
+--max-iterations."
+    fi
+  fi
+  log "budget: no usage gauge — ceiling is $( \
+    { [[ "$MAX_PRS"   -gt 0 ]] && printf '%s PRs, ' "$MAX_PRS"; \
+      [[ "$MAX_HOURS" -gt 0 ]] && printf '%sh, ' "$MAX_HOURS"; \
+      [[ "$MAX_ITER"  -gt 0 ]] && printf '%s iterations, ' "$MAX_ITER"; } | sed 's/, $//')"
 fi
 
 # ------------------------------------------------------------- dispatchers
@@ -364,8 +465,17 @@ wait_on_pr() { # wait_on_pr <number> <headref>
 ITER=0
 while :; do
   ITER=$((ITER + 1))
-  if [[ "$ITER" -gt "$MAX_ITER" ]]; then
-    log "iteration cap ($MAX_ITER) reached"
+  if [[ "$MAX_ITER" -gt 0 && "$ITER" -gt "$MAX_ITER" ]]; then
+    log "iteration limit ($MAX_ITER) reached"
+    exit 5
+  fi
+  if [[ "$ITER" -gt "$HARD_MAX_ITER" ]]; then
+    # Not an allowance. Reaching this means the loop kept choosing a phase and
+    # never finished one — a livelock, not a run that ran out of room — so it
+    # is reported as the bug it is rather than as a spent budget.
+    log "STOPPED after $HARD_MAX_ITER iterations without finishing. This is not a"
+    log "budget stop: the loop kept picking work and never converged. Read the"
+    log "phase lines above — the same phase repeating is the diagnosis."
     exit 5
   fi
 
@@ -383,19 +493,38 @@ while :; do
     : > "$SIG_FILE"
   fi
 
-  # Budget, hard backstops first — they hold whether or not the probe works.
+  # Ceilings. Each applies only if the owner set it — zero means "not a limit",
+  # per the ruling that the rate limit is the only stop by default.
   ELAPSED_H=$(( ($(date +%s) - START_EPOCH) / 3600 ))
-  if [[ "$ELAPSED_H" -ge "$MAX_HOURS" ]]; then
-    log "wall-clock backstop (${MAX_HOURS}h) reached"; exit 6
+  if [[ "$MAX_HOURS" -gt 0 && "$ELAPSED_H" -ge "$MAX_HOURS" ]]; then
+    log "wall-clock limit (${MAX_HOURS}h) reached"; exit 6
   fi
-  if [[ "$PR_COUNT" -ge "$MAX_PRS" ]]; then
-    log "pull-request backstop (${MAX_PRS}) reached"; exit 6
+  if [[ "$MAX_PRS" -gt 0 && "$PR_COUNT" -ge "$MAX_PRS" ]]; then
+    log "pull-request limit (${MAX_PRS}) reached"; exit 6
   fi
   if [[ -n "$BUDGET_START" ]] && out="$(.claude/scripts/budget-probe.sh 2>/dev/null)"; then
-    now="$(sed -n 's/^session=\([0-9.]*\).*/\1/p' <<<"$out")"
-    spent="$(awk -v a="$now" -v b="$BUDGET_START" 'BEGIN{print (a-b)}')"
-    if awk -v s="$spent" -v cap="$BUDGET_POINTS" 'BEGIN{exit !(s >= cap)}'; then
-      log "budget allowance spent (${spent} of ${BUDGET_POINTS} points)"; exit 6
+    f() { sed -n "s/.*\\b$1=\\([^ ]*\\).*/\\1/p" <<<"$out" | head -1; }
+    now_reset="$(f reset)"
+    if [[ -n "$BUDGET_RESET" && "$BUDGET_RESET" != "unknown" && "$now_reset" != "$BUDGET_RESET" ]]; then
+      # The weekly window rolled over mid-run. Every delta against the old
+      # baseline is now meaningless — and negative — so re-baseline rather than
+      # measure nonsense, and say so, because the allowance silently restarting
+      # is a thing the owner should know happened.
+      log "the weekly window reset mid-run (${BUDGET_RESET} -> ${now_reset}) — re-baselining the allowance"
+      BUDGET_START="$(f week)"; BUDGET_START_MODEL="$(f week_model)"; BUDGET_RESET="$now_reset"
+    else
+      # Both weekly limits count. The per-model cap is separate and smaller, so
+      # a run can exhaust it while the all-models number still looks healthy —
+      # and the oracle runs on its own model tier, which is exactly the case.
+      # Whichever has moved furthest is the one that binds.
+      spent_all="$(awk -v a="$(f week)" -v b="$BUDGET_START" 'BEGIN{print (a-b)}')"
+      spent_mod="$(awk -v a="$(f week_model)" -v b="${BUDGET_START_MODEL:-$BUDGET_START}" 'BEGIN{print (a-b)}')"
+      spent="$(awk -v x="$spent_all" -v y="$spent_mod" 'BEGIN{print (x>y?x:y)}')"
+      which="$(awk -v x="$spent_all" -v y="$spent_mod" 'BEGIN{print (x>y?"weekly":"per-model weekly")}')"
+      if awk -v s="$spent" -v cap="$BUDGET_POINTS" 'BEGIN{exit !(s >= cap)}'; then
+        log "allowance spent: ${spent} of ${BUDGET_POINTS} points on the ${which} limit"
+        exit 6
+      fi
     fi
   fi
 

@@ -30,11 +30,26 @@ sleep to wait for CI.
 2. **Sync and steer-check:** pull the default branch. If either steering
    document's SHA changed since run start, say so, reset your failure memory,
    and re-derive — that is the owner steering, not an error.
-3. **Budget:** stop and report when the run exceeds its allowance —
-   `budget-probe.sh` delta when the probe works, and always the hard
-   backstops (default 10 PRs / 8 hours / 20 iterations, or what the owner
-   said when starting the run). Stopping is the behaviour; degrading quietly
-   is not.
+3. **Budget:** **ask the owner for a limit before you start, every run, and do
+   not invent one.** In this mode `budget-probe.sh` will not find a usage
+   gauge — a web session has no local CLI and no reach to the usage endpoint —
+   so the percentage ceiling cannot apply here, and the limit has to be
+   something countable in this session. Ask, in these words:
+
+   > No usage gauge is reachable in a web session, so I cannot stop on your
+   > subscription percentage. Give me at least one limit I *can* count — max
+   > pull requests, max wall-clock hours, or max iterations — with exact
+   > numbers. Any combination; blank means no limit of that kind.
+
+   If the owner gives none, **do not start**: say that nothing would stop the
+   run and wait. Record the numbers in your working notes at run start, count
+   against them every iteration, and stop and report when one is reached.
+   Stopping is the behaviour; degrading quietly is not.
+
+   A limit reached is not a failure and must not read like one — say which
+   limit, what was done, and what remains. Separately, note anything that
+   looked *anomalous* rather than expensive (twenty commits for a simple
+   slice, say). That is a signal for the owner, never a reason to stop.
 4. **Detect:** run `.claude/scripts/deliver-phase.sh` and act on its PHASE:
    - **WAIT** — subscribe to the PR's activity, schedule the ~1h fallback
      check-in, end the turn. On waking to a red check: compute the failure

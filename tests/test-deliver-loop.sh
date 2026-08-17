@@ -142,11 +142,21 @@ run_loop() { # run_loop [NAME=value ...] -- [flags...]
     if [[ "$a" == "--" ]]; then sep=1; continue; fi
     if [[ "$sep" -eq 0 ]]; then envs+=("$a"); else flags+=("$a"); fi
   done
+  # BUDGET_PROBE_ALLOW_SESSION=0 keeps the probe from spending a `claude -p
+  # "/usage"` session per iteration in the fixture — it would also land in the
+  # stub's log and be miscounted as a dispatched worker.
+  #
+  # --max-iterations is supplied because the driver now REFUSES to start with no
+  # ceiling at all: the owner's ruling is that no limit applies unless they
+  # chose it, so a run with neither a usage gauge nor a stated limit has nothing
+  # that would ever stop it. A caller passing its own flag still wins, since the
+  # last assignment of a repeated flag is the one that sticks.
   ( cd "$R" && env PATH="$WORK/bin:$PATH" GH="$WORK/bin/gh" \
       DELIVER_SKIP_READY=1 DELIVER_SKIP_PULL=1 \
       DELIVER_APP_TOKEN_CMD="$WORK/bin/app-token" \
+      BUDGET_PROBE_ALLOW_SESSION=0 \
       CLAUDE_LOG="$WORK/cap/claude.log" ${envs[@]+"${envs[@]}"} \
-      bash "$LOOP" ${flags[@]+"${flags[@]}"} 2>&1 )
+      bash "$LOOP" --max-iterations 20 ${flags[@]+"${flags[@]}"} 2>&1 )
 }
 
 # -------------------------------------------------------- phase detection
@@ -314,8 +324,10 @@ out="$(run_loop STUB_OPEN_PR="9 feat/notes" STUB_CHECKS_RC=8 \
         WAIT_TIMEOUT=60 SESSION_TIMEOUT=60 --)"
 expect_rc "the same failure three times stops the run" 3 $?
 expect_contains "and says it is a pattern" "$out" "three times"
-# Sessions are `-p` invocations; the budget probe's `claude usage` call also
-# lands in the stub's log and is not one.
+# Sessions are `-p` invocations. The budget probe no longer lands here: the
+# harness sets BUDGET_PROBE_ALLOW_SESSION=0, because a probe that costs a
+# session per iteration would both distort this count and, in a real run, spend
+# budget to measure budget.
 if [[ "$(grep -c '^-p ' "$WORK/cap/claude.log")" == "2" ]]; then
   ok "exactly two fix sessions ran before the stop"
 else
@@ -325,6 +337,49 @@ fi
 firstfix="$(grep -m1 '^-p ' "$WORK/cap/claude.log")"
 expect_contains "the fix prompt pins the existing branch" "$firstfix" "EXISTING BRANCH"
 expect_contains "and forbids weakening a gate" "$firstfix" "Never weaken"
+
+# --------------------------------------------------------------- the ceiling
+# The owner's ruling: the rate limit is the only stop that applies by default,
+# and no limit applies unless they chose it. The defaults this replaced — 25
+# percentage points, 10 pull requests, 8 hours — were invented by the session
+# that wrote the script, and the percentage one had never worked at all, so
+# every run was in fact bounded by two numbers nobody had picked.
+#
+# Raw, without the harness's injected --max-iterations, and with stdin closed so
+# the prompt cannot be answered: a run with no gauge and no stated limit has
+# nothing that would ever stop it, and must refuse rather than pick a number.
+raw_loop() { ( cd "$R" && env PATH="$WORK/bin:$PATH" GH="$WORK/bin/gh" \
+    DELIVER_SKIP_READY=1 DELIVER_SKIP_PULL=1 \
+    DELIVER_APP_TOKEN_CMD="$WORK/bin/app-token" BUDGET_PROBE_ALLOW_SESSION=0 \
+    CLAUDE_LOG=/dev/null "$@" bash "$LOOP" 2>&1 </dev/null ); }
+
+out="$(raw_loop)"
+expect_rc "no gauge and no limit refuses to start" 2 $?
+expect_contains "and says nothing would stop it" "$out" "nothing would ever stop this run"
+expect_contains "and names the countable limits" "$out" "--max-prs"
+expect_not_contains "and invents no allowance of its own" "$out" "25"
+
+# With a gauge but no allowance, the question is the other one — a percentage of
+# the weekly window, which is the limit the owner actually specified.
+cat > "$WORK/bin/fakeusage" <<'STUB'
+#!/usr/bin/env bash
+echo "session=7 week=29 week_model=25 reset=2026-08-20T10:59:00Z"
+STUB
+chmod +x "$WORK/bin/fakeusage"
+out="$(raw_loop BUDGET_PROBE_CMD="$WORK/bin/fakeusage")"
+expect_rc "a gauge with no allowance refuses too" 2 $?
+expect_contains "and says the run has no ceiling" "$out" "no weekly allowance given"
+expect_contains "and shows the current reading" "$out" "29%"
+expect_contains "and names the per-model cap separately" "$out" "own cap"
+expect_contains "and names the flag that answers it" "$out" "--budget-points"
+
+# An explicit allowance is accepted and reported, with the reset recorded so a
+# mid-run rollover can be detected rather than measured.
+out="$(run_loop BUDGET_PROBE_CMD="$WORK/bin/fakeusage" \
+        STUB_OPEN_PR="7 feat/notes" STUB_CHECKS_RC=0 STUB_PR_STATE=MERGED \
+        WAIT_TIMEOUT=5 -- --budget-points 15 --max-iterations 1)"
+expect_contains "an explicit weekly allowance is taken" "$out" "allowance 15 points"
+expect_contains "and the reset is recorded for rollover detection" "$out" "resets 2026-08-20"
 
 # ------------------------------------------------------------- the identity
 # owner-authored.sh compares the pull request author to the CODEOWNERS owner.
@@ -382,7 +437,7 @@ BUILT=$'feat/notes\nfeat/sqlite-store'
 acceptance_run() { # acceptance_run <stub-rc>
   rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"
   run_loop STUB_MERGED_REFS="$BUILT" STUB_ACCEPT_RC="$1" \
-           MAX_ITER=4 SESSION_TIMEOUT=30 --
+           SESSION_TIMEOUT=30 -- --max-iterations 4
 }
 
 out="$(acceptance_run 1)"; rc=$?
@@ -407,7 +462,7 @@ rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"
 mkdir -p "$R/.claude/deliver-loop"
 touch "$R/.claude/deliver-loop/acceptance-dispatched"
 out="$(run_loop STUB_MERGED_REFS="$BUILT" STUB_ACCEPT_RC=0 \
-        MAX_ITER=4 SESSION_TIMEOUT=30 --)"
+        SESSION_TIMEOUT=30 -- --max-iterations 4)"
 expect_not_contains "a marker from a previous run does not end this one" \
   "$out" "acceptance recorded and nothing is open"
 rm -rf "$R/.worktrees"
