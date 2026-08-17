@@ -16,19 +16,40 @@ has ruled:
   only by being cited from a decision in `docs/DESIGN.oracle.md` — the ruling
   is recorded there, never edited in here.
 
-**Give items ids** — `BL-<n>`, the next unused integer — if you want them
-citable. The oracle's gate (`.github/scripts/oracle-decisions.sh`) treats an id
-in this file as evidence a decision may cite, and an item with no id is not
-evidence as far as the check is concerned. Two rules follow from being an
-evidence source:
+**Every item gets an id** — `BL-<n>`, the next unused integer. Not "if you want
+it citable": always. The oracle's gate
+(`.github/scripts/oracle-decisions.sh`) treats an id in this file as evidence a
+decision may cite, and an unnumbered item is invisible to it — which means an
+item nobody can point at, and a queue nobody can audit.
 
-- **Never delete an id a decision cites.** A citation is resolved against this
-  file at the pull request's base commit, and removing the item it points at
-  turns a landed decision's evidence into a dangling reference. Strike an item
-  by marking it done or withdrawn in place.
+**This file is append-only, and enforced**
+(`.github/scripts/backlog-append-only.sh`). Once an item carrying an id has
+landed, its line never changes and never moves. That is not tidiness. It is the
+one property that makes citation mean anything: the oracle may amend the design
+layer on evidence found here, an agent may file that evidence, and both of those
+are deliberate — so the thing that has to hold is that a landed item cannot be
+quietly reworded into evidence for something else after the fact.
+
+Three rules follow:
+
+- **Never delete an id a decision cites.** A citation resolves against this file
+  at the pull request's base commit, and removing the item turns a landed
+  decision's evidence into a dangling reference.
+- **Never edit a landed item — append instead.** Finished? Add a line to
+  [`BACKLOG.done.md`](BACKLOG.done.md). Changed your mind? File a new item that
+  cites the old id. Got the wording wrong? Append a correction repeating the id,
+  the way `docs/escapes.md` handles the same problem.
 - **Never ship or paste an id you did not mean.** The check greps this whole
   file for the id pattern, so a stray id in prose is phantom evidence — write
   the pattern with `<n>` when talking *about* ids, as this paragraph does.
+
+**Say who filed it.** Each item ends with `— filed by: <owner | plan | oracle |
+steward | coder>`. This costs one word and answers the question the owner cannot
+otherwise answer when reviewing a design decision months later: did this
+evidence come from something that actually happened, or did the pipeline write
+its own permission slip? Both are legitimate — an agent filing what it hit is
+the intended path — but they are not the same, and until this field existed
+nothing anywhere recorded the difference.
 
 ## Approved
 
@@ -41,5 +62,5 @@ _(nothing yet)_
 ## Uncertainties awaiting oracle ruling
 
 _(nothing yet — filed by `/plan` when a design leaves a question open; format:_
-_`BL-<n>` — the question, the proposed default, HIGH or LOW risk, and one line_
-_on why that class.)_
+_`BL-<n>` — the question, the proposed default, HIGH or LOW risk, one line on_
+_why that class, and `— filed by: plan`.)_

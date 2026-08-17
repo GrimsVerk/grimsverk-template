@@ -361,9 +361,18 @@ would have to be true to run it.
 **Gate paths are off-limits.** Never modify the things that check the code:
 CI workflows (`.github/workflows/`), the review check or its prompt
 (`.github/review-prompt.md`, `.github/scripts/review.sh`), the pre-commit
-config, or `CODEOWNERS`. These are human-owned and enforced by `CODEOWNERS`;
-a change to any of them requires human review even under auto-merge. Do not
-weaken, skip, or route around a gate to get green.
+config, or `CODEOWNERS` — **and the delivery machinery under `.claude/`**:
+`.claude/scripts/`, `.claude/commands/`, `.claude/agents/`,
+`.claude/orchestration.md`, `.claude/settings.json`. These are human-owned and
+enforced by `CODEOWNERS`; a change to any of them requires human review even
+under auto-merge. Do not weaken, skip, or route around a gate to get green.
+
+`.claude/` is on that list for the same reason `.github/` is, and it was added
+late: `deliver-loop.sh` holds the tool grant every unattended session runs
+under, and the command files are read at dispatch time and *become* the prompts
+of unattended agents. Editing them is editing the gates, not editing a
+convenience — a three-line change there is a permission change wearing a
+chore's clothes.
 
 The same applies to the things that check the code's **intent** — this file,
 `docs/DESIGN.md`, `docs/VISION.md`, and everything under `docs/plans/` — plus

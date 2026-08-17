@@ -86,6 +86,18 @@ jobs:
         run: |
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
             .github/scripts/escapes-append-only.sh
+      - name: The backlog and its done-log are append-only
+        # The backlog is the OTHER evidence source oracle-decisions.sh resolves
+        # citations against, and it had no such protection — so an item could be
+        # reworded after a decision cited it, by the same pipeline that wrote
+        # both. Deliberately immutability rather than ownership: an unattended
+        # planner files uncertainties here mid-run, and requiring the owner's
+        # review on this path would stop work overnight, which is the failure
+        # the whole arrangement exists to prevent. Filing stays free; rewriting
+        # does not.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            .github/scripts/backlog-append-only.sh
       - name: Oracle decisions are append-only and evidence-backed
         # docs/DESIGN.oracle.md is the one design document an agent may write
         # unattended, so it is deliberately NOT behind CODEOWNERS — ownership

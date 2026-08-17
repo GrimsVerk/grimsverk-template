@@ -612,6 +612,79 @@ sys.exit(0 if \"!= 'closed'\" in d['jobs']['arm-auto-merge'].get('if', '') else 
   done < <(find "$out" -name '*.sh' -type f)
   if [[ -z "$nonexec" ]]; then ok "$lang scripts are executable"
   else no "$lang scripts are executable" "$nonexec"; fi
+
+  # ------------------------------------------------- the intent boundary
+  # docs/DESIGN.md and docs/VISION.md are the owner's. Three separate things
+  # have to agree for that to be true, and each was wrong at some point in this
+  # template's history (ESC-24, ESC-25, and the review that found .claude/
+  # outside every gate-path list). These assertions pin all three together, so
+  # a future edit cannot quietly restore one of the old wordings.
+  st="$out/.claude/settings.json"
+  if [[ -f "$st" ]] && python3 -c "
+import json,sys
+d = json.load(open(sys.argv[1]))
+deny = d['permissions']['deny']
+need = ['Write(docs/DESIGN.md)','Edit(docs/DESIGN.md)',
+        'Write(docs/VISION.md)','Edit(docs/VISION.md)']
+sys.exit(0 if all(x in deny for x in need) else 1)
+" "$st"
+  then ok "$lang the two intent documents are denied to every session"
+  else no "$lang the two intent documents are denied to every session"; fi
+
+  # A session that can spawn a headless agent directly can hand it any grants
+  # it likes, which walks around spawn-worker.sh's whole role system.
+  if [[ -f "$st" ]] && python3 -c "
+import json,sys
+d = json.load(open(sys.argv[1]))
+allow = ' '.join(d['permissions']['allow'])
+sys.exit(0 if 'claude -p' not in allow and 'codex exec' not in allow else 1)
+" "$st"
+  then ok "$lang no session may spawn a headless agent around the role system"
+  else no "$lang no session may spawn a headless agent around the role system"; fi
+
+  co="$out/.github/CODEOWNERS"
+  missing=""
+  for p in '/.claude/scripts/' '/.claude/commands/' '/.claude/agents/' \
+           '/.claude/orchestration.md' '/.claude/settings.json'; do
+    grep -q "^${p}" "$co" || missing="$missing $p"
+  done
+  if [[ -z "$missing" ]]; then ok "$lang the delivery machinery is owned"
+  else no "$lang the delivery machinery is owned" "unowned:$missing"; fi
+
+  # docs/BACKLOG.md must NOT be owned: the unattended planner files items there
+  # mid-run, so an owner review on that path stops work overnight. This asserts
+  # the deliberate absence, so nobody "fixes" it later without reading why.
+  if grep -qE '^/docs/BACKLOG\.md[[:space:]]+@' "$co"; then
+    no "$lang the backlog stays un-owned so filing never blocks a run" \
+       "CODEOWNERS claims /docs/BACKLOG.md — that stops the unattended planner"
+  else ok "$lang the backlog stays un-owned so filing never blocks a run"; fi
+
+  for f in AGENTS.md .github/review-prompt.md; do
+    if grep -q '\.claude/scripts/' "$out/$f"; then
+      ok "$lang $f lists .claude/ among the gate paths"
+    else no "$lang $f lists .claude/ among the gate paths"; fi
+  done
+
+  if grep -q 'not spawnable' "$out/.claude/scripts/spawn-worker.sh"; then
+    ok "$lang the architect role cannot be spawned"
+  else no "$lang the architect role cannot be spawned"; fi
+
+  # The backlog pair and its enforcer.
+  for f in docs/BACKLOG.done.md .github/scripts/backlog-append-only.sh; do
+    if [[ -f "$out/$f" ]]; then ok "$lang $f ships"
+    else no "$lang $f ships"; fi
+  done
+  if grep -q 'backlog-append-only.sh' "$out/.github/workflows/ci.yml"; then
+    ok "$lang the backlog check runs in CI"
+  else no "$lang the backlog check runs in CI"; fi
+
+  # The identity minter, and the driver actually using it.
+  if [[ -f "$out/.claude/scripts/app-token.sh" ]]; then
+    ok "$lang app-token.sh ships"
+  else no "$lang app-token.sh ships"; fi
+  if grep -q 'GH_TOKEN=' "$out/.claude/scripts/deliver-loop.sh"; then
+    ok "$lang the driver opens pull requests with a minted token"
+  else no "$lang the driver opens pull requests with a minted token"; fi
 done
 
 # --------------------------------- the directory-name validator bites

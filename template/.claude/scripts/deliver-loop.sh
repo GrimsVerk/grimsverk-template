@@ -109,6 +109,28 @@ DEFAULT_BRANCH="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null 
 # workers, assemble branches, open one pull request — and nothing else, so
 # `git reset --hard`, `--no-verify` and `gh pr merge` are unreachable rather
 # than forbidden.
+#
+# ON THE BARE `Write,Edit`. It is not an oversight and it is not a blank
+# cheque. Assembly genuinely writes across the tree — resolving a conflict
+# between two workers' branches, correcting docs/architecture.md — and any list
+# narrow enough to be a real fence would either be wrong for some project's
+# layout or would have to enumerate the plan's own Files: entries, which the
+# pipeline writes. So the two documents that must never be reached this way are
+# denied instead of un-allowed, in three places, because an allowlist cannot
+# express "everything except":
+#
+#   1. .claude/settings.json denies Write/Edit on docs/DESIGN.md and
+#      docs/VISION.md for every session in the project. Deny beats allow, and
+#      that file is CODEOWNERS-owned so a session cannot widen it.
+#   2. `Bash(claude:*)` is absent here, and settings.json no longer allows
+#      `claude -p` either, so this session cannot start another session to do
+#      the writing on its behalf. Its one door to a new agent is
+#      spawn-worker.sh, which refuses --role architect.
+#   3. .github/scripts/owner-authored.sh fails any pull request touching those
+#      documents that the owner did not OPEN — and since this driver now opens
+#      pull requests as the GitHub App rather than as the owner, that check
+#      finally binds. It is the layer that actually stops the merge; the two
+#      above just make the wrong thing hard to do by accident.
 ORCH_TOOLS="${DELIVER_ORCH_TOOLS:-Read,Grep,Glob,Write,Edit,\
 Bash(.claude/scripts/spawn-worker.sh:*),\
 Bash(git add:*),Bash(git commit:*),Bash(git status:*),Bash(git diff:*),\
