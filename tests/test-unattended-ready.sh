@@ -4,10 +4,18 @@
 #
 # The check exists because every unattended failure lived in repository
 # configuration no file can reach; these tests pin that it actually refuses on
-# each such condition, and that the designed fallbacks (no merge identity) are
-# notes rather than refusals. The stub answers each endpoint from environment
+# each such condition. The stub answers each endpoint from environment
 # variables, so every repository state the check must distinguish can be
 # manufactured.
+#
+# Merge identity used to be a NOTE here, on the reasoning that its absence only
+# delayed branch cleanup. That was wrong, and the tests below now pin the
+# opposite: the App is the only way the unattended driver gets a login that is
+# not the owner's, and without one `owner-authored.sh` compares the owner to the
+# owner and passes for every driver-opened pull request — so docs/DESIGN.md and
+# docs/VISION.md are unprotected for the whole run while the check prints a
+# guarantee it is not holding. A PAT fails for the same reason: it also acts as
+# the owner.
 
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -117,10 +125,25 @@ STUB_SECRETS=$'TEMPLATE_TOKEN\nAPP_ID\nAPP_PRIVATE_KEY'
 out="$(run)"; expect_rc "a missing review credential refuses" 1 $?
 expect_contains "and says the gate fails closed" "$out" "fails closed"
 
+# The App is the driver's IDENTITY, not a branch-cleanup convenience: without a
+# login that is not the owner's, owner-authored.sh compares the owner to the
+# owner and passes, so the design and vision documents are unprotected for the
+# whole unattended run. That is why both of these refuse rather than note.
 ready_env
 STUB_SECRETS=$'CLAUDE_CODE_OAUTH_TOKEN\nTEMPLATE_TOKEN'
-out="$(run)"; expect_rc "no merge identity is a note, not a refusal" 0 $?
-expect_contains "and explains the sweep fallback" "$out" "nightly sweep"
+out="$(run)"; expect_rc "no merge identity refuses" 1 $?
+expect_contains "and names the check it would hollow out" "$out" "owner-authored.sh"
+expect_contains "and says the driver would act as the owner" "$out" "as you"
+
+ready_env
+STUB_SECRETS=$'CLAUDE_CODE_OAUTH_TOKEN\nTEMPLATE_TOKEN\nAUTO_MERGE_TOKEN'
+out="$(run)"; expect_rc "a PAT merge identity refuses too — a PAT is also the owner" 1 $?
+expect_contains "and says the PAT acts as the owner" "$out" "acts as YOU"
+
+ready_env
+STUB_SECRETS=$'CLAUDE_CODE_OAUTH_TOKEN\nTEMPLATE_TOKEN\nAPP_ID\nAPP_PRIVATE_KEY'
+out="$(run)"; expect_rc "the App identity passes" 0 $?
+expect_contains "and says why it is the right one" "$out" "not the owner's"
 
 ready_env
 STUB_CO_ERRORS="2"

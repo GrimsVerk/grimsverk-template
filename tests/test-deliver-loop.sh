@@ -37,7 +37,11 @@ case "$args" in
     printf 'lint\tfail\t1m\thttps://x\nreview\tpass\t2m\thttps://y\n' ;;
   "pr view "*)
     echo "${STUB_PR_STATE:-MERGED}" ;;
-  "pr create "*) : ;;
+  "pr create "*)
+    # Record whether a non-owner token was supplied. The whole point of the
+    # App identity is that this is NOT the owner's ambient credential, so the
+    # test asserts the value actually arrives here.
+    echo "GH_TOKEN=${GH_TOKEN:-<unset>}" >> "${PR_CREATE_LOG:-/dev/null}" ;;
 esac
 exit 0
 STUB
@@ -49,6 +53,21 @@ echo "$*" >> "${CLAUDE_LOG:-/dev/null}"
 exit 0
 STUB
 chmod +x "$WORK/bin/claude"
+
+# The App-token minter. DELIVER_APP_TOKEN_CMD is an injection point rather than
+# a skip flag on purpose: there is no way to run the driver WITHOUT a non-owner
+# identity, so the tests substitute the source of the token instead of bypassing
+# the requirement. STUB_APP_TOKEN_RC drives the refusal paths.
+cat > "$WORK/bin/app-token" <<'STUB'
+#!/usr/bin/env bash
+if [[ "${STUB_APP_TOKEN_RC:-0}" != "0" ]]; then
+  echo "no App identity configured (stub)" >&2
+  exit "${STUB_APP_TOKEN_RC}"
+fi
+echo "ghs_stubinstallationtoken"
+exit 0
+STUB
+chmod +x "$WORK/bin/app-token"
 
 # ------------------------------------------------------------------- fixture
 # Assembled from the shipped files themselves (none of the ones the driver
@@ -120,6 +139,7 @@ run_loop() { # run_loop [NAME=value ...] -- [flags...]
   done
   ( cd "$R" && env PATH="$WORK/bin:$PATH" GH="$WORK/bin/gh" \
       DELIVER_SKIP_READY=1 DELIVER_SKIP_PULL=1 \
+      DELIVER_APP_TOKEN_CMD="$WORK/bin/app-token" \
       CLAUDE_LOG="$WORK/cap/claude.log" ${envs[@]+"${envs[@]}"} \
       bash "$LOOP" ${flags[@]+"${flags[@]}"} 2>&1 )
 }
@@ -250,5 +270,39 @@ fi
 firstfix="$(grep -m1 '^-p ' "$WORK/cap/claude.log")"
 expect_contains "the fix prompt pins the existing branch" "$firstfix" "EXISTING BRANCH"
 expect_contains "and forbids weakening a gate" "$firstfix" "Never weaken"
+
+# ------------------------------------------------------------- the identity
+# owner-authored.sh compares the pull request author to the CODEOWNERS owner.
+# A driver opening pull requests under the owner's own credentials satisfies it
+# by accident, for every pull request, including one carrying an agent's edit to
+# docs/DESIGN.md. These assertions are the ones that keep that from returning.
+
+# Refused at PREFLIGHT, not at first use: the owner is about to walk away, so
+# the failure has to land while they are still watching.
+out="$(run_loop STUB_APP_TOKEN_RC=3 --)"
+expect_rc "no App identity refuses the whole run" 2 $?
+expect_contains "and stops loudly" "$out" "STOP"
+expect_contains "and names the check that would be hollowed out" "$out" "owner-authored.sh"
+expect_contains "and offers the attended path instead" "$out" "/deliver"
+if grep -q '^-p ' "$WORK/cap/claude.log.identity" 2>/dev/null; then
+  no "nothing was dispatched before the refusal" "a session ran anyway"
+else
+  ok "nothing was dispatched before the refusal"
+fi
+
+# A failure to mint mid-run must not silently fall back to the owner's ambient
+# credential — that is the exact substitution the identity exists to prevent.
+: > "$WORK/cap/prcreate.log"
+out="$(run_loop PR_CREATE_LOG="$WORK/cap/prcreate.log" \
+        STUB_MERGED_REFS="" --dry-run --)" || true
+if [[ -s "$WORK/cap/prcreate.log" ]] \
+   && ! grep -q 'GH_TOKEN=<unset>' "$WORK/cap/prcreate.log"; then
+  ok "pull requests are opened with a minted token, never the ambient one"
+elif [[ ! -s "$WORK/cap/prcreate.log" ]]; then
+  ok "pull requests are opened with a minted token, never the ambient one (none opened in this path)"
+else
+  no "pull requests are opened with a minted token, never the ambient one" \
+    "$(cat "$WORK/cap/prcreate.log")"
+fi
 
 summary

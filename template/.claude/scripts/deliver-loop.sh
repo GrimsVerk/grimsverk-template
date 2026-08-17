@@ -62,6 +62,13 @@
 #   GH                    the GitHub CLI (tests substitute a stub)
 #   DELIVER_SKIP_READY=1  skip the unattended-ready refusal (tests)
 #   DELIVER_SKIP_PULL=1   skip the per-iteration pull (tests, offline)
+#   DELIVER_APP_TOKEN_CMD the command that mints the App installation token
+#                         (default .claude/scripts/app-token.sh; tests
+#                         substitute a stub). Deliberately an INJECTION POINT
+#                         and not a skip flag: there is no way to run the
+#                         driver without a non-owner identity, because a run
+#                         under the owner's login makes owner-authored.sh a
+#                         formality (docs/synthesis.md, D15).
 
 set -uo pipefail
 
@@ -83,6 +90,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 GH="${GH:-gh}"
+APP_TOKEN_CMD="${DELIVER_APP_TOKEN_CMD:-.claude/scripts/app-token.sh}"
 ENGINE="${DELIVER_ENGINE:-claude}"
 SESSION_TIMEOUT="${SESSION_TIMEOUT:-3600}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-5400}"
@@ -152,11 +160,53 @@ if [[ -d .worktrees ]] && [[ -n "$(ls -A .worktrees 2>/dev/null)" ]]; then
   die "leftover worktrees under .worktrees/ — a previous run did not finish assembling; inspect and remove them first"
 fi
 
+# ------------------------------------------------- readiness, said out loud
+# The owner's ruling: "if the script says the repo is not ready to run
+# unattended, then block and fail very loudly. i really need to know before i
+# go." So the preflight announces itself before it runs, and both outcomes are
+# unmissable — the whole point is that the owner is about to walk away.
+banner() { printf '\n%s\n' "════════════════════════════════════════════════════════════════════"; }
+
 if [[ "${DELIVER_SKIP_READY:-0}" != "1" ]]; then
+  echo "deliver-loop: checking whether this repository can run unattended…"
   # The refusal, not a warning (docs/DECISIONS.md): a run that cannot succeed
   # is refused at dispatch time, while someone can still act on it.
-  .github/scripts/unattended-ready.sh || exit 2
+  if ! .github/scripts/unattended-ready.sh; then
+    banner
+    echo "  STOP — this repository is NOT ready to run unattended."
+    echo "  Nothing has been dispatched. Fix the items listed above and re-run."
+    banner
+    exit 2
+  fi
 fi
+
+# ------------------------------------------------------------ the identity
+# owner-authored.sh compares the pull request's author login to the CODEOWNERS
+# owner. Opening driver pull requests under the owner's own `gh` credentials
+# makes that comparison pass for every pull request the driver has ever
+# opened — including one carrying an agent's edit to docs/DESIGN.md. Minting
+# here rather than at first use means the failure lands NOW, while the owner is
+# still watching, instead of three phases in.
+APP_TOKEN=""
+if ! APP_TOKEN="$("$APP_TOKEN_CMD" 2>&1)"; then
+  banner
+  echo "  STOP — no usable GitHub App identity, so this run cannot be safe."
+  echo
+  printf '%s\n' "$APP_TOKEN" | sed 's/^/  /'
+  echo
+  echo "  Why this blocks the run rather than warning about it:"
+  echo "  the driver would otherwise open pull requests as YOU, and"
+  echo "  .github/scripts/owner-authored.sh would then report that"
+  echo "  docs/DESIGN.md was 'landed by its owner' no matter which agent"
+  echo "  wrote it. The guarantee would be printed and absent."
+  echo
+  echo "  Attended mode needs no App: run /deliver for a single pass and"
+  echo "  merge by hand."
+  banner
+  exit 2
+fi
+[[ -n "$APP_TOKEN" ]] || die "the App token command printed nothing"
+unset APP_TOKEN  # minted fresh per pull request; installation tokens last 1h
 
 mkdir -p "$STATE_DIR"
 PROCESSED_FILE="$STATE_DIR/processed-evidence"
@@ -185,9 +235,22 @@ mechanical_pr() { # mechanical_pr <worker-branch> <docs-ref> <title>
   # exempt nor slug-resolvable, so its head is pushed under a docs/-prefixed
   # name and the pull request opened from that. Mechanical — no judgment.
   git push -q origin "$1:$2" || { log "push $2 failed"; return 1; }
-  "$GH" pr create --head "${2}" \
+  # Opened as the App, never as the owner. This is the line that makes
+  # owner-authored.sh a real boundary instead of a formality: `app[bot]` is not
+  # the CODEOWNERS owner, so a driver-opened pull request touching
+  # docs/DESIGN.md or docs/VISION.md fails that check — which is the intended
+  # behaviour, because the driver has no business landing either document.
+  # Minted per pull request because installation tokens expire in an hour and a
+  # long run outlives one. The value is passed in the environment of a single
+  # command, so it never reaches argv, the run log, or `ps`.
+  local token
+  if ! token="$("$APP_TOKEN_CMD" 2>/dev/null)" || [[ -z "$token" ]]; then
+    log "could not mint an App token for $2 — refusing to open this pull request as the owner"
+    return 1
+  fi
+  GH_TOKEN="$token" "$GH" pr create --head "${2}" \
     --title "$3" \
-    --body "Opened mechanically by deliver-loop.sh. The content is the branch; the gates are the review." \
+    --body "Opened mechanically by deliver-loop.sh, as the GitHub App. The content is the branch; the gates are the review." \
     >/dev/null || { log "gh pr create for $2 failed"; return 1; }
   PR_COUNT=$((PR_COUNT + 1))
 }

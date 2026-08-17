@@ -151,12 +151,19 @@ else
   else
     refuse "CLAUDE_CODE_OAUTH_TOKEN is not set — the review gate fails closed and no PR ever merges; set it: scripts/setup-github.sh"
   fi
+  # This was a note until the identity argument landed (docs/synthesis.md D15).
+  # The App is not a convenience for branch cleanup — it is the only thing that
+  # gives the unattended driver a login that is NOT the owner's. Without it
+  # owner-authored.sh compares the owner's login to the owner's login and
+  # passes, so docs/DESIGN.md and docs/VISION.md have no protection at all
+  # during an unattended run: the check prints its guarantee and does not hold
+  # it. A PAT has the same defect, because a PAT also acts as the owner.
   if grep -qxF "APP_ID" <<<"$SECRETS" && grep -qxF "APP_PRIVATE_KEY" <<<"$SECRETS"; then
-    ok "merge identity: GitHub App configured"
+    ok "merge identity: GitHub App configured (a login that is not the owner's)"
   elif grep -qxF "AUTO_MERGE_TOKEN" <<<"$SECRETS"; then
-    note "merge identity: AUTO_MERGE_TOKEN (PAT) — works, but shares the owner's hourly API budget with everything else acting as them; the App fixes that: scripts/setup-github.sh --app"
+    refuse "merge identity is AUTO_MERGE_TOKEN (a PAT), which acts as YOU — so owner-authored.sh cannot tell an agent's edit to docs/DESIGN.md from one you wrote, and every driver-opened PR satisfies it by accident; set up the App: scripts/setup-github.sh --app"
   else
-    note "no merge identity configured — merges complete as github-actions[bot], whose events dispatch nothing, so branch cleanup waits for the nightly sweep; scripts/setup-github.sh --app sets up the App"
+    refuse "no merge identity configured — the driver would open pull requests as you, which makes owner-authored.sh a formality and leaves docs/DESIGN.md and docs/VISION.md unprotected overnight; set up the App: scripts/setup-github.sh --app"
   fi
   if ! grep -qxF "TEMPLATE_TOKEN" <<<"$SECRETS"; then
     note "TEMPLATE_TOKEN is not set — template/ update branches will fail template-sync if the template repository is private"
