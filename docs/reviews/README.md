@@ -23,5 +23,11 @@ names.
 independently against the same commit. Where a gate's threshold turned out to be
 set by document content, `gate-seams/findings.md` handed the thread off rather
 than guessing; those six questions are what `document-shape/` answers from the
-other side. Read together before either is turned into an `ESC-<n>` row —
-neither has been reconciled against the other yet.
+other side. Read together before either is turned into an `ESC-<n>` row.
+
+That reconciliation is done in [`../synthesis.md`](../synthesis.md), which reads
+these five sessions against `docs/plans/` and collapses the twenty-two traced
+findings into seven roots and a decision register. Three of the six handed-off
+threads are answered there, one partially, and two were never picked up. The
+synthesis is a working document, not a record — it decides nothing on its own,
+and the `ESC-<n>` rule above still governs what becomes binding.
