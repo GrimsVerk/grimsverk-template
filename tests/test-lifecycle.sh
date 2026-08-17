@@ -109,11 +109,11 @@ Keeping short notes without ceremony.
 
 ## Priorities, in order
 
-Correctness, then speed of capture.
+- **V1** — Correctness, then speed of capture.
 
 ## What I'd trade away
 
-Features. A note store does not need folders.
+- **V2** — Features. A note store does not need folders.
 EOF
 commit_all "the design and the vision"
 HEAD_SHA="$(git -C "$R" rev-parse HEAD)"
@@ -212,7 +212,10 @@ cat >> "$R/docs/DESIGN.oracle.md" <<'EOF'
 - **Evidence:** ESC-1
 - **Requirements added:** R1000
 - **Requirements superseded:** (none)
-- **Vision statement relied on:** "Correctness, then speed of capture."
+- **Vision statement relied on:** V1 — "Correctness, then speed of capture."
+- **Vision statements against:** V2 — "Features. A note store does not need
+  folders." Ordering is not a feature in that sense, so it does not tell
+  against this.
 - **Alternatives considered:** insertion order (what surprised the owner);
   alphabetical (meaningless for notes).
 - **Rationale:** the escape shows the current order reads as a bug.

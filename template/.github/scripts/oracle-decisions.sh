@@ -77,6 +77,10 @@ ORACLE_DIR="${ORACLE_DIR:-docs/oracle}"
 PLANS_DIR="${PLANS_DIR:-docs/plans}"
 LEDGER="${LEDGER:-docs/escapes.md}"
 BACKLOG="${BACKLOG:-docs/BACKLOG.md}"
+# Read to verify that a decision's quoted vision statement is actually IN it.
+# Until that check existed the field was validated by the presence of a "
+# character, so a one-letter quote passed in a repository with no vision file.
+VISION_DOC="${VISION_DOC:-docs/VISION.md}"
 DESIGN_DOC="${DESIGN_DOC:-docs/DESIGN.md}"
 MAX_DECISIONS="${MAX_DECISIONS:-150}"
 REQ_OFFSET="${REQ_OFFSET:-1000}"
@@ -175,11 +179,42 @@ for id in "${HEAD_IDS[@]:-}"; do
 
   block="$(block_of "$HEAD_DOC" "$id")"
 
+  # A HALT is a decision NOT to decide, recorded. It exists because a tenet stop
+  # and an oracle finding nothing worth acting on used to produce the identical
+  # artifact — no decision — while deliver-loop.sh marked the evidence processed
+  # either way. So the one moment docs/VISION.md actually did its job was the
+  # one moment nothing recorded, and the owner learned about it only by not
+  # seeing something. A halt does not stop the run; it stops the silence.
+  is_halt=0
+  printf '%s\n' "$block" | head -1 | grep -q 'HALTED' && is_halt=1
+
+  if [[ "$is_halt" -eq 1 ]]; then
+    for field in "Date" "Evidence" "Tenet relied on" \
+                 "What a decision would have said" "What it needs from the owner"; do
+      value="$(printf '%s\n' "$block" \
+        | sed -n "s/^[[:space:]]*[-*][[:space:]]*\*\*${field}:\*\*[[:space:]]*//p" | head -1)"
+      if ! printf '%s\n' "$block" | grep -qF "**${field}:**"; then
+        fail "$id is a HALT and has no **${field}:** field"
+      elif [[ -z "$value" ]]; then
+        fail "$id is a HALT with an empty **${field}:** field"
+      fi
+    done
+  else
+
   # Schema. Each field is asserted to be present AND to say something: a label
   # with nothing after it is the shape a schema check is most often satisfied by
   # and least often helped by.
+  #
+  # "Vision statements against" is the newest, and it is the one that makes the
+  # field above it honest. A decision naming only the statement that supports it
+  # has not weighed the vision, it has searched it — and the owner cannot tell
+  # those apart, because both produce one quoted sentence. Naming the statement
+  # that most nearly forbids the decision, and why it does not, is the only part
+  # of this schema the deciding agent cannot produce without having read the
+  # whole file.
   for field in "Date" "Evidence" "Requirements added" "Requirements superseded" \
-               "Vision statement relied on" "Alternatives considered" "Rationale"; do
+               "Vision statement relied on" "Vision statements against" \
+               "Alternatives considered" "Rationale"; do
     value="$(printf '%s\n' "$block" \
       | sed -n "s/^[[:space:]]*[-*][[:space:]]*\*\*${field}:\*\*[[:space:]]*//p" | head -1)"
     if ! printf '%s\n' "$block" | grep -qF "**${field}:**"; then
@@ -212,10 +247,60 @@ for id in "${HEAD_IDS[@]:-}"; do
       fi
     elif [[ "$vision_value" != *'"'* ]]; then
       fail "$id's vision field neither quotes a statement nor declares '(no vision statement decided this)' — a paraphrase is the decision restating itself"
+    else
+      # THE QUOTE MUST BE IN THE FILE. Until this existed the entire check was
+      # "does the value contain a double-quote character", so `"s"` passed — in
+      # a fixture with no docs/VISION.md at all. The field is what the owner is
+      # told to steer by ("edit the sentence that produced the decision"), and
+      # nothing connected the sentence they edit to the next decision.
+      #
+      # Whitespace is collapsed on both sides because a vision sentence wraps
+      # across lines in the file and appears on one line in the ledger. Matching
+      # is fixed-string, not regex: a quoted sentence is data.
+      norm() { tr '\n' ' ' | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//'; }
+      vision_at_base="$(git -C "$ROOT" show "${BASE_SHA}:${VISION_DOC}" 2>/dev/null | norm || true)"
+      if [[ -z "$vision_at_base" ]]; then
+        fail "$id quotes a vision statement, but there is no ${VISION_DOC} at the base commit.
+
+Deleting the file is a legitimate choice and it means this project has no
+tiebreaker — so the honest field value is the opt-out class, which then obliges
+'Alternatives considered' to carry the whole reasoning. Quoting a sentence from
+a file that is not in the tree produces a ledger that reads as steerable by a
+document the owner removed."
+      else
+        # Every quoted span must be real. Multiple spans are allowed — a
+        # decision may legitimately lean on more than one sentence.
+        mapfile -t QUOTED < <(printf '%s\n' "$vision_value" \
+          | grep -oE '"[^"]+"' | sed 's/^"//; s/"$//')
+        for q in "${QUOTED[@]:-}"; do
+          [[ -z "$q" ]] && continue
+          q_norm="$(printf '%s' "$q" | norm)"
+          # A fragment short enough to invert is a fragment too short to cite:
+          # six words lifted out of "I would trade any feature for a design I
+          # can hold in my head" reverse what the owner said, and read as a
+          # clean derivation from it.
+          if [[ "${#q_norm}" -lt "${MIN_QUOTE_CHARS:-25}" ]]; then
+            fail "$id's vision quote is ${#q_norm} characters — too short to be the statement it leans on. Quote the whole sentence: a fragment can be read against the sense of the sentence it came from, and the owner reading the ledger cannot tell."
+          fi
+          grep -qF -- "$q_norm" <<<"$vision_at_base" \
+            || fail "$id quotes a vision statement that is not in ${VISION_DOC} at the base commit:
+
+  \"${q_norm}\"
+
+Quote it verbatim, or use '(no vision statement decided this)' and say in
+'Alternatives considered' what you weighed instead. This field is the owner's
+steering lever — they are told that editing the sentence changes what comes
+next — so a sentence they never wrote makes the lever a decoration."
+        done
+      fi
     fi
   fi
 
-  # 1. Evidence must exist at the base commit.
+  fi  # end of the non-HALT schema
+
+  # 1. Evidence must exist at the base commit. Both shapes cite it: a halt is a
+  # record of evidence the oracle READ and declined to act on, which is exactly
+  # the thing that used to vanish.
   evidence_line="$(printf '%s\n' "$block" \
     | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Evidence:\*\*[[:space:]]*//p' | head -1)"
   mapfile -t CITED < <(printf '%s\n' "$evidence_line" | grep -oE '(ESC|BL)-[0-9]+' | sort -u)
@@ -228,7 +313,10 @@ for id in "${HEAD_IDS[@]:-}"; do
   done
 
   # 3. Requirement ids: shape, and the offset that keeps the two design
-  # documents out of each other's integer space.
+  # documents out of each other's integer space. A halt adds no requirements —
+  # deciding not to decide cannot extend the work queue, which is half of why
+  # recording it is safe to do unattended.
+  if [[ "$is_halt" -eq 0 ]]; then
   added="$(printf '%s\n' "$block" \
     | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Requirements added:\*\*[[:space:]]*//p' | head -1)"
   if [[ "$added" != *"(none)"* ]]; then
@@ -242,6 +330,7 @@ for id in "${HEAD_IDS[@]:-}"; do
       fi
     done
   fi
+  fi  # end of the requirement-id checks, skipped for a HALT
 done
 
 # --- 4. the runaway-loop backstop ------------------------------------------

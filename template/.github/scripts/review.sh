@@ -161,6 +161,24 @@ an artifact of what the gate was shown.
 
 $(read_at_base docs/DESIGN.oracle.md)
 
+===== docs/VISION.md (the tiebreaker, as of the base commit) =====
+What the owner values, in order, and the core tenets that stop a decision dead.
+It is the document every oracle decision above claims to rest on, and until now
+this gate was never shown it — so a decision could cite a sentence that was not
+in it, or read a sentence against its own sense, and nothing downstream held a
+copy to check against. You have one now.
+
+Two uses, and only two. When the diff implements an oracle requirement, you can
+see whether the decision that authorised it stands on what this file actually
+says. And when a diff would violate a core tenet, that is a blocking finding
+whoever wrote it and whatever the plan said. Do NOT use it as a general quality
+bar: it is the tiebreaker for decisions, not a rubric for code.
+
+An absent file is a legitimate opt-out, not a defect — the project has chosen to
+run without a tiebreaker, and oracle decisions then say so explicitly.
+
+$(read_at_base docs/VISION.md)
+
 ===== THE PLAN this PR is judged against ($PLAN_PATH) =====
 $(if [[ -n "$PLAN_PATH" ]]; then read_at_base "$PLAN_PATH"; else
     echo "(no plan resolved — this branch is exempt from planning, or the plan"

@@ -51,7 +51,7 @@ the diff would read as an edit rather than as a reversal.
 
 ## The schema
 
-Every decision is a `##` heading with the id, then these seven fields:
+Every decision is a `##` heading with the id, then these eight fields:
 
     ## OD-<n> — one line saying what was decided
 
@@ -59,12 +59,56 @@ Every decision is a `##` heading with the id, then these seven fields:
     - **Evidence:** ESC-<n>, BL-<n>
     - **Requirements added:** R1000, R1001   (or "(none)")
     - **Requirements superseded:** R1000     (or "(none)")
-    - **Vision statement relied on:** "<the sentence from docs/VISION.md>"
+    - **Vision statement relied on:** V<n> — "<the FULL sentence, verbatim>"
+    - **Vision statements against:** V<n> — "<the statement that most nearly
+      forbids this>", and why it does not   (or "(none — no statement in
+      docs/VISION.md tells against this)")
     - **Alternatives considered:** what else was weighed, and why not
     - **Rationale:** why this, given that evidence and that statement
 
     Then any prose the decision needs: the requirement text itself, what it
     changes downstream, which plans it affects.
+
+### The sixth field is what makes the fifth honest
+
+A decision that names only the statement supporting it has not weighed the
+vision — it has searched it. The owner reading the ledger cannot tell those
+apart, because both produce one quoted sentence. Naming the statement that most
+nearly forbids the decision, and saying why it does not, is the difference
+between a reading and a justification, and it is the one part of this schema an
+agent cannot produce without having read the whole file.
+
+Writing `(none)` there is a claim, and a false one is visible the moment the
+owner reads the vision alongside the ledger.
+
+### Quote the whole sentence, and name its id
+
+`.github/scripts/oracle-decisions.sh` reads `docs/VISION.md` at the base commit
+and fails a decision whose quoted text is not in it. That closes the hole where
+this field's entire validation was the presence of a `"` character — a
+one-letter quote passed, in a repository with no vision file at all.
+
+A fragment is rejected for a related reason: one short enough to invert is one
+too short to cite. Six words lifted out of *"I would trade any feature for a
+design I can hold in my head"* can be made to argue for adding complexity, which
+is the opposite of what the sentence says, and the ledger entry reads as a clean
+derivation either way.
+
+### If `docs/VISION.md` does not exist
+
+Deleting it is a legitimate choice and it means one specific thing: **this
+project has no tiebreaker, so the oracle rules with none.** Every decision then
+uses the explicit class —
+
+    - **Vision statement relied on:** (no vision statement decided this)
+
+— which is not a formality here, it is the accurate value. That class already
+obliges **Alternatives considered** to say what else was weighed and why it
+lost, and with no vision that field is the entire record of the reasoning.
+
+Quoting a sentence from a file that is not in the tree is the one thing that
+must not happen, and the check now refuses it. If you find yourself reaching
+into git history for a statement, the correct field value is the opt-out.
 
 ### The vision field is the point
 
@@ -105,12 +149,33 @@ guessing silently is not.
   way a plan there implements landed work, it never proposes any;
 - a handoff under `docs/oracle/` is never modified after it is written.
 
-## The one stop
+## The one stop, and it is written down
 
 A decision that would violate a core tenet of `docs/VISION.md` is not made. The
-oracle stops and reports instead. Everything else it decides on the evidence it
-has — it never marks a decision pending, because a pending decision stops work,
-which is the failure this whole arrangement exists to prevent.
+oracle writes a **halt entry** instead — same id sequence, same append-only
+rule, a different shape:
+
+    ## OD-<n> — HALTED: <what could not be decided>
+
+    - **Date:** YYYY-MM-DD
+    - **Evidence:** ESC-<n>
+    - **Tenet relied on:** V<n> — "<the verbatim tenet>"
+    - **What a decision would have said:** the ruling that was available
+    - **What it needs from the owner:** the smallest change to docs/VISION.md
+      that would let this be decided, or the ruling to make directly
+
+A halt does not stop the run — the driver moves to the next phase exactly as it
+does today. What it stops is the evidence disappearing. Without an entry here, a
+tenet stop and an oracle finding nothing worth acting on produce the same
+artifact — no decision — and the delivery driver marks the evidence processed
+either way, so the one moment the vision actually did its job is the one moment
+nothing records. This ledger is the only append-only document an agent may write
+unattended, which is exactly what a halt needs.
+
+Everything else it decides on the evidence it has — it never marks a decision
+pending, because a pending decision stops work, which is the failure this whole
+arrangement exists to prevent. A halt is not a pending decision: it is a
+decision not to decide, recorded.
 
 <!-- Append decisions below, newest at the bottom. Never edit one that has
 landed; supersede it with a new decision naming its id. -->

@@ -59,6 +59,26 @@ cat > "$R/docs/DESIGN.oracle.md" <<'EOF'
 Append-only. Every decision cites evidence that already landed.
 EOF
 
+# The vision the decisions below quote. It has to be REAL now: the check reads
+# it at the base commit and requires a quoted statement to actually appear in
+# it, because the whole check used to be "does this field contain a double-quote
+# character" — which `"s"` satisfied, in a fixture with no vision file at all.
+# Deliberately wrapped across lines, so the whitespace normalisation is
+# exercised rather than assumed.
+cat > "$R/docs/VISION.md" <<'EOF'
+# Vision
+
+## Priorities, in order
+
+- **V1** — Cost is a ceiling, not a preference. I would rather the tool refuse
+  a job than quietly spend more than I budgeted for it.
+- **V2** — I would trade any feature for a design I can hold in my head.
+
+## Core tenets
+
+- **V3** — A number that cannot be traced back to a source row is never shown.
+EOF
+
 git -C "$R" add -A && git -C "$R" commit -qm "seed"
 BASE="$(git -C "$R" rev-parse HEAD)"
 
@@ -76,7 +96,10 @@ decision() { # decision <n> <evidence> <requirements-added>
 - **Evidence:** $2
 - **Requirements added:** $3
 - **Requirements superseded:** (none)
-- **Vision statement relied on:** "Cost is a ceiling, not a preference."
+- **Vision statement relied on:** V1 — "Cost is a ceiling, not a preference."
+- **Vision statements against:** V2 — "I would trade any feature for a design I
+  can hold in my head." Sending whole transcripts is the simpler of the two, so
+  this statement does not tell against it.
 - **Alternatives considered:** tighter windows; a per-video cap. Both leave the
   compounding merge in place, which is the thing that was measured wrong.
 - **Rationale:** measured on real data, excerpting produced 4.8x the characters
@@ -189,6 +212,121 @@ out="$(run)"
 expect_rc "a paraphrased vision field fails" 1 $?
 expect_contains "and says a paraphrase is the decision restating itself" "$out" \
   "a paraphrase is the decision restating itself"
+git -C "$R" reset -q --hard HEAD~1
+
+# ------------------------------------- the quote must be in the vision file
+# The finding this closes: the ENTIRE check used to be "does the field contain a
+# double-quote character". `"s"` passed, with `(none)` for alternatives, in a
+# fixture that contained no docs/VISION.md at all. Meanwhile the ledger tells
+# the owner this field is the steering lever — "edit the sentence that produced
+# the decision" — and nothing connected the sentence they edit to anything.
+decision 2 "ESC-1" "R1001" \
+  | sed 's/^- \*\*Vision statement relied on:\*\*.*/- **Vision statement relied on:** "s"/' \
+  >> "$R/docs/DESIGN.oracle.md"
+commit "Add a decision quoting a single character"
+out="$(run)"
+expect_rc "a one-character quote fails" 1 $?
+expect_contains "and says it is too short to be a statement" "$out" "too short"
+git -C "$R" reset -q --hard HEAD~1
+
+decision 2 "ESC-1" "R1001" \
+  | sed 's/^- \*\*Vision statement relied on:\*\*.*/- **Vision statement relied on:** "Speed matters more than correctness here."/' \
+  >> "$R/docs/DESIGN.oracle.md"
+commit "Add a decision quoting a sentence the owner never wrote"
+out="$(run)"
+expect_rc "a quote that is not in the vision file fails" 1 $?
+expect_contains "and quotes the invention back" "$out" "Speed matters more than correctness"
+expect_contains "and says why the field matters" "$out" "steering lever"
+git -C "$R" reset -q --hard HEAD~1
+
+# A real sentence wrapped across two lines in the file must still match — this
+# is the ordinary case, and a check that failed it would be unusable.
+decision 2 "ESC-1" "R1001" \
+  | sed 's/^- \*\*Vision statement relied on:\*\*.*/- **Vision statement relied on:** V1 — "I would rather the tool refuse a job than quietly spend more than I budgeted for it."/' \
+  >> "$R/docs/DESIGN.oracle.md"
+commit "Add a decision quoting a sentence that wraps in the file"
+expect_rc "a quote spanning wrapped lines still matches" 0 \
+  "$(run >/dev/null; echo $?)"
+git -C "$R" reset -q --hard HEAD~1
+
+# A fragment short enough to invert its own sentence. The review's worked
+# example: six words out of "I would trade any feature for a design I can hold
+# in my head" reverse what the owner said and read as a clean derivation.
+decision 2 "ESC-1" "R1001" \
+  | sed 's/^- \*\*Vision statement relied on:\*\*.*/- **Vision statement relied on:** "a design I"/' \
+  >> "$R/docs/DESIGN.oracle.md"
+commit "Add a decision quoting an invertible fragment"
+out="$(run)"
+expect_rc "a fragment too short to carry its sentence fails" 1 $?
+git -C "$R" reset -q --hard HEAD~1
+
+# ------------------------------------------- the counter-argument is required
+# A decision naming only the statement that supports it has not weighed the
+# vision, it has searched it — and both produce one quoted sentence, so the
+# owner cannot tell them apart.
+decision 2 "ESC-1" "R1001" | grep -v 'Vision statements against' \
+  | grep -v 'can hold in my head." Sending whole' | grep -v 'this statement does not tell' \
+  >> "$R/docs/DESIGN.oracle.md"
+commit "Add a decision with no counter-argument"
+out="$(run)"
+expect_rc "a decision that weighs nothing against itself fails" 1 $?
+expect_contains "and names the missing field" "$out" "Vision statements against"
+git -C "$R" reset -q --hard HEAD~1
+
+# ------------------------------------------------------------ the HALT entry
+# A tenet stop and an oracle finding nothing worth acting on used to produce the
+# IDENTICAL artifact — no decision — while the driver marked the evidence
+# processed either way. So the one moment the vision did its job was the one
+# moment nothing recorded it.
+cat >> "$R/docs/DESIGN.oracle.md" <<'EOF'
+
+## OD-2 — HALTED: the error type cannot distinguish truncation from tampering
+
+- **Date:** 2026-08-16
+- **Evidence:** ESC-1
+- **Tenet relied on:** V3 — "A number that cannot be traced back to a source row is never shown."
+- **What a decision would have said:** surface a richer error type naming the
+  failure mode, which is the ordinary fix and would have shipped today.
+- **What it needs from the owner:** either an exception to the tenet for
+  length-only failures, or a ruling that the opaque error stays and the
+  message is dropped.
+EOF
+commit "Record a halt"
+out="$(run)"
+expect_rc "a well-formed halt passes" 0 $?
+expect_contains "and is counted as a decision" "$out" "1 new in this pull request"
+git -C "$R" reset -q --hard HEAD~1
+
+# A halt still has to say what it stopped on and what the owner must rule.
+cat >> "$R/docs/DESIGN.oracle.md" <<'EOF'
+
+## OD-2 — HALTED: something stopped
+
+- **Date:** 2026-08-16
+- **Evidence:** ESC-1
+- **Tenet relied on:** V3 — "A number that cannot be traced back to a source row is never shown."
+EOF
+commit "Record an incomplete halt"
+out="$(run)"
+expect_rc "a halt missing what the owner must rule fails" 1 $?
+expect_contains "and names the field" "$out" "What it needs from the owner"
+git -C "$R" reset -q --hard HEAD~1
+
+# A halt cites evidence like any other entry: it is the record of evidence the
+# oracle READ and declined to act on, which is exactly what used to vanish.
+cat >> "$R/docs/DESIGN.oracle.md" <<'EOF'
+
+## OD-2 — HALTED: no evidence named
+
+- **Date:** 2026-08-16
+- **Evidence:** (none)
+- **Tenet relied on:** V3 — "A number that cannot be traced back to a source row is never shown."
+- **What a decision would have said:** nothing in particular.
+- **What it needs from the owner:** a ruling.
+EOF
+commit "Record a halt citing nothing"
+out="$(run)"
+expect_rc "a halt citing no evidence fails" 1 $?
 git -C "$R" reset -q --hard HEAD~1
 
 # The no-vision class: a ruling the vision genuinely does not decide (an

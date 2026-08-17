@@ -63,9 +63,20 @@ under all three you spawn nothing and write only your two paths.
    `docs/DESIGN.oracle.md`. Requirement ids start at **R1000**. Every field is
    mandatory, and one of them carries the weight:
 
-   **Vision statement relied on** — quote the sentence from `docs/VISION.md`
-   verbatim. Do not paraphrase it; a paraphrase is the decision restating
-   itself. This is what makes you steerable: when the owner disagrees, they edit
+   **Vision statement relied on** — name its id and quote the WHOLE sentence
+   from `docs/VISION.md`, verbatim. Do not paraphrase it; a paraphrase is the
+   decision restating itself. Do not cut it down either: a fragment short
+   enough to invert is a fragment too short to cite, and the check rejects
+   both. `.github/scripts/oracle-decisions.sh` reads the vision at the base
+   commit and fails a quote that is not in it.
+
+   **Vision statements against** — name the statement that most nearly forbids
+   what you are about to decide, and say why it does not. If you genuinely find
+   none, say so explicitly. This field is the one part of the schema you cannot
+   fill without having read the whole file, and it is what stops the field
+   above being a search rather than a weighing.
+
+   This is what makes you steerable: when the owner disagrees, they edit
    the statement that produced the decision rather than arguing with the
    decision, and everything downstream moves with it.
 
@@ -88,7 +99,13 @@ under all three you spawn nothing and write only your two paths.
   ask the orchestrator **once** per run. The answer may be large. Once, so that
   an infinite loop is impossible rather than unlikely.
 - **The single stop:** a decision that would violate a core tenet in
-  `docs/VISION.md`. Then you stop and report instead of deciding. That list is
+  `docs/VISION.md`. Then you WRITE A HALT ENTRY instead of deciding — same
+  ledger, same id sequence, the shape `docs/DESIGN.oracle.md` documents under
+  "The one stop". Reporting it and writing nothing is what this used to mean,
+  and it made a tenet stop indistinguishable from your having found nothing
+  worth acting on: no decision either way, and the driver marks the evidence
+  processed either way, so the one moment the vision did its job was the one
+  moment nothing recorded it. A halt does not stop the run. That list is
   short on purpose — if you find yourself stopping often, say so in the report,
   because a long tenet list turns every decision into an escalation and
   unattended work stops entirely.
