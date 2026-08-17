@@ -1,15 +1,23 @@
 # Synthesis — the plans and the reviews, reconciled
 
-A working document, not a record. It exists to be walked top to bottom once,
-with decisions taken at the bottom. Nothing here is authorization: as
+A working document, not a record. It exists to be walked top to bottom, with
+decisions taken at the bottom. Nothing here is authorization: as
 `docs/reviews/README.md` says, a finding becomes binding when it becomes an
 `ESC-<n>` row and the check that row names.
 
-- **Written:** 2026-08-17, against `claude/copier-template-automation-rii78u` @ `b56ed76`
+- **First written:** 2026-08-17, against `claude/copier-template-automation-rii78u` @ `b56ed76`
+- **Revision 2:** 2026-08-17 — the owner walked the register and ruled. Part 5
+  now carries fifteen rulings in the owner's own words; Part 4 records what each
+  decision became; Part 2 gains six findings that were not in any review,
+  discovered while answering the owner's questions.
 - **Covers:** `docs/plans/` (2 plans + 2 context documents) and `docs/reviews/`
   (5 sessions, 14 distinct documents — `testbed-vs-template-report.md` and
   `comparative-report.md` are byte-identical copies of one file)
-- **Source material:** ~63,000 words. This is ~6,000.
+- **Source material:** ~63,000 words of review, plus one working session.
+
+> **On why the rulings are written down.** They were taken in a chat session and
+> exist nowhere else. `AGENTS.md` says chat is not storage. Part 5 is that rule
+> applied to this conversation.
 
 ---
 
@@ -36,7 +44,8 @@ verification section lists `tests/test-deliver-loop.sh` as covering the driver,
 and `gate-seams` verified by grep that the file **contains no occurrence of
 "acceptance"** — the driver's single most consequential decision path is
 untested. Treat the plans' "Tests" and "Verification" sections as claims of the
-same kind the reviews were sent to check.
+same kind the reviews were sent to check. Revision 2 adds a second instance:
+§2's Root H shows the budget ceiling was never exercised either.
 
 The five unverified-live items, unchanged and still unobserved:
 
@@ -44,7 +53,8 @@ The five unverified-live items, unchanged and still unobserved:
    has now been closed and reopened around **four** wrong theories, and **no
    branch has ever been seen to disappear, under any identity**).
 2. REST ruleset creation before checks first report.
-3. `budget-probe.sh` against a real subscription.
+3. `budget-probe.sh` against a real subscription. — **Revision 2: now
+   disproven rather than unverified. See Root H.**
 4. One live smoke-probe of the driver's session command lines.
 5. `/deliver-loop` web mode, once, watched.
 
@@ -67,7 +77,7 @@ Part 3 does it.
 
 ### 1.3 The one sentence
 
-Nineteen of the twenty-two findings are the same defect wearing different
+Nineteen of the twenty-two review findings are the same defect wearing different
 clothes, and `gate-seams` states it in its closing line:
 
 > **Nothing anywhere compares what was asked for to what was built.** Every gate
@@ -146,9 +156,11 @@ The machinery is sound. The gap is uniformly one thing, and it is the thing in
 
 ## Part 2 — The findings in one order
 
-Twenty-two traced findings collapse into seven roots. Ranked by how quietly each
-reaches you, which is the standard both reviews were given. `GS-n` =
-`gate-seams`, `DS-n` = `document-shape`.
+Twenty-two traced review findings collapse into seven roots. Revision 2 adds
+**Root H**, six findings that no review contained — they surfaced while
+answering the owner's questions and were verified directly against the code and
+the live CLI. `GS-n` = `gate-seams`, `DS-n` = `document-shape`, `N-n` = new in
+revision 2.
 
 ### Root A — "Done" is a claim, and nothing compares it to delivery
 **GS-1, GS-7, DS-1, DS-4, GS-5, GS-H3, GS-H4**
@@ -173,14 +185,14 @@ opened for it, so no gate ever gets a chance.
 `coverage.sh`'s own header says covered means planned, not delivered, and
 `AGENTS.md:240` says "everything merged" is a statement about the queue. Three
 separate places worry about this posture; no mechanism addresses it. The reviews
-turn a documented caveat into a traced, reachable, green-CI bypass, which is the
-one thing the briefs said counted.
+turn a documented caveat into a traced, reachable, green-CI bypass.
 
 ### Root B — The vision is unenforceable as a tiebreaker
 **DS-2, DS-3, DS-5, DS-6, DS-7, DS-8, GS-H2**
 
-`docs/VISION.md` is the declared tiebreaker and your only mid-run steering
-lever. **No mechanism reads its contents against anything.**
+`docs/VISION.md` is the declared tiebreaker and the owner's only mid-run
+steering lever. The oracle **does** read it (`oracle.md:54`, step 1). **Nothing
+checks what the oracle then says about it.**
 
 - `oracle-decisions.sh:213` verifies that the "Vision statement relied on" field
   contains a `"` character. That is the entire check. Verified in fixture: the
@@ -204,20 +216,24 @@ lever. **No mechanism reads its contents against anything.**
   now quoting a file that is not in the tree.
 - When the two documents genuinely conflict, **the design wins structurally**,
   because the design is immovable (owner-owned) and the vision is the one the
-  oracle is permitted to interpret. No artifact anywhere records that a conflict
-  existed.
+  oracle is permitted to interpret. No artifact anywhere records the conflict.
+- `DS-2`'s worked example: a six-word fragment lifted from *"I would trade any
+  feature for a design I can hold in my head"* is used to justify **adding**
+  complexity. The fragment inverts the sentence. The ledger reads as a clean
+  derivation from the owner's own words.
 
 **Plan alignment:** the merged plan's Phase 3 deliberately widened what the
 oracle may decide (the *no-vision* class with mandatory alternatives). The
 `unattended-operation` context document flagged the exact residual risk in
-advance — routing preference questions to the oracle is cheaper than asking you,
-and "the failure mode is a design ledger full of decisions the owner never made,
-each formally well-formed" — and asked a reviewer to judge whether
-mandatory-alternatives was sufficient countermeasure. **`DS-2` and `DS-3` are
-that judgment, and the answer is no.**
+advance and asked a reviewer to judge whether mandatory-alternatives was
+sufficient countermeasure. **`DS-2` and `DS-3` are that judgment, and the answer
+is no.**
+
+**Owner's ruling (R4, R5) reframes this root entirely.** The risk is accepted on
+purpose. Every fix below is now a *camera*, not a gate — see Part 4, D6.
 
 ### Root C — The perimeter has two holes
-**GS-2, GS-6, GS-H6, T3**
+**GS-2, GS-6, GS-H6, T3, and N-1**
 
 `gate-seams` notes that five of its twelve findings share one root:
 `CODEOWNERS.jinja:60`'s deliberate release of `docs/plans/oracle/` (a considered
@@ -236,43 +252,41 @@ trade, well argued in the file) combined with `:69`'s failure to extend past
 - **`docs/BACKLOG.md` is the left-hand side of the authority chain's first
   arrow, and it is unowned, un-append-only, and read by nothing but a
   `grep -oE 'BL-[0-9]+'`.** `escapes.md` got an append-only enforcer (`ESC-15`);
-  the backlog did not. The steward role has an explicit write grant for it. So a
-  planner can file `BL-7` in one PR and, two PRs later, the pipeline amends the
-  design layer end-to-end on evidence it authored itself forty minutes earlier —
-  every check green, nothing indicating the provenance.
+  the backlog did not. So a planner can file `BL-7` in one PR and, two PRs
+  later, the pipeline amends the design layer on evidence it authored itself
+  forty minutes earlier — every check green, nothing indicating provenance.
 
 **Plan alignment:** the un-owned oracle path is `C4` of the merged plan, adopted
 deliberately so unattended plans can land. `.claude/` looks like the same class
 of oversight `ESC-22` already records for `docs/VISION.md` — a path added after
 the list that names paths.
 
+**Owner's ruling (R3) rejects the backlog approval gate**; see Part 4, D4. The
+provenance half survives as a camera.
+
 ### Root D — The review gate is starved, and nothing validates it
 **GS-11, GS-8, GS-12, GS-10, plus the assessment's gap (a)**
 
-The gate is asked questions whose inputs it is not given:
+The gate is asked questions whose inputs it is not given. It *can* read files —
+`review.sh:214` grants `Read,Grep,Glob` — but two separate things defeat that:
+some facts are not files at all, and its own brief tells it the standards it
+judges by are the base-commit copies it was handed.
 
 - Criterion 1 asks whether an exempt branch is carrying real work — the reviewer
   is **never told the branch prefix**, and `review.sh:165-170` explicitly offers
-  it the alternative reading that "the plan check has failed separately", which
-  makes declining to judge the reasonable choice.
-- Criterion 2 asks about blind test authorship — nothing in the payload says
-  whether the change was orchestrated.
+  it the alternative reading that "the plan check has failed separately".
+- Criterion 2 asks about blind test authorship — nothing says whether the change
+  was orchestrated.
 - Criterion 5 asks it to block "an agent-opened diff" touching DESIGN/VISION —
   **the PR author login is not passed.**
-- `review.sh:44-49` excludes lockfiles from the diff *on the stated grounds that
+- `review.sh:44-49` excludes lockfiles *on the stated grounds that
   `plan-metrics.sh` reports them*. **It does not** — `deps_at()` reads
   `pyproject.toml`/`project.yml` and never opens `uv.lock`, and `NEW_FILES` uses
-  `--diff-filter=A` so a *modified* lockfile is invisible to both. The reviewer
-  is told "New dependencies: none" about a changed transitive dependency it
-  cannot see. This is the cross-reference the brief asked to check character by
-  character, and it is wrong.
+  `--diff-filter=A` so a *modified* lockfile is invisible to both.
 - Past 400 KB the reviewer reads the **20 smallest changed files**, and the
   author controls that selection.
-- And the assessment's own gap: **the review gate is the only load-bearing gate
-  with no fixtures.** `test-the-tests` validates the tests, the offline suite
-  validates the scripts; nothing checks that the reviewer actually BLOCKs a
-  gate-tampering diff. One judgment failure plus auto-merge equals a silent gate
-  breach.
+- **The review gate is the only load-bearing gate with no fixtures.** Nothing
+  checks that the reviewer actually BLOCKs a gate-tampering diff.
 
 ### Root E — Test integrity reports success by not running
 **GS-3, GS-4**
@@ -280,17 +294,15 @@ The gate is asked questions whose inputs it is not given:
 `ci.yml.jinja` twice takes deliberate care to avoid job-level `if:` because "a
 skipped job counts as PASSING for a required check" — then hands the same power
 to a script-level `exit 0`, which is indistinguishable to branch protection.
-`test-the-tests` skips unless the diff touches **both** hardcoded directories,
-so a PR with no tests at all, or one whose code lives in `pkg/` instead of
-`src/`, reports a green `test-the-tests` check. `plan-metrics.sh` computes its
+`test-the-tests` skips unless the diff touches **both** hardcoded directories
+(`src`/`tests` or `Sources`/`Tests`), so a PR with no tests at all, or one whose
+code lives in `pkg/`, reports a green check. `plan-metrics.sh` computes its
 test:impl ratio from the same two directory names, so it *corroborates* the
 wrong picture rather than contradicting it.
 
 And `Blind-Tests:` is a self-asserted commit trailer, presented to the reviewer
 inside the block labelled "Nobody wrote it, and nothing in the diff can
-influence it." A coder writing code and tests together and adding the trailer
-produces the affirmative sentence "Every blind-written test is unmodified since
-its authoring commit."
+influence it."
 
 ### Root F — Two supply-chain seams
 **GS-9, T2**
@@ -302,28 +314,81 @@ executes `_migrations`), after the workflow has installed a global git
 credential rewrite carrying `TEMPLATE_TOKEN`. `plan-resolve.sh` steps aside by
 prefix, `test-the-tests` skips by prefix, and the review gate is told by the
 `TEMPLATE SYNC:` note that provenance is mechanically settled. All four defer to
-one comparison that does not happen. **Marked CONDITIONAL** by the reviewer on
-copier's `_tasks`-during-update behaviour; the `_migrations` path is documented
-and sufficient. One line closes it.
+one comparison that does not happen. One line closes it.
 
 Separately, T2: `AGENTS.md:212` says "No new dependencies without the owner's
 approval — ask first, **in chat**", and `:251` says "**Chat is not storage.**"
-The template contradicts its own recorded maxim at exactly the point a future
-session most needs the record.
 
 ### Root G — Nothing has been observed
-**The 5 unverified-live items; the assessment's gap (d); the comparative
-report's closing note**
+**The 5 unverified-live items; the assessment's gap (d)**
 
-Three separate reviews independently reached the same conclusion about the *next
-action*: running one real project through the loop is worth more than any fix on
-any list. The template's own epistemics — "a check must be observed working, not
-inferred", stated six independent times — apply to the template itself.
+Three separate reviews independently reached the same conclusion about the next
+action: running one real project through the loop is worth more than any fix on
+any list.
 
 The counterweight, which those reviews could not see because they predate this
 reconciliation: **Roots A and the §1.4 cluster mean a live run can exit 0 having
 built almost nothing and tell you it succeeded.** A live run right now measures
 the merge cycle honestly and measures *delivery* not at all.
+
+### Root H — Six findings no review contained *(new in revision 2)*
+
+Verified directly against the code and, where noted, against the live CLI.
+
+**N-1 — The permission model is inverted.** `ORACLE_TOOLS`
+(`spawn-worker.sh:204`) is correctly narrow: `Write(docs/DESIGN.oracle.md)`,
+`Edit(docs/DESIGN.oracle.md)`, `Write(docs/oracle/**)`. It cannot touch
+`docs/DESIGN.md`. But `ORCH_TOOLS` (`deliver-loop.sh:104-109`) is bare
+`Write,Edit` — **every path in the repository** — under
+`--permission-mode acceptEdits`. So the orchestrator can write `docs/DESIGN.md`
+and `docs/VISION.md` while the oracle cannot. The role the owner intended to
+constrain most is the only one carrying a leash. This is the mechanism behind
+`GS-10` step 3, stated as its own finding because the owner's ruling (R1, R2)
+makes it load-bearing.
+
+**N-2 — The budget ceiling has never worked, and cannot work as written.**
+`budget-probe.sh:51` runs `claude usage --json`. Verified live in this
+container: `--json` returns `error: unknown option '--json'`, and there is **no
+`usage` subcommand at all** — bare `claude usage` treats the word as a prompt
+and opens a chat. The probe therefore always fails and always falls back to
+`--max-prs` and `--max-hours`. **The one ceiling the owner specified is the one
+that does nothing; the two they never chose are the only ones running.** The
+script's own header flags the surface as unverified, honestly. Upgrade from
+*unverified* to *disproven*.
+
+**N-3 — The probe reads the wrong window.** `deliver-loop.sh:176` extracts
+`session=` — the 5-hour window. The owner's ruling is **weekly**. Separately,
+the 5-hour window resets mid-run and makes the delta go negative; the 7-day
+window rarely does, so the ruling is also the more robust choice.
+
+**N-4 — There are three limits and only one is read.** A real reading returns
+`Session (5-hour)`, `Weekly (all models)` and `Weekly (Fable)`. The oracle runs
+on Fable 5 (`DECISIONS.md` model tiers), which has its **own separate cap**. A
+run can exhaust the Fable weekly limit while the all-models number still looks
+healthy, and stop dead for a reason no configured limit predicted.
+
+**N-5 — Probing costs budget.** `deliver-loop.sh:303` re-probes **every
+iteration**. The working headless command, `claude -p "/usage"`, starts a small
+session to answer. At the 20-iteration default that is 21 sessions spent
+measuring spend. `omarchy-agent-usage-claude --limits-only --force` reads
+Anthropic's endpoint directly and costs nothing; it belongs in
+`BUDGET_PROBE_CMD`. The reading is also cached for 15 seconds, so `--force` is
+required or two consecutive probes return an identical number.
+
+**N-6 — The usage numbers are account-wide.** They include work done on other
+machines and on claude.ai. That makes them wrong for "what did this run cost"
+and **right** for "how much of my quota may this run spend", which is what the
+owner asked for. The per-run cost, if wanted, comes from the session transcript
+under `~/.claude/projects/`, and is a separate report line rather than a stop.
+
+**One piece of good news in this root.** `ORCH_TOOLS` is a **whitelist**, and
+`Bash(claude:*)` is not on it. The orchestrator therefore cannot invoke `claude`
+at all — it cannot run `/design`, `/usage`, or any other command. Its single
+door to starting an agent is `Bash(.claude/scripts/spawn-worker.sh:*)`. A
+whitelist cannot be dodged by quoting or aliasing the way a blocklist can. This
+holds only while `.claude/` is un-editable by the pipeline (Root C) and while
+`spawn-worker.sh` refuses `--role architect`, which is why those two fixes
+belong together.
 
 ---
 
@@ -334,208 +399,231 @@ side has ever checked whether they were answered. They were not, entirely.
 
 | Thread | Question handed off | Answered? |
 | --- | --- | --- |
-| **H1** — `vision-complete.sh`'s emptiness predicate is one non-blank line per section; `TBD` passes | Does the VISION skeleton's prompting make a one-token fill a plausible good-faith outcome? | **Partially.** DS-6 and DS-8 answer the *deletion* half thoroughly. The specific "a competent author writes `TBD` and the gate passes" case was never constructed — the brief's ban on self-sabotaging pairs pushed away from it. |
-| **H2** — the vision field is validated by a `"` character | Is a fragment-level quote distinguishable from a sentence-level one by any document rule? | **Yes, fully.** DS-2, verified in fixture: `"s"` passes. And DS-2 answers the sharper version — a *six-word* fragment lifted from Pair F **inverts the sentence it came from** and reads as a clean derivation. Fix: `V<n>` ids + full-sentence requirement. |
-| **H3** — requirement granularity sets the whole coverage bar | Does the DESIGN template force requirements at a granularity one 100-line plan cannot swallow? | **Yes, fully.** DS-1: no, it does not, and §5 says nothing about atomicity. Holds for the narrow-deep pairs, fails for the ordinary broad one — *"a template defect, not a document defect."* |
-| **H4** — §13 `S<n>` ids are read by nothing | Is there a document shape a future mechanical check could key on? | **Yes, fully.** DS-1 + DS-4 + "shapes that hold" #2: an `R`→`S` back-reference, because `docs/acceptance.md` is the one CODEOWNERS-owned artifact, so an over-claimed `covers:` becomes a visible empty evidence cell instead of a green coverage line. Named **the single highest-leverage document property in the system**. |
-| **H5** — plan estimates set the only scope tripwire, and the plan sets them | Is there a document-shape counterpart that makes an inflated estimate legible — a stated per-slice ceiling? | **Not answered.** No `document-shape` finding addresses estimates. Open thread. |
-| **H6** — `docs/BACKLOG.md`'s "Approved" section is described as an authorisation and read by no gate | What should a token in "Approved" authorise, and should the boundary be machine-readable? | **Not answered.** Open thread — and `GS-6` shows it is load-bearing, since the backlog is the authority chain's first input. |
+| **H1** — `vision-complete.sh`'s emptiness predicate is one non-blank line per section; `TBD` passes | Does the VISION skeleton's prompting make a one-token fill a plausible good-faith outcome? | **Partially.** DS-6 and DS-8 answer the *deletion* half thoroughly. The "a competent author writes `TBD`" case was never constructed — the brief's ban on self-sabotaging pairs pushed away from it. |
+| **H2** — the vision field is validated by a `"` character | Is a fragment-level quote distinguishable from a sentence-level one by any document rule? | **Yes, fully.** DS-2, verified in fixture: `"s"` passes. And DS-2 answers the sharper version — a six-word fragment **inverts** the sentence it came from and reads as a clean derivation. |
+| **H3** — requirement granularity sets the whole coverage bar | Does the DESIGN template force requirements at a granularity one 100-line plan cannot swallow? | **Yes, fully.** DS-1: no, and §5 says nothing about atomicity. *"A template defect, not a document defect."* |
+| **H4** — §13 `S<n>` ids are read by nothing | Is there a document shape a future mechanical check could key on? | **Yes, fully.** DS-1 + DS-4 + "shapes that hold" #2: an `R`→`S` back-reference, because `docs/acceptance.md` is the one CODEOWNERS-owned artifact. Named **the single highest-leverage document property in the system**. |
+| **H5** — plan estimates set the only scope tripwire, and the plan sets them | Is there a document-shape counterpart that makes an inflated estimate legible? | **Not answered.** No `document-shape` finding addresses estimates. Still open. |
+| **H6** — `docs/BACKLOG.md`'s "Approved" section is described as an authorisation and read by no gate | What should a token in "Approved" authorise, and should the boundary be machine-readable? | **Not answered** by the review — and **partly ruled** since: R3 says the boundary must not become a gate. What "Approved" now means is an open question. |
 
-**Net:** three answered fully, one partially, **two never picked up** — and one
-of the two (H6) sits directly under Root C.
-
----
-
-## Part 4 — The decision register
-
-Ordered so the cheap irreversible-to-skip things come first. Each is a real
-choice; my recommendation is stated, not hidden.
-
-### Tier 1 — Do before anything else (all small, all block the live run's honesty)
-
-**D1. Do we fix the three "silent success" defects before the first live run, or run first?**
-Every review says run live next. But `GS-5` (acceptance marker written before
-dispatch, never cleared), `GS-7` (slug substring match) and `DS-10` (acceptance
-branch exceeds the 50-line cap) each independently produce **exit 0 or exit 3
-with nothing built and a report that reads like success**. A live run under
-those conditions cannot distinguish "the loop works" from "the loop terminated
-early and said it was done".
-- *Options:* (a) run live now, accept the ambiguity; (b) fix these three, then
-  run; (c) fix these three plus Root A's adequacy check, then run.
-- **Recommendation: (b).** The three are perhaps 15 lines total — move a
-  `touch` after the dispatch and clear it at run start; compare the front-matter
-  `slug:` instead of the filename, with the same collision guard
-  `plan-resolve.sh` already has; add `docs/acceptance.md` and
-  `docs/architecture.md` to `PLANNING_PATHS`. Not (c): Root A needs design
-  thought and would delay the observation indefinitely.
-
-**D2. `template-sync.sh` — compare `_src_path`?**
-One line. Today the PR chooses which template repository CI replays under
-`--trust`, with `TEMPLATE_TOKEN` in the global git config.
-- **Recommendation: yes, unconditionally.** This is the only finding with a
-  remote-code-execution shape, and the fix has no design content to argue about.
-
-**D3. The `review.sh` lockfile comment — fix the code or fix the claim?**
-The exclusion is justified by a cross-reference to behaviour that does not
-exist.
-- *Options:* (a) make `plan-metrics.sh` actually report lockfile changes;
-  (b) stop excluding lockfiles from the reviewer's numstat summary; (c) correct
-  the comment and accept the gap knowingly.
-- **Recommendation: (b) plus corrected comment.** Keeping lockfile *text* out of
-  the diff is right — it is noise. Letting the reviewer see the *filename* in
-  the numstat costs one line and removes the false "New dependencies: none".
-
-### Tier 2 — Structural, decide now, build in order
-
-**D4. `.claude/` and `docs/BACKLOG.md`: extend the perimeter?**
-Root C. Three lists (`CODEOWNERS`, review criterion 5, `AGENTS.md`'s gate-path
-rule) all stop at `.github/`.
-- *Options:* (a) add `.claude/scripts/`, `.claude/commands/`, `.claude/agents/`,
-  `.claude/orchestration.md` to all three, plus an append-only check and a
-  CODEOWNERS rule for `docs/BACKLOG.md`; (b) `.claude/` only; (c) leave, on the
-  grounds the driver is template-shipped so real changes arrive via
-  `template-sync`.
-- **Recommendation: (a).** The cost of (a) is low precisely because of (c)'s
-  reasoning — legitimate driver changes come down the template-sync path, which
-  already has its exemption, so owning these paths mostly blocks the *illegitimate*
-  edit. The backlog half is the more important one: it is the authority chain's
-  first input and the only unprotected ledger.
-
-**D5. Root A — how do we make "covered" mean something?**
-This is the biggest decision on the page and the one I would not decide quickly.
-Three genuinely different shapes:
-- *(a) Document layer only.* `DS-1`'s fix: every `R` names the `S<n>` that would
-  notice its absence, and §13 back-references. Moves the failure from
-  `coverage.sh` (a summary line you skim) into `docs/acceptance.md` (a diff you
-  must approve). Zero new machinery. Called the highest-leverage document
-  property in the system.
-- *(b) Mechanical adequacy check.* Something that compares a plan's `covers:` to
-  its slices — e.g. every claimed `R` must be named by at least one slice's
-  prose or `Files:`. Real teeth; also real false-positive risk on non-functional
-  requirements (`R11` platform, `R12` offline) that no slice ever owns by
-  construction, which is exactly the case `DS-1` used.
-- *(c) Own `docs/plans/oracle/`.* Closes it completely and **ends unattended
-  operation**, since that path exists so overnight plans can land.
-- **Recommendation: (a) now, (b) designed but held.** (a) is free and routes the
-  failure to the one artifact you are guaranteed to see. (c) trades away the
-  whole point. (b) is right eventually but needs the non-functional-requirement
-  case solved first — and one live run would tell us how often padding actually
-  happens, which is better evidence than a guess.
-
-**D6. Root B — what do we do about the vision field?**
-- *Options:* (a) document-layer only — `V<n>` ids on vision statements, full
-  sentences required in the ledger, plus `DS-3`'s eighth schema field ("Vision
-  statements **against**", naming the statement that most nearly forbids the
-  decision and why it does not); (b) (a) plus the mechanical half — a `grep -qF`
-  of the quoted span against the base-commit `docs/VISION.md`, failing closed
-  when the file is absent, plus adding `docs/VISION.md` to the review payload;
-  (c) accept that it is advisory and **stop presenting it as a steering lever**
-  in `DESIGN.oracle.md.jinja` and `AGENTS.md`.
-- **Recommendation: (b).** `document-shape` was constrained to document-layer
-  fixes and said so honestly: *"the field's entire value today rests on the
-  document layer, and the document layer is structurally incapable of validating
-  it."* The grep is roughly two lines. (c) is the intellectually honest fallback
-  if we decline (b) — what we must not do is keep telling the owner the field is
-  a steering lever while nothing connects the sentence they edit to the next
-  decision.
-
-**D7. Root B — do tenet halts become ledger entries?**
-Today a tenet stop and an oracle shrug are the same artifact: nothing. `DS-5`
-proposes a `HALTED` entry in the same append-only ledger, same id sequence.
-- **Recommendation: yes.** It is the cheapest fix on this page relative to what
-  it protects — the one moment the vision actually does its job is currently the
-  one moment nothing records. Note it interacts with `record_dismissed_evidence`,
-  which currently marks any id the newest handoff mentions as processed forever.
-
-**D8. Root E — does `test-the-tests` skipping stay invisible?**
-- *Options:* (a) report the skip into the MECHANICAL FACTS block so the reviewer
-  can see the check did not run; (b) additionally fail when implementation
-  changed and no test file did; (c) leave it — the skip conditions are
-  documented.
-- **Recommendation: (a) now, (b) considered.** (a) is nearly free and directly
-  repairs a stated-but-false trust boundary. (b) is a real policy change that
-  would fire on legitimate refactors; it wants an `ESC` row behind it first.
-
-### Tier 3 — Needs your ruling, or your calendar
-
-**D9. The reviewer eval fixtures — build, or wait for an escape?**
-The assessment names this the check it would most want before trusting a long
-unattended run, and flags honestly that it is speculative machinery by the
-template's own ratchet doctrine.
-- **Recommendation: hold as designed, build after the first live run** — unless
-  we start long unattended runs before then, in which case build it first. The
-  ratchet is right that speculative guardrails are slop; it is also true that
-  this particular escape class is discovered by you, in use, weeks later, with
-  no attribution.
-
-**D10. T1 — executable acceptance criteria.**
-Both the report and its assessment rank this the most valuable transfer, and the
-assessment sharpens the argument: **the acceptance ledger is the one place in
-the template where agent narration is admitted as evidence**, everywhere else
-computed facts and judged verdicts are rigorously split. `DS-4` strengthens it
-further — the narrator also picks which rows it must narrate.
-- **Recommendation: T1-lite** — `Verified by: agent` criteria as small scripts,
-  run at ACCEPTANCE phase entry, ledger cites them instead of narrating them.
-  Promote to per-PR CI on the first observed regression. This also dissolves the
-  assessment's gap (b), stale acceptance rows under §13 churn.
-
-**D11. T2 — dependency rulings as repo artifacts.**
-One sentence in `AGENTS.md`, one clause in the review prompt, reusing
-`DECISIONS.md`/`BL-<n>`. Do **not** add a separate `DEPENDENCIES.md`.
-- **Recommendation: do it now.** Cheapest unambiguous win in the corpus. Watch
-  the `DECISIONS.md` cap; `BL-<n>` is the escape valve.
-
-**D12. T3 — the gate-path backstop.**
-The report proposed porting a ~40-line path-diff script; the assessment
-correctly objects that it creates **two protected-path lists that can drift**.
-- **Recommendation: the assessment's version** — run the `codeowners/errors`
-  probe that `unattended-ready.sh` already uses as a CI step on every PR, so we
-  check the platform config instead of replicating it. Verify by observation
-  that an unresolvable owner really surfaces through that API before trusting
-  it. Genuinely low priority: needs silent unbind **and** reviewer miss **and**
-  auto-merge simultaneously.
-
-**D13. When is the live run, and under what settings?**
-- **Recommendation:** after Tier 1, with `--max-prs 3`, watched, on a real
-  project. It is the only thing that closes `ESC-21` (four wrong theories, no
-  branch ever observed to vanish), settles the ruleset and budget-probe
-  questions, and produces the evidence D5(b) and D9 are waiting on. Also settles
-  the two things both review prompts deliberately left unresolved: whether the
-  deployed ruleset actually binds `require_code_owner_review`, and which
-  identity `gh` carries when the driver opens a PR.
+**Net:** three answered fully, one partially, **two never picked up**.
 
 ---
 
-## Part 5 — Four things only you can answer
+## Part 4 — The decision register, and what each became
 
-These come from the plans' context documents, not the reviews. They were flagged
-for a reviewer and never ruled on. Two of them are load-bearing.
+Revision 2 records outcomes. The rulings themselves are Part 5; this is what
+they mean for the code.
 
-1. **The single most consequential interpretation on this branch.** Your words
-   were *"oracle can alter the design doc"*. The implementing session read that
-   as `docs/DESIGN.oracle.md` — the design *layer* — **not** `docs/DESIGN.md`,
-   in order to keep `owner-authored.sh` and your steering lever intact. Its
-   context document says plainly: if you meant the oracle may amend
-   `docs/DESIGN.md` itself, *"that is a different (and gate-breaking) design, and
-   the implementation does not do it."* Please confirm the reading.
-2. **The budget numbers are not yours.** You ruled "percentage points of my
-   subscription rate limit". Everything else — delta-from-run-start on the
-   *session* window, **25 points**, `--max-prs 10`, `--max-hours 8` — was the
-   session's design around a one-line ruling. You chose none of those figures.
-3. **"Readiness refuses rather than warns" is consent by silence.** The session
-   stated it would implement refuse and invited objection; you did not object.
-   Both source plans agreed, so this is probably right — but it is not on record
-   as your ruling.
-4. **An owner answer was lost twice by the chat client mid-session.** The
-   rulings were re-collected afterwards, but the context document asks
-   explicitly: if any recorded ruling surprises you, ask rather than trust the
-   record — there may have been nuance in the lost text that never arrived.
+### Decided
+
+**D1 — sequencing. → Superseded by R9.** The original recommendation was three
+small fixes, then a live run. The identity ruling (R9) makes the App the first
+piece of work instead, because without it `owner-authored.sh` is a formality and
+an unattended run is not safe. The three small fixes stay; they moved down one
+tier, not out.
+
+**D2 — `template-sync.sh` must compare `_src_path`. → Yes (R6).** Both fields
+checked; fail if `_src_path` changed. Plus R7: agents may not grant themselves
+repository access. Two different layers, both built.
+
+**D3 — the `review.sh` lockfile comment. → Fix the code, not the claim.** Keep
+lockfile *text* out of the reviewed diff; let the *filename* through in the
+numstat summary so `New dependencies: none` stops being a false statement.
+
+**D4 — the perimeter. → Partly reversed (R3).** Locking `.claude/` and making
+the backlog append-only with numbered entries plus a separate append-only
+done-log: **build**. The "only `Approved` items may be cited" gate: **rejected**,
+because it puts the owner back in the loop at 03:00 and defeats unattended
+operation. The provenance line — who filed this evidence, in which PR — survives
+as a camera and carries what the gate would have carried.
+
+**D5 — Root A, "covered" must mean something. → Document layer now, mechanical
+half still open.** `DS-1`'s fix (every `R` names the `S<n>` that would notice its
+absence; §13 back-references) is free and routes the failure into the one
+artifact the owner must approve. Owning `docs/plans/oracle/` is rejected for the
+same reason as D4. A mechanical adequacy check remains undecided — the
+non-functional-requirement case (a platform or offline requirement no slice ever
+owns) has to be solved first.
+
+**D6 — Root B, the vision field. → Cameras, not gates (R4, R5).** Build: `V<n>`
+ids on vision statements; whole sentences required in the ledger; a two-line
+`grep -qF` of the quoted span against the base-commit `docs/VISION.md`, failing
+closed when the file is absent; `DS-3`'s eighth schema field ("Vision statements
+**against**"); `DS-5`'s HALT entries; evidence provenance; a digest that reaches
+the owner. Only the quote check can block anything, and it blocks only a
+decision quoting words the owner never wrote — which is never legitimate work.
+
+**D7 — tenet halts become ledger entries. → Yes.** Folded into D6.
+
+**D8 — `test-the-tests` skipping. → Report, never fail (R8).** Print the skip and
+its reason into the MECHANICAL FACTS block; add a reviewer criterion asking
+whether code-without-tests is justified. Do **not** fail the check: legitimate
+refactors, renames and dead-code deletions change code and no tests, and
+blocking them produces junk tests rather than more testing. This follows the
+template's own doctrine that semantic checks beat syntactic ones. Also fix the
+hardcoded `src`/`tests` assumption.
+
+**D9 — reviewer eval fixtures. → Still open.** Not yet discussed with the owner.
+
+**D10 — T1, executable acceptance criteria. → Still open.** Not yet discussed.
+`DS-4` strengthens the case: the narrator also picks which rows it must narrate.
+
+**D11 — T2, dependency rulings as repo artifacts. → Build.** One `AGENTS.md`
+sentence, one review-prompt clause, reusing `DECISIONS.md`/`BL-<n>`. No separate
+`DEPENDENCIES.md`.
+
+**D12 — T3, the gate-path backstop. → Build the cheap version.** Run the
+`codeowners/errors` probe `unattended-ready.sh` already uses as a CI step, rather
+than porting a second protected-path list that can drift.
+
+**D13 — the live run. → After identity and permissions.** `--max-prs 3`,
+watched, on a real project. Blocked on the GitHub App existing (R14).
+
+### New decisions taken in revision 2
+
+**D14 — the architect role. → Build (R2).** A role whose grant is
+`Write(docs/DESIGN.md)`, `Write(docs/VISION.md)` plus read; no other role holds
+those paths; `spawn-worker.sh` refuses to spawn it, so it exists only in the
+owner's interactive session. The role name is documentation — the enforcement is
+the path list plus D15.
+
+**D15 — driver identity. → Build (R9, R14).** `mechanical_pr()`
+(`deliver-loop.sh:183-193`) currently runs `gh pr create` under the owner's local
+credentials, so `github.event.pull_request.user.login` is the owner and
+`owner-authored.sh:89` passes for every driver-opened PR. Open driver PRs as the
+GitHub App instead. Then an `app[bot]` PR touching `docs/DESIGN.md` or
+`docs/VISION.md` **fails**, and a browser-opened PR passes. The check becomes
+real for the first time. Build the path dormant; refuse the run loudly when the
+App is absent or cannot authenticate.
+
+**D16 — the budget system. → Rebuild (R10–R12).** Read all three limits and stop
+when any passes its allowance. Use the weekly window. Detect the environment by
+*probing the gauge* rather than guessing: if the probe returns numbers it is a
+terminal, if it fails it is web. Ask the owner every run — terminal: what
+percentage of the weekly limit may this run spend; web: which of pull requests,
+iterations or wall-clock hours, with exact numbers, at least one required. No
+silent defaults. Snapshot the reset timestamp and discard a reading whose window
+rolled over. Prefer `omarchy-agent-usage-claude --limits-only --force` via
+`BUDGET_PROBE_CMD`; fall back to parsing `claude -p "/usage"`.
+
+**D17 — readiness UX. → Build (R13).** Print `Checking whether this repo can run
+unattended…` before the run; on failure print an unmissable block listing every
+failed item and its fix; on success print a clear all-clear. The check already
+refuses on 11 conditions and notes on 5; missing App identity moves from note to
+refuse.
+
+### Still open, in priority order
+
+1. **D5's mechanical half** — an adequacy check comparing `covers:` to slices.
+2. **D10 / T1** — success criteria as runnable tests.
+3. **D9** — fixtures that test the reviewer itself.
+4. **H5** — making an inflated plan estimate legible.
+5. **H6** — what `docs/BACKLOG.md`'s "Approved" section means now that it is not
+   a gate.
+6. **Whether the missing-App refusal gets a testing override.** Recommendation:
+   no. Attended mode needs no App, and an override on a security control becomes
+   the normal way to run it.
+
+---
+
+## Part 5 — The owner's rulings
+
+Taken 2026-08-17. Verbatim where quoted. These supersede any contrary
+recommendation earlier in this document.
+
+**R1 — The oracle's reach.** *"oracle can only write to (append only)
+docs/DESIGN.oracle.md. oracle should never be able to edit in any way DESIGN.md,
+that is solely for me."* Read access to `docs/DESIGN.md` is explicitly granted:
+*"the oracle needs to know what is in design.md"*. This confirms the
+implementing session's interpretation, which its context document called the
+single most consequential reading on the branch. **The question is closed.**
+
+**R2 — Who may write the vision and the design.** A new **architect** role writes
+both, and only when the owner invokes `/design`. *"the orc does not have and will
+never ever have write access in any way on the design and vision doc."* The
+owner still opens the pull request. Note the history this must not repeat:
+`ESC-24` records that "no agent may edit it" once made `docs/VISION.md`
+impossible to fill in, and `ESC-25` records that the opposite fix went too far.
+The architect role is the boundary neither wording found.
+
+**R3 — No approval gate on the backlog.** Rejected, in the owner's reasoning:
+*"if the priority is that the agents need to be able to run unattended after the
+design doc and vision doc is created, is this not a bug that one cannot solve
+without letting the oracle have rights to make these decisions."* A coder that
+hits a bad spec must be able to file evidence, and the oracle must be able to
+rule on it. That is the main path, not an attack.
+
+**R4 — Oracle drift is an accepted risk.** *"i am accepting the risk that the
+oracle might cause drift (and only the oracle) in order to gain the benefits of
+unattended development."* Deliberately scoped to one role so that a drifting
+project has one suspect: *"if it is other agents that causes the drift, then we
+have a different kind of bug that has more to do with the architecture and the
+permissions."*
+
+**R5 — The vision doc is an experiment, and needs instrumenting.** *"my plan
+would be to use that failure information to further refine the vision doc, or
+implement other gates or tests to prevent the oracle from straying off course."*
+This is why Root B's fixes are cameras. The experiment cannot run while the
+oracle is both unsupervised **and** unobservable, which is its state today.
+
+**R6 — `template-sync.sh` checks both fields.** `_commit` **and** `_src_path`.
+
+**R7 — Agents may not grant themselves repository access.**
+
+**R8 — `test-the-tests` reports, never fails.** The skip and its reason go to the
+reviewer. A script cannot tell a refactor from a dodge; a reader can.
+
+**R9 — The driver gets its own identity.** The owner's question — *"the agents
+can do pr's as me? what do you mean? can we have a different driver, like
+claude-driver or something?"* — is the fix. Driver-opened pull requests come
+from the GitHub App, not from the owner's credentials.
+
+**R10 — The rate limit is the only default stop.** *"the orc is never supposed to
+stop themselves due to any other limit than the rate limit i specified."* Pull
+requests, iterations and wall clock remain available, opt-in, for testing runs
+where an early answer is all that is wanted.
+
+**R11 — Anomaly limits are signals, not stops.** A coding agent making twenty
+commits for simple work is *"a strong signal that something has gone wrong"* —
+it belongs in the report, and it must never halt a run.
+
+**R12 — Ask about limits every single run.** Terminal: *"how many percent of your
+weekly limit are you willing to spend?"* Web: *"do you want a limit on
+pull-requests, counts, or wall clock, or any combination? specify exact
+numbers."*
+
+**R13 — Readiness blocks, loudly.** *"if the script says the repo answers that
+the repo is not ready to run unattended, then block and fail very loudly. i
+really need to know before i go."* With a visible "verifying…" message first, and
+an explicit all-clear so the owner knows they can walk away.
+
+**R14 — The App path ships dormant, with a loud failure.** *"yes please build the
+code path, but also build in a loud failure if the github app does not connect
+properly or does not exist. i will not set up the github app now, so we need the
+reminder when the time comes."* Consequence, accepted knowingly: no unattended
+run is possible until the App exists. Attended mode is unaffected.
+
+**R15 — Silence means assent.** *"if i say nothing about certain points, that
+means that i agree… if i am arguing or adding info, then those points still need
+revising."*
+
+### Corrections the owner supplied
+
+Recorded because this document was wrong and the record should say so.
+
+- **`/usage` does have a headless surface.** This document's first revision
+  concluded none existed. That conclusion came from testing the command the
+  script uses (`claude usage --json`, genuinely broken) and generalising. The
+  owner supplied two working readers: `claude -p "/usage"`, and
+  `omarchy-agent-usage-claude --limits-only`. N-2 stands; the generalisation
+  did not.
+- **The backlog approval gate.** Recommended in revision 1, rejected in R3, and
+  the rejection is correct.
 
 ---
 
 ## Appendix — finding index
-
-Every traced finding, its root, and the decision that disposes of it.
 
 | Finding | Rank | Root | Decision |
 | --- | --- | --- | --- |
@@ -543,27 +631,43 @@ Every traced finding, its root, and the decision that disposes of it.
 | GS-2 The unattended driver is outside every gate-path list | 2 | C | D4 |
 | GS-3 `test-the-tests` reports success by not running | 3 | E | D8 |
 | GS-4 `Blind-Tests:` is a self-asserted trailer in the "trustworthy" block | 4 | E | D8 |
-| GS-5 Acceptance marker written before the session runs | 5 | A / §1.4 | **D1** |
-| GS-6 The evidence authorising design amendments is pipeline-written | 6 | C | D4 |
-| GS-7 A plan is "built" by a substring of a branch name | 7 | A | **D1** |
+| GS-5 Acceptance marker written before the session runs | 5 | A / §1.4 | D1 |
+| GS-6 The evidence authorising design amendments is pipeline-written | 6 | C | D4 (camera half only) |
+| GS-7 A plan is "built" by a substring of a branch name | 7 | A | D1 |
 | GS-8 `review.sh` says `plan-metrics.sh` reports lockfiles; it does not | 8 | D / F | D3 |
-| GS-9 `template-sync` verifies against a template the PR chooses | 9 | F | **D2** |
-| GS-10 `owner-authored.sh` checks who *opened* the PR | 10 | D | D13 (conditional on live run) |
+| GS-9 `template-sync` verifies against a template the PR chooses | 9 | F | D2 |
+| GS-10 `owner-authored.sh` checks who *opened* the PR | 10 | D | **D15** |
 | GS-11 The review payload omits the facts criteria 1, 2, 5 are keyed on | 11 | D | D3 / open |
 | GS-12 Past 400 KB the reviewer reads the 20 smallest files | 12 | D | open |
 | DS-1 A plan can claim ids it does not deliver | 1 | A | D5 |
 | DS-2 The vision field verifies a `"` character | 2 | B | D6 |
 | DS-3 The proponent is the sole adjudicator | 3 | B | D6 |
-| DS-4 The acceptance agent picks which rows it need not check | 4 | A / §1.4 | D10 |
-| DS-5 A tenet stop and a dismissal are the same artifact | 5 | B | D7 |
+| DS-4 The acceptance agent picks which rows it need not check | 4 | A / §1.4 | D10 (open) |
+| DS-5 A tenet stop and a dismissal are the same artifact | 5 | B | D6 / D7 |
 | DS-6 Deleting `VISION.md` does not opt out of the oracle | 6 | B | D6 |
 | DS-7 Conflict resolves silently in the design's favour | 7 | B | D6 |
 | DS-8 Deleting a vision section removes a capability, announced nowhere | 8 | B | D6 |
 | DS-9 The interview's six consistency properties are verified by nothing | 9 | B | D6 (doc half) |
-| DS-10 The acceptance branch's size cap is set by design size | 10 | A / §1.4 | **D1** |
+| DS-10 The acceptance branch's size cap is set by design size | 10 | A / §1.4 | D1 |
+| **N-1 The permission model is inverted** | — | H | **D14 / D15** |
+| **N-2 The budget ceiling has never worked** | — | H | **D16** |
+| **N-3 The probe reads the session window, not weekly** | — | H | **D16** |
+| **N-4 Three limits exist; one is read** | — | H | **D16** |
+| **N-5 Probing costs budget** | — | H | **D16** |
+| **N-6 Usage numbers are account-wide** | — | H | **D16** |
 
-Transfers: T1 → D10, T2 → D11, T3 → D12, T4 → opportunistic. Assessment gaps:
-(a) reviewer fixtures → D9, (b) stale acceptance rows → D10, (c) validation —
-no action, (d) live run → D13. Open threads with no decision yet: **GS-H5**
-(estimate legibility), **GS-H6** (backlog "Approved" semantics — partly D4),
-**GS-12** (truncation selection), **GS-11**'s payload additions.
+Transfers: T1 → D10 (open), T2 → D11, T3 → D12, T4 → opportunistic. Assessment
+gaps: (a) reviewer fixtures → D9 (open), (b) stale acceptance rows → D10 (open),
+(c) validation — no action, (d) live run → D13.
+
+### Build order
+
+1. **Identity** — driver opens PRs as the App; loud refusal when it is absent (D15).
+2. **Permissions** — architect role; path lists on every role; `.claude/` locked;
+   backlog numbered + append-only + done-log (D14, D4).
+3. **Small safe fixes** — `_src_path`; the acceptance marker; the slug match; the
+   two missing planning paths (D2, D1).
+4. **Budget and readiness** — the whole of D16, plus D17.
+5. **Oracle cameras** — D6 and D7.
+6. **"Done" means built** — D5's document half.
+7. **Reviewer** — D3, D11, D12, and the skip reason from D8.
