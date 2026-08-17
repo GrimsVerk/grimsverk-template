@@ -182,11 +182,40 @@ esac
 # slug, and counting it would mark every plan built the moment it landed.
 MERGED_REFS="$("$GH" pr list --state merged --limit 200 --json headRefName \
   --jq '.[].headRefName' 2>/dev/null || true)"
+#
+# WHICH STRING IDENTIFIES A PLAN. The front-matter `slug:` field, not the
+# filename. plan-resolve.sh — the check that decides which plan a branch
+# implements — reads the field, and this used to read `basename`, so the two
+# halves of the system identified the same object by different names and
+# nothing reconciled them. A plan filed as `sync.md` with `slug:
+# milestone-4-sync-transport` was matched against an earlier merged
+# `feat/sync-index-1` by prefix, marked built, and never orchestrated. No pull
+# request was ever opened for it, so no gate ever got the chance to notice:
+# coverage.sh reported its requirements covered, the loop walked to ACCEPTANCE,
+# and the run exited 0 with the work simply absent.
+#
+# The match is also anchored at both ends now. `^feat/.*${slug}` let any slug
+# that is a substring of a merged branch count as built — the exact collision
+# plan-resolve.sh treats as a hard error ("a slug that is a substring of
+# another, like 'auth' and 'auth-tokens', will always collide"), which it can
+# only do for branches somebody actually opened. Here the whole point is that
+# nobody opens one, so the guard has to live on this side too.
 while IFS= read -r f; do
   [[ -z "$f" ]] && continue
   [[ "$(basename "$f")" == _* ]] && continue
-  slug="$(basename "$f" .md)"
-  if ! grep -qE "^feat/.*${slug}" <<<"$MERGED_REFS"; then
+  # The authoritative slug, read the same way plan-resolve.sh reads it. Fall
+  # back to the filename only when a plan has no field at all — plan-lint.sh
+  # fails such a plan on its own pull request, so this is a courtesy, not a
+  # path anything should rely on.
+  slug="$(awk '
+    NR==1 && $0 ~ /^---[[:space:]]*$/ { infm=1; next }
+    infm && $0 ~ /^---[[:space:]]*$/  { exit }
+    infm && $0 ~ /^slug:/ { sub(/^slug:[[:space:]]*/, ""); gsub(/["'"'"']/, ""); print; exit }
+  ' "$f" 2>/dev/null | head -1)"
+  [[ -n "$slug" ]] || slug="$(basename "$f" .md)"
+  # Anchored: the branch is `feat/<slug>` or `feat/<slug>-<something>`, never
+  # `feat/<slug-as-a-substring-of-a-different-name>`.
+  if ! grep -qE "^feat/${slug}([/-][^/]*)?$" <<<"$MERGED_REFS"; then
     echo "PHASE=ORCHESTRATE"
     echo "SLUG=$slug"
     exit 0

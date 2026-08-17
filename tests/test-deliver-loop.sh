@@ -50,6 +50,11 @@ chmod +x "$WORK/bin/gh"
 cat > "$WORK/bin/claude" <<'STUB'
 #!/usr/bin/env bash
 echo "$*" >> "${CLAUDE_LOG:-/dev/null}"
+# A session that fails, or that exits 0 having written nothing, is the case the
+# acceptance path used to record as "the run is complete".
+case "$*" in
+  *"acceptance pass"*) exit "${STUB_ACCEPT_RC:-0}" ;;
+esac
 exit 0
 STUB
 chmod +x "$WORK/bin/claude"
@@ -218,6 +223,56 @@ out="$(run_phase PROCESSED_FILE="$WORK/cap/processed" \
         STUB_MERGED_REFS=$'feat/notes\nfeat/sqlite-store')"
 expect_contains "everything built means ACCEPTANCE" "$out" "PHASE=ACCEPTANCE"
 
+# ------------------------------------------------- which string names a plan
+# plan-resolve.sh identifies a plan by its front-matter `slug:`; this detector
+# used to use the FILENAME, so the two halves named the same object differently
+# and a plan could be considered built by a branch belonging to another one. No
+# feature pull request is ever opened in that case, so no gate gets a chance —
+# coverage.sh reports the requirements covered and the run exits 0 with the work
+# absent. Both assertions below fail against the old `basename` + unanchored
+# grep.
+cat > "$R/docs/plans/oracle/sync.md" <<'EOF'
+---
+slug: milestone-4-sync-transport
+covers: [R14]
+---
+# Sync transport — Plan
+EOF
+out="$(run_phase PROCESSED_FILE="$WORK/cap/processed" \
+        STUB_MERGED_REFS=$'feat/notes\nfeat/sqlite-store\nfeat/sync-index-1')"
+expect_contains "the front-matter slug identifies a plan, not the filename" "$out" \
+  "PHASE=ORCHESTRATE"
+expect_contains "and the unbuilt plan is the one named" "$out" \
+  "SLUG=milestone-4-sync-transport"
+
+# The real branch counts, and so does an ordinary suffixed form of it
+# (feat/<slug>-2 for a second attempt), because those genuinely are its branch.
+out="$(run_phase PROCESSED_FILE="$WORK/cap/processed" \
+        STUB_MERGED_REFS=$'feat/notes\nfeat/sqlite-store\nfeat/milestone-4-sync-transport')"
+expect_contains "the plan's own feature branch counts as built" "$out" "PHASE=ACCEPTANCE"
+out="$(run_phase PROCESSED_FILE="$WORK/cap/processed" \
+        STUB_MERGED_REFS=$'feat/notes\nfeat/sqlite-store\nfeat/milestone-4-sync-transport-2')"
+expect_contains "and so does a suffixed second attempt" "$out" "PHASE=ACCEPTANCE"
+rm "$R/docs/plans/oracle/sync.md"
+
+# The collision plan-resolve.sh names in its own error text — "a slug that is a
+# substring of another, like 'auth' and 'auth-tokens', will always collide". It
+# can only treat that as a hard error for branches somebody opened; here nobody
+# opens one, so the anchor has to do the work. Unanchored, `feat/auth` would
+# match `feat/authentication-overhaul` and the plan would be silently built.
+cat > "$R/docs/plans/oracle/auth.md" <<'EOF'
+---
+slug: auth
+covers: [R14]
+---
+# Auth — Plan
+EOF
+out="$(run_phase PROCESSED_FILE="$WORK/cap/processed" \
+        STUB_MERGED_REFS=$'feat/notes\nfeat/sqlite-store\nfeat/authentication-overhaul')"
+expect_contains "a longer unrelated branch does not count as built" "$out" "PHASE=ORCHESTRATE"
+expect_contains "and the plan is still queued" "$out" "SLUG=auth"
+rm "$R/docs/plans/oracle/auth.md"
+
 git -C "$R" add -A && git -C "$R" commit -qm "fixture state"
 
 # ------------------------------------------------------------ the commands
@@ -304,5 +359,57 @@ else
   no "pull requests are opened with a minted token, never the ambient one" \
     "$(cat "$WORK/cap/prcreate.log")"
 fi
+
+# ------------------------------------------------------- the acceptance marker
+# docs/acceptance.md is the ONE artifact in an unattended run whose pull request
+# requires the owner's review — the single guaranteed connection between the run
+# and a human. The marker meaning "acceptance happened" used to be written
+# BEFORE the session ran, the dispatch is `|| true`, and run start never cleared
+# it. So a session that timed out, failed, or wrote nothing produced exit 0 and
+# "the run is complete", with the shipped skeleton still in place; and the stale
+# marker made every LATER run in the same clone exit 0 immediately, having
+# dispatched nothing at all. These assertions are that bug's headstone.
+#
+# Last in the file because reaching ACCEPTANCE means draining every earlier
+# phase: no unruled uncertainties, no uncited evidence, no unplanned handoffs.
+: > "$R/docs/BACKLOG.md"
+: > "$R/docs/DESIGN.oracle.md"
+printf '# Escapes\n\n| id | date | what | gate | check |\n| --- | --- | --- | --- | --- |\n' \
+  > "$R/docs/escapes.md"
+git -C "$R" add -A >/dev/null 2>&1; git -C "$R" commit -qm "drained" >/dev/null 2>&1
+BUILT=$'feat/notes\nfeat/sqlite-store'
+
+acceptance_run() { # acceptance_run <stub-rc>
+  rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"
+  run_loop STUB_MERGED_REFS="$BUILT" STUB_ACCEPT_RC="$1" \
+           MAX_ITER=4 SESSION_TIMEOUT=30 --
+}
+
+out="$(acceptance_run 1)"; rc=$?
+expect_contains "the fixture really reaches the acceptance phase" "$out" "phase ACCEPTANCE"
+expect_not_contains "a failed acceptance session is not 'the run is complete'" \
+  "$out" "the run is complete"
+expect_contains "and says it is not recording it as done" "$out" "NOT recording it as done"
+if [[ "$rc" != "0" ]]; then ok "and the run does not exit 0"
+else no "and the run does not exit 0" "exit 0 after a failed acceptance pass"; fi
+
+# Exit 0 having written nothing is the same failure wearing a success code —
+# the exact case spawn-worker.sh's empty-branch check catches for workers, on a
+# dispatch path that does not use it.
+out="$(acceptance_run 0)"
+expect_contains "a clean session that wrote nothing is not recorded either" \
+  "$out" "docs/acceptance.md is unchanged"
+expect_not_contains "and does not claim completion" "$out" "the run is complete"
+
+# The marker is per-RUN state. A leftover one used to make the next run in the
+# same clone short-circuit to exit 0 having dispatched nothing.
+rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"
+mkdir -p "$R/.claude/deliver-loop"
+touch "$R/.claude/deliver-loop/acceptance-dispatched"
+out="$(run_loop STUB_MERGED_REFS="$BUILT" STUB_ACCEPT_RC=0 \
+        MAX_ITER=4 SESSION_TIMEOUT=30 --)"
+expect_not_contains "a marker from a previous run does not end this one" \
+  "$out" "acceptance recorded and nothing is open"
+rm -rf "$R/.worktrees"
 
 summary

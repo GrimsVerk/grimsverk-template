@@ -235,6 +235,12 @@ PROCESSED_FILE="$STATE_DIR/processed-evidence"
 touch "$PROCESSED_FILE"
 SIG_FILE="$STATE_DIR/failure-signatures"
 : > "$SIG_FILE"
+# Per-RUN state, and it was not being cleared: a marker left by a previous run
+# made the next one short-circuit to "the run is complete" on its first
+# ACCEPTANCE iteration, having dispatched nothing. deliver-phase.sh promises
+# that "recomputed state cannot go stale"; the driver's own persisted file was
+# the exception, and it decided the most consequential thing in the run.
+rm -f "$STATE_DIR/acceptance-dispatched"
 { echo "# Delivery run — $(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo; } >> "$STATE_DIR/run.md"
 
 design_sha() { git rev-parse -q --verify "HEAD:docs/DESIGN.md" 2>/dev/null || echo none; }
@@ -451,13 +457,52 @@ uncertainties that block it)." \
       run_session "orchestrate" "/orchestrate $SLUG" || true
       PR_COUNT=$((PR_COUNT + 1)) ;;
     ACCEPTANCE)
+      # The marker used to be written BEFORE the session ran, and the dispatch
+      # is `|| true`, and run start never cleared it. So an acceptance session
+      # that timed out, failed, or exited 0 having written nothing produced
+      # "the run is complete" and exit 0 — whose documented meaning is "the
+      # acceptance pass ran" — with docs/acceptance.md left as the shipped
+      # skeleton. Worse, the marker outlived the run, so every later invocation
+      # in the same clone short-circuited to exit 0 on its first ACCEPTANCE
+      # iteration, having dispatched nothing at all.
+      #
+      # That mattered more than its size suggests: docs/acceptance.md is the
+      # ONE artifact in an unattended run whose pull request requires the
+      # owner's review, so it is the single guaranteed connection between the
+      # run and a human — and this severed it while reporting success.
+      #
+      # Now the marker means what its name says: an acceptance session ran and
+      # produced something. It is written after the session returns, only if
+      # the session succeeded, and only if docs/acceptance.md actually changed.
       if [[ -f "$STATE_DIR/acceptance-dispatched" ]]; then
         log "acceptance recorded and nothing is open — the run is complete"
         log "report: $STATE_DIR/run.md; the honest bottom line is the pending-on-owner list in docs/acceptance.md"
         exit 0
       fi
-      touch "$STATE_DIR/acceptance-dispatched"
-      run_session "acceptance" "/deliver — run ONLY step 6, the acceptance pass: check the built system against docs/DESIGN.md §13, record evidence per criterion in docs/acceptance.md, mark owner-only criteria pending with exactly what the owner should run. Land it on a docs/ branch and open the pull request." || true
+      ACC_BEFORE="$(git rev-parse -q --verify "HEAD:docs/acceptance.md" 2>/dev/null || echo none)"
+      if run_session "acceptance" "/deliver — run ONLY step 6, the acceptance pass: check the built system against docs/DESIGN.md §13, record evidence per criterion in docs/acceptance.md, mark owner-only criteria pending with exactly what the owner should run. Land it on a docs/ branch and open the pull request."; then
+        ACC_AFTER="$(git rev-parse -q --verify "HEAD:docs/acceptance.md" 2>/dev/null || echo none)"
+        if [[ "$ACC_AFTER" != "$ACC_BEFORE" ]] || [[ -n "$(git status --porcelain -- docs/acceptance.md)" ]]; then
+          touch "$STATE_DIR/acceptance-dispatched"
+        else
+          # Exit 0 having written nothing is the exact failure spawn-worker.sh's
+          # empty-branch check exists to catch for workers; this dispatch path
+          # does not use it, so the emptiness is checked here instead.
+          log "acceptance session exited cleanly but docs/acceptance.md is unchanged — NOT recording it as done"
+          ACCEPT_EMPTY=$((${ACCEPT_EMPTY:-0} + 1))
+          if [[ "${ACCEPT_EMPTY}" -ge 2 ]]; then
+            log "the acceptance pass produced nothing twice — stopping rather than reporting a complete run"
+            exit 3
+          fi
+        fi
+      else
+        log "acceptance session failed or timed out — NOT recording it as done; the next iteration will try again"
+        ACCEPT_FAILS=$((${ACCEPT_FAILS:-0} + 1))
+        if [[ "${ACCEPT_FAILS}" -ge 2 ]]; then
+          log "the acceptance pass failed twice — stopping rather than reporting a complete run"
+          exit 3
+        fi
+      fi
       PR_COUNT=$((PR_COUNT + 1)) ;;
     *)
       die "unknown phase '$PHASE'" ;;
