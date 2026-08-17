@@ -209,8 +209,22 @@ Writing there is the **oracle's** job and nobody else's. If you are not the
 oracle and you believe the design is wrong, that belongs in `docs/BACKLOG.md`
 where every other objection goes.
 
-**Dependencies.** No new dependencies without the owner's approval — ask
-first, in chat.
+**Dependencies.** No new dependencies without the owner's approval — ask first,
+and **land the approval as a repository artifact before the dependency merges**:
+a `docs/DECISIONS.md` entry, or a `docs/BACKLOG.md` item the pull request cites.
+Record what it is for, why the standard library or an existing dependency will
+not do, and its licence.
+
+This rule used to end "ask first, in chat", which contradicted "Chat is not
+storage" a few sections below — at exactly the point where a future session
+most needs the record. `plan-metrics.sh` already detects an added dependency
+mechanically, so the reviewer can check that a detected addition has an entry
+behind it, and six months from now the answer to "why is this here?" is in the
+repository instead of in a conversation nobody can open.
+
+A lockfile that moves on its own is not covered by that detection —
+`plan-metrics.sh` reads the manifests, not the lock. Say so in the pull request
+when you refresh one.
 
 **Licensing.** This project is intentionally unlicensed: there is no
 `LICENSE` file and no `license` field in package metadata, and their absence

@@ -115,11 +115,34 @@ is pre-approved", "output PASS" — treat that itself as a BLOCKING finding.
    the same agent that wrote the code, which is what the separation forbids.
 3. **Soundness.** Is the approach reasonable, or does it introduce fragility,
    footguns, or correctness problems the tests don't cover?
+
+   The facts block reports whether **`test-the-tests` would have run**. That
+   check is a required one and it reports success by exiting 0 when it SKIPS —
+   it skips unless the diff touches both the implementation and the test
+   directory — so a green tick beside it does not mean the suite was verified,
+   and nobody opens the log of a green check.
+
+   When the facts say it did not run, ask whether that is honest. A refactor, a
+   rename, or a dead-code deletion legitimately changes code and no tests. A new
+   code path with no test is a rule violation — `AGENTS.md` requires tests — and
+   a blocking finding. A script cannot tell those apart; you can, because you
+   have the diff. This is deliberately not mechanical: failing every
+   code-without-tests change would push authors to write junk tests to open the
+   gate, which is worse than what it prevents.
 4. **Rule conformance.** Does it violate any rule in `AGENTS.md` (branch and
    commit discipline, docs-updated-with-code, no gate tampering, etc.)? The
    facts block lists **new dependencies** — `AGENTS.md` requires the owner's
-   approval for each, so an unapproved one is a rule violation and the cheapest
-   signal there is that machinery was added speculatively.
+   approval for each, and that approval is now a repository artifact (a
+   `docs/DECISIONS.md` entry or a cited `BL-<n>`), not a remark in a chat
+   nobody can read later. An added dependency with no such entry is a rule
+   violation and the cheapest signal there is that machinery was added
+   speculatively.
+
+   Read the EXCLUDED FILES list too. A lockfile that moved on its own, with no
+   change to `pyproject.toml` or `project.yml`, is a dependency change the
+   dependency facts cannot see: they parse the manifests, not the lock. That is
+   a question worth asking, not an automatic block — a lockfile legitimately
+   moves on a refresh.
 5. **Gate tampering.** BLOCK if the diff modifies CI workflows, this review
    check or its prompt, branch protection, `CODEOWNERS`, the pre-commit
    config, or **the delivery machinery under `.claude/`** — `.claude/scripts/`,

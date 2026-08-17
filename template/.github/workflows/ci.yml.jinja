@@ -151,6 +151,52 @@ jobs:
         env:
           GH_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
         run: .github/scripts/unattended-ready.sh || true
+      - name: CODEOWNERS actually binds
+        # NOT advisory, and the one part of the readiness check that belongs on
+        # every pull request rather than only at dispatch.
+        #
+        # GitHub SILENTLY IGNORES a CODEOWNERS entry that does not resolve —
+        # copier.yml warns about this in its own words: the rule "simply never
+        # binds, and the gate paths quietly become writable by anything that
+        # passes CI". Every deterministic protection in this repository rests on
+        # that file resolving: the design and vision documents, the workflows,
+        # the review prompt, the delivery machinery under .claude/. If the
+        # handle goes stale — renamed account, removed collaborator — nothing
+        # turns red and nothing says so. The last line of defence becomes the
+        # LLM reviewer, which is a judgement gate, and auto-merge does the rest.
+        #
+        # This checks the PLATFORM's own validation rather than re-implementing
+        # the path list, which would be a second copy of the carve-out logic in
+        # plan-resolve.sh and would drift from it. One source of truth, one
+        # extra API call.
+        #
+        # It fails only on a definite answer. An unreadable API is a note, not a
+        # block: a check that goes red when GitHub is having a bad morning is a
+        # check people learn to re-run without reading.
+        env:
+          GH_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+        run: |
+          errs="$(gh api "repos/${GITHUB_REPOSITORY}/codeowners/errors" \
+                    --jq '.errors | length' 2>/dev/null || true)"
+          if [ -z "$errs" ]; then
+            echo "codeowners: cannot read the validation API here — not treating that as a failure."
+          elif [ "$errs" = "0" ]; then
+            echo "codeowners: resolves cleanly, so the ownership rules actually bind."
+          else
+            echo "codeowners: $errs unresolvable line(s) in .github/CODEOWNERS." >&2
+            gh api "repos/${GITHUB_REPOSITORY}/codeowners/errors" \
+              --jq '.errors[] | "  line \(.line): \(.message)"' >&2 || true
+            {
+              echo ""
+              echo "GitHub ignores a CODEOWNERS line it cannot resolve. It does not warn,"
+              echo "and the paths that line was protecting become writable by anything that"
+              echo "passes CI — including docs/DESIGN.md, the workflows, the review prompt,"
+              echo "and the delivery machinery under .claude/. Nothing else here turns red."
+              echo ""
+              echo "Fix the handle, or remove the line deliberately if the person is gone."
+            } >&2
+            exit 1
+          fi
 
   # The other half of the planning story. A `template/` branch is exempt from
   # the `plan` check above, because a template update is specified in the

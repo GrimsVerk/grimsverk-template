@@ -41,12 +41,23 @@ for var in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN OPENAI_API_KEY; do
   [[ -z "${!var:-}" ]] && unset "$var"
 done
 
-# Lockfiles and generated project files are excluded from the reviewed text.
+# Lockfiles and generated project files are excluded from the reviewed TEXT.
 # They are enormous, nobody reviews them line by line, and including them is the
 # fastest way to push a real diff out of the model's context window — at which
-# point this gate fails closed on a change it never actually looked at. Their
-# presence is still reported by plan-metrics.sh's new-files and dependency
-# facts, which is the part that matters.
+# point this gate fails closed on a change it never actually looked at.
+#
+# This comment used to end "their presence is still reported by plan-metrics.sh's
+# new-files and dependency facts, which is the part that matters." That was
+# false, and it was the load-bearing half of the justification. plan-metrics.sh
+# reads pyproject.toml and project.yml and never opens uv.lock, and its new-file
+# list uses --diff-filter=A, so a MODIFIED lockfile appeared in neither. A pull
+# request could swap a transitive dependency's resolved version and hash, and
+# the reviewer would be handed "New dependencies: none" with no evidence the
+# file had changed at all.
+#
+# So the exclusion now applies to the text and NOT to the file list: the names
+# and line counts of excluded files are reported below, which is what lets the
+# reviewer notice a lockfile moved without drowning in its contents.
 #
 # --literal-pathspecs so a path can never be interpreted as a magic pathspec.
 DIFF_EXCLUDES=(
@@ -57,7 +68,45 @@ DIFF_EXCLUDES=(
 )
 diff_at() { git -C "$ROOT" --literal-pathspecs diff "$@"; }
 
+# The same paths, as INCLUDES, so the reviewer is told a lockfile moved even
+# though its contents are withheld. A name and a line count is the whole fix:
+# enough to ask "why did this change?", far too little to blow the context.
+DIFF_ONLY_EXCLUDED=( 'uv.lock' 'poetry.lock' 'Package.resolved' '**/*.pbxproj' )
+EXCLUDED_SUMMARY="$(diff_at --numstat "${BASE_SHA}...${HEAD_SHA}" \
+  -- "${DIFF_ONLY_EXCLUDED[@]}" 2>/dev/null || true)"
+
 DIFF="$(diff_at "${BASE_SHA}...${HEAD_SHA}" -- . "${DIFF_EXCLUDES[@]}")"
+
+# test-the-tests is a REQUIRED check that reports success by exiting 0 when it
+# skips, and it skips unless the diff touches both the implementation and the
+# test directory. ci.yml.jinja twice takes deliberate care to avoid job-level
+# `if:` because "a skipped job counts as PASSING for a required check" — and
+# then the same power sits inside the script, indistinguishable to branch
+# protection and invisible to this gate, which was told what the check CANNOT
+# do and never that it might not have run. This recomputes its predicate from
+# the diff so the reviewer is told. It does not re-run anything.
+changed_under() { diff_at --name-only "${BASE_SHA}...${HEAD_SHA}" -- "$1" 2>/dev/null; }
+if [[ "${HEAD_REF:-}" == template/* ]]; then
+  TTT_NOTE="SKIPPED — a template sync, verified by the template-sync check instead. Expected."
+elif [[ -f "$ROOT/pyproject.toml" ]]; then
+  if [[ -n "$(changed_under src)" && -n "$(changed_under tests)" ]]; then
+    TTT_NOTE="RAN — the diff touches both src/ and tests/, so the suite was reverted and re-run."
+  elif [[ -z "$(changed_under src)" ]]; then
+    TTT_NOTE="DID NOT RUN — no files changed under src/. Note that implementation living outside src/ (a root-level package, say) also produces this line while being real code."
+  else
+    TTT_NOTE="DID NOT RUN — files changed under src/ but none under tests/. See criterion 3."
+  fi
+elif [[ -f "$ROOT/project.yml" ]]; then
+  if [[ -n "$(changed_under Sources)" && -n "$(changed_under Tests)" ]]; then
+    TTT_NOTE="RAN — the diff touches both Sources/ and Tests/."
+  elif [[ -z "$(changed_under Sources)" ]]; then
+    TTT_NOTE="DID NOT RUN — no files changed under Sources/."
+  else
+    TTT_NOTE="DID NOT RUN — files changed under Sources/ but none under Tests/. See criterion 3."
+  fi
+else
+  TTT_NOTE="DID NOT RUN — no pyproject.toml or project.yml, so it cannot tell implementation from tests."
+fi
 if [[ -z "$DIFF" ]]; then
   echo "review: empty diff — nothing to review"
   exit 0
@@ -160,6 +209,39 @@ unjustified scope — which is a review blocking correct work for a reason that 
 an artifact of what the gate was shown.
 
 $(read_at_base docs/DESIGN.oracle.md)
+
+===== DID test-the-tests RUN? =====
+${TTT_NOTE}
+
+===== PULL REQUEST CONTEXT =====
+Branch:        ${HEAD_REF:-(not supplied)}
+Opened by:     ${PR_AUTHOR:-(not supplied)}
+Title:         ${PR_TITLE:-(not supplied)}
+
+Three criteria below key on these and were previously asked without them.
+
+Criterion 1 asks whether a change on an exempt branch (\`chore/\`, \`docs/\`) is
+really small enough to skip planning. You can now see the prefix, so "no plan
+resolved" no longer has to be read as "the plan check is broken".
+
+Criterion 2 asks about blind test authorship. A branch prefixed \`feat/\` is
+normally an orchestrated build, so blind-authoring facts showing NO trailer on
+such a branch is worth a note; on \`chore/\` or \`docs/\` it is expected.
+
+Criterion 5 asks you to block an AGENT-opened diff that touches docs/DESIGN.md
+or docs/VISION.md. "Opened by" is how you evaluate that. The unattended driver
+opens its pull requests as a GitHub App, so a bot login there means an agent
+opened it — and those two documents are the owner's, landed on a pull request
+the owner opens personally. A bot-opened diff touching either is blocking.
+
+===== FILES EXCLUDED FROM THE DIFF TEXT (name, added, removed) =====
+Lockfiles and generated project files, withheld because their contents would
+crowd out the real change. They are listed because they were once withheld from
+BOTH the text and the facts, so a swapped transitive dependency was invisible
+to this gate while it was told "New dependencies: none". A lockfile moving on
+its own, with no manifest change, is worth a question.
+
+${EXCLUDED_SUMMARY:-(none)}
 
 ===== docs/VISION.md (the tiebreaker, as of the base commit) =====
 What the owner values, in order, and the core tenets that stop a decision dead.

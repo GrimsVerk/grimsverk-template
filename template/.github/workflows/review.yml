@@ -73,4 +73,19 @@ jobs:
           # Which plan this PR is judged against is resolved from the branch
           # name (see .github/scripts/plan-resolve.sh).
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          # Three facts the review PROMPT keys criteria on and the payload never
+          # carried, so three criteria asked questions the reviewer had no way
+          # to answer:
+          #   1 — "is this exempt branch really carrying small work?" needs the
+          #       branch prefix, and review.sh collapses "exempt" and "the plan
+          #       check failed" into the same empty plan path, so the reviewer
+          #       was offered a reading under which declining to judge was the
+          #       reasonable move;
+          #   2 — "were the tests written blind?" needs to know the change was
+          #       orchestrated;
+          #   5 — "block an AGENT-opened diff touching DESIGN/VISION" needs the
+          #       author login, which is not a file and cannot be read out of
+          #       the repository at any commit.
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: .github/scripts/review.sh
