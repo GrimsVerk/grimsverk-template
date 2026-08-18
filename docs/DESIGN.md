@@ -69,16 +69,17 @@ One user: the owner, who starts a run and walks away.
 
 ## 5. Requirements
 
-**Most of these were built before this document existed**, so
-`.github/scripts/coverage.sh` reports them as NOT PLANNED and will keep doing so.
-That is accurate and it is not a to-do list: the plans that built them were
-implemented and deleted (`docs/synthesis.md`, revision 4). Coverage here is a
-report, not a gate, and it is deliberately not wired into one. What it *is*
-load-bearing for is the delivery driver, which reads an uncovered requirement as
-work to plan — so **the driver must not be run against this repository until
-those ids are either covered by a retrospective plan or the requirement set is
-re-scoped.** That is a stated precondition of self-hosting an unattended run
-here, and it is recorded in §11.
+**Most of these were built before this document existed.** The plans that built
+them were implemented and deleted (`docs/synthesis.md`, revision 4), and their
+claim on these requirements went with them — so `coverage.sh` reported twelve
+requirements as work nobody had scheduled, which was false.
+`docs/plans/template-foundations.md` restores the true answer: it is a
+retrospective record, every slice names the files that ARE the delivery, and its
+estimates are measured rather than forecast. Coverage now reports 16/16.
+
+It is still a report rather than a gate. What it *is* load-bearing for is the
+delivery driver, which reads an uncovered requirement as work to plan — see §11
+for the one thing that still blocks a run here.
 
 **Functional**
 
@@ -220,13 +221,23 @@ their language toolchain. Nothing else, deliberately.
   as much as its verdict stability, which is unmeasured.
 - **Committed run evidence grows without bound** until a retention rule exists.
   The owner has accepted that risk deliberately (V8).
-- **The delivery driver cannot be pointed at this repository yet.** Twelve of
-  the sixteen requirements above describe machinery that landed before this
-  document existed, so `coverage.sh` reports them uncovered and the driver would
-  read that as a queue of work to plan. Self-hosting an unattended run here
-  needs either a retrospective plan covering them or a narrower requirement set
-  — see §5. Slice 3 of `docs/plans/closing-the-loop.md` makes an unattended run
-  here *possible*; it does not make it correct to start one.
+- **The delivery driver cannot be pointed at this repository yet, and one thing
+  is left.** Coverage is settled — `docs/plans/template-foundations.md` covers
+  the twelve requirements that landed before this document existed. What remains
+  is the other half of the same reading: `.claude/scripts/deliver-phase.sh` calls
+  a plan BUILT when a merged `feat/<slug>` branch exists, and no such branch will
+  ever exist for a retrospective plan, so once the phases ahead of it clear the
+  detector emits `PHASE=ORCHESTRATE SLUG=template-foundations` and commissions an
+  orchestrator to build what is already here. The smallest honest fix is for the
+  detector to treat `status: merged` as built, which is what the field already
+  means; that is a change to shipped behaviour and so the owner's to rule on.
+  Ahead of it sits a second, older precondition: run the detector here today and
+  it answers `PHASE=ORACLE` over thirty-four uncited escape ids, because this
+  repository has kept that ledger since long before the oracle existed. Neither
+  is a defect in the machinery; both are what self-hosting a design layer onto an
+  existing repository actually costs. Until both are ruled on, do not start the
+  driver here. Slice 3 of `docs/plans/closing-the-loop.md` makes an
+  unattended run here *possible*; it does not make it correct to start one.
 
 ## 12. Milestones / phasing
 
