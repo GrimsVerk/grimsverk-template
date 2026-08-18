@@ -63,32 +63,73 @@ if [[ -z "$APP_ID" || -z "$KEY_PATH" ]] && [[ -f "$IDENTITY_FILE" ]]; then
     v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
     v="${v%\"}"; v="${v#\"}"; v="${v%\'}"; v="${v#\'}"
     case "$k" in
-      APP_ID)          [[ -z "$APP_ID"   ]] && APP_ID="$v" ;;
-      APP_PRIVATE_KEY) [[ -z "$KEY_PATH" ]] && KEY_PATH="$v" ;;
+      # A value still wearing its <angle brackets> is the shipped placeholder,
+      # not a setting. Taking it literally would produce "no file at
+      # '<paste the absolute path...>'", which reads as a broken script rather
+      # than as an unfinished setup — so it is treated as absent and the
+      # dedicated message below fires instead.
+      APP_ID)          [[ -z "$APP_ID"   && "$v" != \<*\> ]] && APP_ID="$v" ;;
+      APP_PRIVATE_KEY) [[ -z "$KEY_PATH" && "$v" != \<*\> ]] && KEY_PATH="$v" ;;
     esac
   done < "$IDENTITY_FILE"
 fi
 
 if [[ -z "$APP_ID" || -z "$KEY_PATH" ]]; then
-  EXIT_CODE=3 fail "no App identity configured.
+  # The whole setup, inline. Deliberately NOT just a pointer at the README:
+  # this message is the one thing guaranteed to be in front of whoever is
+  # blocked, and a pointer is worth exactly as much as the target still being
+  # where it was. Anyone can move a heading; nobody can move this.
+  if [[ -f "$IDENTITY_FILE" ]]; then
+    WHERE="${IDENTITY_FILE} exists but its two values are still placeholders."
+  elif [[ -f "${IDENTITY_FILE}.example" ]]; then
+    WHERE="No ${IDENTITY_FILE}. There is a skeleton next to it:
+    cp ${IDENTITY_FILE}.example ${IDENTITY_FILE}"
+  else
+    WHERE="No ${IDENTITY_FILE} and no skeleton beside it."
+  fi
+  EXIT_CODE=3 fail "the App identity is not set up yet.
 
-The unattended driver must open pull requests as the App rather than as you.
-Until it does, .github/scripts/owner-authored.sh cannot tell an agent's design
-edit from one you wrote, because both arrive under your login.
+${WHERE}
 
-To configure, either export both of these:
+WHY THIS BLOCKS THE RUN. The unattended driver opens pull requests, and it must
+open them as someone who is NOT you. Otherwise .github/scripts/owner-authored.sh
+compares your login to your login, passes, and docs/DESIGN.md and docs/VISION.md
+have no protection for the whole run — the check prints its guarantee without
+holding it. So this refuses rather than warning.
 
-    GRIMSVERK_APP_ID=<the App's numeric id>
-    GRIMSVERK_APP_PRIVATE_KEY=/absolute/path/to/private-key.pem
+THE SETUP, END TO END:
 
-or write ${IDENTITY_FILE} (untracked) containing:
+ 1. Create a GitHub App, ONCE per account (not per project):
+      https://github.com/settings/apps/new
+    - name .............. anything unique
+    - Homepage URL ...... this repository's URL is fine; nothing reads it
+    - Webhook > Active .. UNCHECK it
+    - Contents .......... Read and write
+    - Pull requests ..... Read and write
+    - installable on .... Only on this account
 
-    APP_ID=<the App's numeric id>
-    APP_PRIVATE_KEY=/absolute/path/to/private-key.pem
+ 2. On the App's page: note the App ID (a NUMBER, not the Client ID), press
+    'Generate a private key' (a .pem downloads), then 'Install App' and
+    install it on this repository.
 
-If the App does not exist yet, create it once per account and install it on
-this repository: scripts/setup-github.sh --app prints the exact URL and the
-permission list."
+ 3. Give the credentials BOTH homes — they are read by different things and
+    neither can see the other:
+      repository secrets  -> used by auto-merge.yml inside Actions
+      ${IDENTITY_FILE}  -> used by this script, on this machine
+    'scripts/setup-github.sh --app' does both for you. By hand, the local half
+    is two lines:
+
+      APP_ID=123456
+      APP_PRIVATE_KEY=/absolute/path/to/your-app.private-key.pem
+
+    Or export GRIMSVERK_APP_ID and GRIMSVERK_APP_PRIVATE_KEY instead.
+
+ 4. KEEP the .pem. It is read on every run. Store it outside any repository
+    (~/.config/grimsverk/ is a good home) and chmod 600 it.
+
+ 5. Check it: .claude/scripts/app-token.sh >/dev/null && echo 'App identity OK'
+
+The README has the same steps with more context, under 'The GitHub App'."
 fi
 
 [[ -f "$KEY_PATH" ]] || EXIT_CODE=3 fail "App private key not found at '$KEY_PATH' — APP_PRIVATE_KEY must be the PATH to the .pem file, not the key itself"

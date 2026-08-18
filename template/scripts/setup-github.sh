@@ -156,16 +156,26 @@ prompt_secret TEMPLATE_TOKEN \
 if [[ "$APP" -eq 1 ]]; then
   echo
   cat <<'APPHOWTO'
-  GitHub App identity (see docs/DECISIONS.md for why this beats a PAT):
-  create the App ONCE per account at
+  GitHub App identity — the login the unattended driver opens pull requests
+  as. Without it the driver opens them as YOU, and owner-authored.sh then
+  compares your login to your login and passes, so docs/DESIGN.md and
+  docs/VISION.md are unprotected overnight. See docs/DECISIONS.md.
+
+  Create the App ONCE per account at
 
       https://github.com/settings/apps/new
 
-  with: a name of your choosing; webhook OFF; repository permissions
-  Contents: Read and write, Pull requests: Read and write; "Only on this
-  account". After creating: note the App ID, generate a private key (a .pem
-  downloads), then INSTALL the App on this repository
-  (Settings -> Install App). Then continue here.
+    - GitHub App name .... anything unique
+    - Homepage URL ....... this repository's URL is fine; nothing reads it
+    - Webhook -> Active .. UNCHECK
+    - Repository permissions:
+        Contents ......... Read and write
+        Pull requests .... Read and write
+    - Where installed .... Only on this account
+
+  Then, on the App's page: note the App ID (a number, NOT the Client ID),
+  press "Generate a private key" (a .pem downloads), and press
+  "Install App" -> install it on this repository. Then continue here.
 APPHOWTO
   if have_secret APP_ID && have_secret APP_PRIVATE_KEY; then
     say "App secrets already set, leaving them alone."
@@ -176,10 +186,43 @@ APPHOWTO
       [[ -f "$pem_path" ]] || die "no file at $pem_path"
       printf '%s' "$app_id" | "$GH" secret set APP_ID
       "$GH" secret set APP_PRIVATE_KEY < "$pem_path"
-      say "App identity configured. Consider deleting the local .pem now:"
-      say "  rm '$pem_path'"
+
+      # THE SECOND HOME, and the reason this is not a manual step. The secrets
+      # above are readable only from inside Actions, which is what auto-merge
+      # needs. The DRIVER runs on this machine, where repository secrets do not
+      # exist, so .claude/scripts/app-token.sh reads the same two values from a
+      # local file. Setting one and not the other is the failure this whole
+      # block exists to prevent: the App looks configured, and every unattended
+      # run still refuses.
+      #
+      # An earlier version of this script ended by suggesting `rm` on the .pem.
+      # That advice predates the driver and was actively wrong — the path below
+      # is read on every run, so deleting the key breaks the identity it just
+      # finished setting up.
+      abs_pem="$(cd "$(dirname "$pem_path")" && pwd)/$(basename "$pem_path")"
+      mkdir -p .claude
+      if [[ -f .claude/app-identity ]]; then
+        say "'.claude/app-identity' already exists — leaving it alone. Check that it reads:"
+        say "  APP_ID=$app_id"
+        say "  APP_PRIVATE_KEY=$abs_pem"
+      else
+        cat > .claude/app-identity <<IDENTITY
+# Written by scripts/setup-github.sh --app. Gitignored, and local to this
+# machine. Read by .claude/scripts/app-token.sh on every unattended run.
+APP_ID=$app_id
+APP_PRIVATE_KEY=$abs_pem
+IDENTITY
+        chmod 600 .claude/app-identity
+        say "Wrote .claude/app-identity (gitignored) — the driver's half of the identity."
+      fi
+
+      say ""
+      say "KEEP the private key at $abs_pem. It is read on every run."
+      say "It is a credential: keep it OUTSIDE any repository (~/.config/grimsverk/"
+      say "is a good home), and chmod 600 it. Verify the whole thing with:"
+      say "  .claude/scripts/app-token.sh >/dev/null && echo 'App identity OK'"
     else
-      say "App identity skipped."
+      say "App identity skipped — unattended runs will refuse until it is set up."
     fi
   fi
 else

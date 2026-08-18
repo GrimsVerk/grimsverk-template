@@ -678,6 +678,23 @@ sys.exit(0 if 'claude -p' not in allow and 'codex exec' not in allow else 1)
     ok "$lang the backlog check runs in CI"
   else no "$lang the backlog check runs in CI"; fi
 
+  # The setup a human has to do by hand should be reduced to typing values, so
+  # the skeleton ships and the script writes the real file. Both halves are
+  # asserted because setting one and not the other leaves the App looking
+  # configured while every unattended run still refuses.
+  if [[ -f "$out/.claude/app-identity.example" ]]; then
+    ok "$lang the App identity skeleton ships"
+  else no "$lang the App identity skeleton ships"; fi
+  if grep -q 'app-identity' "$out/scripts/setup-github.sh"; then
+    ok "$lang setup-github.sh writes the driver's half of the identity"
+  else no "$lang setup-github.sh writes the driver's half of the identity"; fi
+  # The delete advice was wrong once the driver started reading that path on
+  # every run; it must not come back.
+  if grep -qE "Consider deleting the local .pem|rm '\$pem_path'" "$out/scripts/setup-github.sh"; then
+    no "$lang setup no longer tells the owner to delete the key it needs" \
+       "the .pem delete advice is back"
+  else ok "$lang setup no longer tells the owner to delete the key it needs"; fi
+
   # The identity minter, and the driver actually using it.
   if [[ -f "$out/.claude/scripts/app-token.sh" ]]; then
     ok "$lang app-token.sh ships"

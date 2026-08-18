@@ -87,6 +87,46 @@ expect_contains "and names the identity file" "$out" "APP_PRIVATE_KEY"
 expect_contains "and says why the driver needs it" "$out" "owner-authored.sh"
 expect_contains "and points at the setup command" "$out" "setup-github.sh --app"
 
+# ------------------------------------------- the skeleton, and what it says
+# The owner's ruling: a setup step should be automated to the point where only
+# the values have to be typed, and the failure that greets an unfinished setup
+# should carry the STEPS, not a pointer at a document that may have moved.
+SKEL="$HERE/../template/.claude/app-identity.example"
+if [[ -f "$SKEL" ]]; then ok "a skeleton ships for the manual path"
+else no "a skeleton ships for the manual path"; fi
+
+# A copied-but-unfilled skeleton must read as an unfinished setup, not as a
+# broken script. Taking `<paste the App ID here>` literally would produce
+# "no file at '<paste the absolute path...>'", which sends the reader hunting
+# for a bug instead of finishing the setup.
+mkdir -p "$WORK/repo/.claude"
+cp "$SKEL" "$WORK/repo/.claude/app-identity.example"
+cp "$SKEL" "$WORK/repo/.claude/app-identity"
+out="$(run GRIMSVERK_APP_ID= GRIMSVERK_APP_PRIVATE_KEY= \
+           GRIMSVERK_APP_IDENTITY_FILE=.claude/app-identity)"
+expect_rc "an unfilled skeleton exits 3, not 4" 3 $?
+expect_contains "and says the values are placeholders" "$out" "still placeholders"
+expect_not_contains "and does not report the placeholder as a missing file" "$out" "no file at"
+
+# The message must stand alone. Every one of these is a step the reader needs
+# and would otherwise have to find in a document that can be moved or renamed.
+expect_contains "the message carries the creation URL" "$out" "github.com/settings/apps/new"
+expect_contains "and the webhook setting people miss" "$out" "Webhook"
+expect_contains "and both permissions" "$out" "Pull requests ..... Read and write"
+expect_contains "and warns the App ID is not the Client ID" "$out" "not the Client ID"
+expect_contains "and says the credentials need BOTH homes" "$out" "BOTH homes"
+expect_contains "and says to keep the .pem" "$out" "KEEP the .pem"
+expect_contains "and gives the command that verifies it" "$out" "app-token.sh >/dev/null"
+expect_contains "and says WHY it refuses rather than warns" "$out" "owner-authored.sh"
+
+# Not copied at all: name the one command that fixes it.
+rm "$WORK/repo/.claude/app-identity"
+out="$(run GRIMSVERK_APP_ID= GRIMSVERK_APP_PRIVATE_KEY= \
+           GRIMSVERK_APP_IDENTITY_FILE=.claude/app-identity)"
+expect_rc "a missing identity file exits 3" 3 $?
+expect_contains "and points at the skeleton beside it" "$out" "cp .claude/app-identity.example"
+rm -rf "$WORK/repo/.claude"
+
 # ------------------------------------------------------- bad configuration
 out="$(run GRIMSVERK_APP_ID=not-a-number GRIMSVERK_APP_PRIVATE_KEY="$WORK/key.pem" \
            GRIMSVERK_APP_IDENTITY_FILE=/nonexistent)"

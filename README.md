@@ -237,6 +237,92 @@ the script create the ruleset before the first pull request. That claim is
 flagged unverified-live in the script header; `--verify` is the belt to its
 braces.
 
+### The GitHub App, and both places its credentials live
+
+The App is not a convenience for tidying up branches. It is the **identity the
+unattended driver opens pull requests as**, and without it the driver opens them
+as you — which makes `.github/scripts/owner-authored.sh` compare your login to
+your login and pass, for every pull request, including one carrying an agent's
+edit to `docs/DESIGN.md`. `unattended-ready.sh` refuses a run until the App
+exists, and that refusal is deliberate.
+
+**1. Create it, once per account** (not per project):
+
+<https://github.com/settings/apps/new>
+
+| Field | Value |
+| --- | --- |
+| GitHub App name | anything unique — `grimsverk-driver` is fine |
+| Homepage URL | anything; your GitHub profile URL will do |
+| Webhook → Active | **uncheck it** |
+| Repository permissions → Contents | **Read and write** |
+| Repository permissions → Pull requests | **Read and write** |
+| Where can this GitHub App be installed? | **Only on this account** |
+
+Nothing else needs changing. Create it, then on the App's page:
+
+- note the **App ID** (a number near the top — not the Client ID);
+- **Generate a private key**, which downloads a `.pem`;
+- **Install App** → install it on this repository.
+
+**2. Give the credentials their two homes.** This is the part that is easy to
+half-do, because the two halves are read by different things:
+
+| Home | Read by | Set by |
+| --- | --- | --- |
+| Repository secrets `APP_ID`, `APP_PRIVATE_KEY` | `auto-merge.yml`, inside Actions | `scripts/setup-github.sh --app` |
+| A local file or two env vars | `.claude/scripts/app-token.sh`, on your machine | you, once |
+
+Actions cannot read your laptop and your laptop cannot read repository secrets,
+so both are required — and **one command does both**:
+
+```sh
+scripts/setup-github.sh --app
+```
+
+It asks for the App ID and the path to the `.pem`, sets the two repository
+secrets, and writes `.claude/app-identity` (gitignored, `chmod 600`) with the
+same values for the driver. Setting one home and not the other is the failure
+worth naming: the App looks configured and every unattended run still refuses.
+
+Doing the local half by hand — on a second machine, say, where the secrets
+already exist — means copying the skeleton that ships beside it:
+
+```sh
+cp .claude/app-identity.example .claude/app-identity
+```
+
+and filling in its two values. Or export them instead:
+
+```sh
+export GRIMSVERK_APP_ID=123456
+export GRIMSVERK_APP_PRIVATE_KEY=/absolute/path/to/your-app.private-key.pem
+```
+
+> **Keep the `.pem`.** That path is read on **every run** — this is not a
+> one-time import. Put it somewhere durable outside any repository;
+> `~/.config/grimsverk/` is a good home. `chmod 600` it. It is a credential:
+> treat it like an SSH key.
+>
+> A directory beside your repositories works too, and `*.pem` is gitignored in
+> both this repository and every generated one, so it cannot be committed by
+> accident. Outside the code tree is still better — a key that lives next to
+> code travels with the code when you copy, archive, or share a folder.
+
+**3. Check it works** before you rely on it:
+
+```sh
+.claude/scripts/app-token.sh >/dev/null && echo "App identity OK"
+```
+
+That mints a real installation token and throws it away. It prints nothing on
+success. Its failures are specific on purpose — exit 3 means "not configured
+yet" and names what is missing; exit 4 means "configured, but the exchange
+failed" and distinguishes a wrong ID/key pair (401) from an App that exists but
+is not installed here (404).
+
+Then `.github/scripts/unattended-ready.sh` should stop refusing.
+
 Steps 4–6 below remain as the reference for what the script does and for doing
 it by hand.
 
