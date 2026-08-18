@@ -29,6 +29,10 @@
 #   2. .claude/app-identity, an untracked file in the repository root holding
 #      APP_ID=... and APP_PRIVATE_KEY=... (gitignored; see .gitignore.jinja).
 #
+# Which repository the token is for comes from the git remote of the tree this
+# runs in. GRIMSVERK_APP_REPO overrides that when you mean to; see the block
+# below for why the ambient GITHUB_REPOSITORY is not allowed to.
+#
 # Exit codes are distinct because the caller treats them differently:
 #   0  a token was minted and printed
 #   3  not configured at all — the owner has not set the App up yet
@@ -92,15 +96,41 @@ fi
 [[ "$APP_ID" =~ ^[0-9]+$ ]] || EXIT_CODE=3 fail "APP_ID '$APP_ID' is not numeric — this is the App ID from its settings page, not the client id and not the installation id"
 
 # ------------------------------------------------------------- which repository
-REPO="${GITHUB_REPOSITORY:-}"
+#
+# THE CHECKOUT ON DISK IS THE TRUTH, and the order below says so. This script
+# mints a token for the repository the driver is operating on, and the only
+# thing that actually knows which one that is, is the remote of the tree it is
+# standing in.
+#
+# It used to read GITHUB_REPOSITORY first. That is an AMBIENT variable — GitHub
+# Actions exports it into every step — so inside any workflow this resolved to
+# whatever repository the runner happened to be checked out from, silently, in
+# preference to the tree on disk. Nothing about that is what a local script
+# wants, and it is the wrong kind of override in any case: an override should
+# be something an operator set on purpose, not something an environment
+# happened to leave lying around.
+#
+# So the precedence is:
+#
+#   1. GRIMSVERK_APP_REPO — deliberate, named like the other two settings this
+#      script reads, and therefore never set by accident;
+#   2. the git remote — the truthful default;
+#   3. GITHUB_REPOSITORY — last resort, for a checkout with no remote at all.
+#      Kept because it is better than failing, ranked last because it is a
+#      statement about the environment rather than about this repository.
+REPO="${GRIMSVERK_APP_REPO:-}"
 if [[ -z "$REPO" ]]; then
   origin="$(git config --get remote.origin.url 2>/dev/null || true)"
-  [[ -n "$origin" ]] || fail "no git remote 'origin' and GITHUB_REPOSITORY is unset — cannot tell which repository to mint a token for"
-  # Handles https://, ssh://, git@host:owner/repo and any host alias, because
-  # the SSH alias ceremony in README.md means 'origin' is often not github.com.
-  REPO="${origin%.git}"; REPO="${REPO##*:}"; REPO="${REPO#//}"
-  REPO="$(printf '%s' "$REPO" | awk -F/ '{ if (NF>=2) printf "%s/%s", $(NF-1), $NF }')"
-  [[ "$REPO" == */* ]] || fail "could not read owner/repo out of remote '$origin'"
+  if [[ -n "$origin" ]]; then
+    # Handles https://, ssh://, git@host:owner/repo and any host alias, because
+    # the SSH alias ceremony in README.md means 'origin' is often not github.com.
+    REPO="${origin%.git}"; REPO="${REPO##*:}"; REPO="${REPO#//}"
+    REPO="$(printf '%s' "$REPO" | awk -F/ '{ if (NF>=2) printf "%s/%s", $(NF-1), $NF }')"
+    [[ "$REPO" == */* ]] || fail "could not read owner/repo out of remote '$origin'"
+  else
+    REPO="${GITHUB_REPOSITORY:-}"
+    [[ -n "$REPO" ]] || fail "no git remote 'origin', and neither GRIMSVERK_APP_REPO nor GITHUB_REPOSITORY is set — cannot tell which repository to mint a token for"
+  fi
 fi
 
 # ------------------------------------------------------------------- the JWT

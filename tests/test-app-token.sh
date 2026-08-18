@@ -11,8 +11,19 @@
 # What these tests pin: the three misconfiguration paths exit 3 (not yet set
 # up) and the exchange failures exit 4 (set up, but wrong), because the driver
 # prints a different refusal for each; the identity file is read as DATA and
-# never sourced; and a minted token is the only thing that reaches stdout, so a
-# caller can capture it without filtering.
+# never sourced; a minted token is the only thing that reaches stdout, so a
+# caller can capture it without filtering; and which REPOSITORY the token is
+# for comes from the checkout on disk.
+#
+# That last one is here because it went red in CI and green on a laptop. The
+# script read GITHUB_REPOSITORY first; GitHub Actions exports that into every
+# step, so on a runner it silently resolved the runner's repository instead of
+# the tree it was standing in. The precedence is reversed now, and every
+# assertion below sets the ambient variable to a WRONG value on purpose, so a
+# regression fails everywhere rather than only where nobody is looking.
+#
+# The general rule this file learned the hard way: never let an assertion
+# depend on a variable being absent. Set it, to something that would be wrong.
 
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -141,11 +152,52 @@ expect_rc "a failed token exchange exits 4" 4 $?
 expect_contains "and reports the status it got" "$out" "500"
 
 # ------------------------------------------------------- repository detection
+# THE CHECKOUT ON DISK IS THE TRUTH. This block is the reason the CI failure
+# that produced it is worth remembering: the script read GITHUB_REPOSITORY
+# first, which GitHub Actions exports into every step, so on a runner it
+# resolved the runner's repository in preference to the tree it was standing
+# in — and these very assertions went red for exactly that reason while passing
+# on a laptop, where the variable does not exist.
+#
+# So the ambient variable is set in every case below. It must never win.
+CI_AMBIENT="GITHUB_REPOSITORY=SomeoneElse/some-other-repo"
+
+out="$(run GRIMSVERK_APP_ID=7 GRIMSVERK_APP_PRIVATE_KEY="$WORK/key.pem" \
+           GRIMSVERK_APP_IDENTITY_FILE=/nonexistent STUB_INSTALL_CODE=404 \
+           $CI_AMBIENT)"
+expect_contains "the git remote beats an ambient GITHUB_REPOSITORY" "$out" "owner/proj"
+expect_not_contains "and the runner's repository is not used" "$out" "some-other-repo"
+
+# The deliberate override is the one that wins, because an operator set it.
+out="$(run GRIMSVERK_APP_ID=7 GRIMSVERK_APP_PRIVATE_KEY="$WORK/key.pem" \
+           GRIMSVERK_APP_IDENTITY_FILE=/nonexistent STUB_INSTALL_CODE=404 \
+           GRIMSVERK_APP_REPO=chosen/on-purpose $CI_AMBIENT)"
+expect_contains "an explicit GRIMSVERK_APP_REPO overrides the remote" "$out" "chosen/on-purpose"
+
 # The README's SSH alias ceremony means 'origin' is often not github.com, so the
 # owner/repo parse has to survive an alias host.
 git -C "$WORK/repo" remote set-url origin "git@gh-grimsverk:GrimsVerk/thing.git"
 out="$(run GRIMSVERK_APP_ID=7 GRIMSVERK_APP_PRIVATE_KEY="$WORK/key.pem" \
-           GRIMSVERK_APP_IDENTITY_FILE=/nonexistent STUB_INSTALL_CODE=404)"
+           GRIMSVERK_APP_IDENTITY_FILE=/nonexistent STUB_INSTALL_CODE=404 \
+           $CI_AMBIENT)"
 expect_contains "an ssh alias remote still yields owner/repo" "$out" "GrimsVerk/thing"
+
+# Last resort only: no remote at all, and then the ambient variable is better
+# than failing. Ranked last because it describes the environment, not this tree.
+git -C "$WORK/repo" remote remove origin
+out="$(run GRIMSVERK_APP_ID=7 GRIMSVERK_APP_PRIVATE_KEY="$WORK/key.pem" \
+           GRIMSVERK_APP_IDENTITY_FILE=/nonexistent STUB_INSTALL_CODE=404 \
+           $CI_AMBIENT)"
+expect_contains "with no remote, GITHUB_REPOSITORY is the fallback" "$out" "some-other-repo"
+
+# GITHUB_REPOSITORY= explicitly, NOT merely omitted: this suite runs in CI too,
+# where the variable is always present, and a test that assumes an environment
+# is empty is a test that only passes on the machine it was written on. That is
+# precisely the mistake this whole block exists to record.
+out="$(run GRIMSVERK_APP_ID=7 GRIMSVERK_APP_PRIVATE_KEY="$WORK/key.pem" \
+           GRIMSVERK_APP_IDENTITY_FILE=/nonexistent GITHUB_REPOSITORY=)"
+expect_rc "and with neither, it refuses rather than guessing" 4 $?
+expect_contains "naming both ways to tell it" "$out" "GRIMSVERK_APP_REPO"
+git -C "$WORK/repo" remote add origin "https://github.com/owner/proj.git"
 
 summary
