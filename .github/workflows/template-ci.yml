@@ -41,6 +41,42 @@ jobs:
                      scripts/*.sh \
                      tests/*.sh
 
+  # ESC-36. `auto-merge.yml` referenced the `secrets` context in a step `if:`,
+  # which is not allowed in any `if:`. The file failed VALIDATION — the run was
+  # created with zero jobs, so arming, branch deletion and the nightly sweep all
+  # died together — and it shipped in three releases.
+  #
+  # Nothing here could have seen it. `auto-merge.yml` is the one shipped
+  # workflow this repository does not run on itself, and the check it kills is
+  # reported BY the dead workflow, so its absence reads as "not applicable"
+  # rather than "the file is broken". A required-checks list cannot notice a
+  # check that never reports.
+  #
+  # The linter renders a project first, because template/'s workflows are not
+  # YAML until copier has been through them: `ci.yml.jinja` is a template, and
+  # the auto-merge file's NAME is a Jinja expression, so any tool globbing for
+  # *.yml skips exactly the file that broke.
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv tool install copier
+      # Pinned. An unpinned linter is a build that can go red on a morning when
+      # nothing here changed, and this one gates every pull request.
+      - name: Install actionlint
+        # $HOME/go/bin on PATH explicitly: whether the runner image already has
+        # it varies, and the linter refuses (exit 2) rather than skipping when
+        # it cannot find actionlint — so a missing PATH entry is a red build,
+        # not a silent pass. Making it explicit keeps that refusal meaning
+        # "actionlint is genuinely absent".
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+      - name: Lint every workflow, shipped and self-hosted
+        run: scripts/lint-workflows.sh
+
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
