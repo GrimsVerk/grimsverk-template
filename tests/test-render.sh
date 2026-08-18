@@ -383,6 +383,39 @@ PYCHK
   if says "$out/.claude/commands/deliver-loop.md" "does not let an author approve their own"
   then ok "$lang deliver-loop.md opens the acceptance pull request itself"
   else no "$lang deliver-loop.md opens the acceptance pull request itself"; fi
+
+  # ESC-36. The auto-merge workflow referenced the secrets context in a step
+  # `if:`, which fails FILE validation — the run is created with zero jobs and
+  # all three jobs die together. These assertions are on the RENDERED file
+  # because the shipped one's name is a Jinja expression, so nothing that globs
+  # for *.yml ever reads it.
+  am="$out/.github/workflows/auto-merge.yml"
+  if [[ -f "$am" ]]; then
+    ok "$lang renders the auto-merge workflow"
+    if grep -qE '^[[:space:]]*if:.*secrets\.' "$am"
+    then no "$lang auto-merge.yml reads no secret in an if:" "$(grep -nE '^[[:space:]]*if:.*secrets\.' "$am")"
+    else ok "$lang auto-merge.yml reads no secret in an if:"; fi
+    if grep -qE "^[[:space:]]*if: env\.APP_ID != ''" "$am"
+    then ok "$lang the App-token step tests the hoisted env copy"
+    else no "$lang the App-token step tests the hoisted env copy"; fi
+
+    # Bringing the other open pull requests up to date after a merge. Under
+    # strict required-status-checks every other open pull request flips to
+    # mergeStateStatus BEHIND the moment one merges, and BEHIND never appears in
+    # the checks list — green ticks on a pull request that cannot merge.
+    if grep -q '^  update-open-prs:' "$am"
+    then ok "$lang ships the update-open-prs job"
+    else no "$lang ships the update-open-prs job"; fi
+    # And it must NOT fall back to GITHUB_TOKEN. A push made with it creates no
+    # workflow runs, so the branch would come up to date with its required
+    # checks permanently missing — strictly worse than BEHIND.
+    if grep -qF 'steps.app-token.outputs.token || secrets.AUTO_MERGE_TOKEN }}' "$am"
+    then ok "$lang the update never degrades to GITHUB_TOKEN"
+    else no "$lang the update never degrades to GITHUB_TOKEN" \
+      "$(grep -n 'GH_TOKEN:' "$am")"; fi
+  else
+    no "$lang renders the auto-merge workflow" "auto_merge defaults to true"
+  fi
   # ESC-16: the orchestrator looks at its own diff the way the gate will,
   # BEFORE the pull request exists — three of four recent escapes were found
   # by use because nothing looked earlier.
