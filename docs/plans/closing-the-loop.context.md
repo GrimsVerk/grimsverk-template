@@ -48,6 +48,20 @@ Collected across one conversation, in the owner's words:
   sentence that matters most is the second one: new behaviour that existing
   measurements do not cover requires a *new* measurement, specifically for
   *"changes that are downstream of the oracle's ruling."*
+- **Evidence is committed to the repository, and this OVERRULED a
+  recommendation.** The session proposed keeping the bulky review payloads in
+  GitHub Actions artifacts, which expire after ninety days, and committing only
+  the verdicts — on the grounds that committed payloads consume repository space
+  indefinitely. The owner overruled it: *"its good to think of repo space, but it
+  is just in the beginning, i would rather risk gathering too much data and deal
+  with space issues, than getting stuck without the info to get out of it. so
+  save it in the repo."*
+
+  The reasoning is better than the recommendation it replaced. A space problem is
+  visible, bounded and fixable later; missing evidence is none of those, and the
+  whole point of this slice is that the project has repeatedly been unable to
+  diagnose its own failures. Retention policy is a decision that can be taken
+  once there is something to retain.
 
 ## 2. The one place this plan goes beyond what the owner said
 
@@ -74,6 +88,22 @@ the reasoning lands in the ledger, the loop proceeds to the next phase. Only the
 word `pass` waits for the owner. If the owner judges that too conservative, the
 alternative worth considering is a distinct status — `met-otherwise`, ruled by
 the oracle and visibly not `pass` — rather than removing the limit.
+
+**The waiver exists because the owner found the hole in the first version.**
+The session had specified the criteria as a required check and the ruling as a
+ledger entry, and did not notice that those two do not compose: a criterion the
+oracle ruled "met by other means" still exits non-zero, so every later pull
+request would stay red and the ruling would unblock nothing. The owner asked
+*"if the tests dont pass, wont that stop work (potentially) even if the oracle
+rules it as otherwise-met?"* — which is exactly right, and is the second time in
+this conversation that a design was corrected by the owner reading it rather
+than by the session testing it.
+
+The waiver's shape is the session's, and its safety rests on one property worth
+stating plainly: **it names a criterion, never the check.** A waiver on `S3`
+leaves `S4` gating. If a future change made waivers apply more broadly — to a
+directory, a prefix, a whole run — it would become the bypass this design is
+carefully not.
 
 ## 3. Interpretation calls a reviewer should check
 
@@ -117,6 +147,17 @@ findings:
   ("byte-identical output over two runs"); some are not ("both of us use it
   daily for two weeks"). The §13 split already anticipates this, and slice 2
   inherits whatever that split gets wrong.
+- That committed review evidence stays at a size anyone is willing to live with.
+  The owner has accepted that risk deliberately and prefers it to the
+  alternative, but nobody has measured a real run, so the growth rate is a
+  guess. If it becomes a problem, the fix is a retention rule — prune payloads
+  older than N runs, keep every verdict — and NOT a return to discarding them,
+  because discarding them is the defect being repaired.
+- That collecting evidence at run end is enough. It is the right place —
+  a review job that committed its own output would push to the branch it is
+  reviewing and retrigger itself — but a run that dies hard, or is killed, may
+  end without collecting. The run report is appended at each stop, so it
+  survives; the review payloads for the last in-flight pull request may not.
 
 ## 5. The state this plan is being written into
 

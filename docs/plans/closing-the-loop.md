@@ -91,12 +91,15 @@ tests trustworthy is inert.
   forward instead of stopping it.
 - **Files:** `template/acceptance/README.md`,
   `template/acceptance/.gitkeep`, `template/docs/acceptance.md.jinja`,
-  `template/docs/DESIGN.md.jinja`, `template/.claude/commands/deliver.md`,
+  `template/docs/DESIGN.md.jinja`, `template/docs/DESIGN.oracle.md.jinja`,
+  `template/.claude/commands/deliver.md`,
   `template/.claude/commands/oracle.md`,
   `template/.claude/scripts/deliver-phase.sh`,
   `template/.github/scripts/acceptance-criteria.sh`,
-  `template/.github/workflows/ci.yml.jinja`, `tests/test-acceptance-criteria.sh`
-- **Estimate:** ~220 lines
+  `template/.github/scripts/oracle-decisions.sh`,
+  `template/.github/workflows/ci.yml.jinja`, `tests/test-acceptance-criteria.sh`,
+  `tests/test-oracle-decisions.sh`
+- **Estimate:** ~280 lines
 
 **Why this is the heaviest slice.** `docs/acceptance.md` is the one artifact in
 an unattended run whose pull request requires the owner's review — the single
@@ -107,10 +110,16 @@ narration is admitted as evidence, and it is the last thing the owner reads.
 
 Each `S<n>` marked agent-verifiable in `docs/DESIGN.md` §13 gets
 `acceptance/S<n>.sh` — exit 0 is pass, non-zero is fail, stdout is the evidence.
-The acceptance pass runs them and records the real output. A new check,
-`acceptance-criteria.sh`, asserts that every agent-verifiable `S` id in §13 has
-a script and that no landed script was deleted. §13 is CODEOWNERS-owned, so the
+`acceptance-criteria.sh` **runs them on every pull request**, as a required
+check, and additionally asserts that every agent-verifiable `S` id in §13 has a
+script and that no landed script was deleted. §13 is CODEOWNERS-owned, so the
 *set* of criteria stays the owner's even though the scripts are not owned.
+
+Running them per pull request rather than only at acceptance is the whole point:
+a criterion checked once and trusted thereafter is exactly the "verified once,
+trusted forever" shape this template distrusts everywhere else. A criterion that
+passed in the acceptance pass and regressed three merges later is otherwise
+caught by nothing until the next acceptance pass, which may be the last one.
 
 **Not CODEOWNERS-owned, on the owner's ruling**, and the reasoning is theirs: a
 feature that depends on another would block waiting for a review, and a failing
@@ -131,12 +140,36 @@ plan puts one boundary on it. The oracle may rule:
 
 **The oracle may not mark a criterion passed.** In the third case it writes its
 reasoning into the ledger and the row in `docs/acceptance.md` stays
-`pending / owner`, carrying that reasoning. The run continues either way, so
-nothing stops overnight — but the owner's own success criterion is adjudicated
-by the owner. Without this, the last artifact before the human becomes
-negotiable by an agent, which is the failure the whole acceptance mechanism
-exists to prevent. This is the implementing session's boundary, not the owner's
-words; the context document flags it for confirmation.
+`pending / owner`, carrying that reasoning. The owner's own success criterion is
+adjudicated by the owner. Without this, the last artifact before the human
+becomes negotiable by an agent, which is the failure the whole acceptance
+mechanism exists to prevent.
+
+**And a ruling has to actually unblock the run, which needs one more part.**
+The owner caught this: if the criteria are a required check, then a criterion
+the oracle ruled "met by other means" still exits non-zero, so every later pull
+request stays red and work stops — the ruling would have unblocked nothing.
+
+So a decision may carry an optional eighth field:
+
+    - **Criterion waived:** S3 — <why the test does not recognise what was built>
+
+`acceptance-criteria.sh` reads landed decisions at the base commit and skips a
+waived criterion. Four properties make this an exception rather than a hole:
+
+- **Per-criterion, never per-check.** A waiver on `S3` does nothing for `S4`;
+  every other criterion still gates.
+- **Cited, append-only, permanent.** It lives in the ledger `oracle-decisions.sh`
+  already guards, so it inherits evidence-citation and immutability for free —
+  no new file and no new trust boundary. Same idiom as `docs/escapes.md`: an
+  exception that is written down rather than silent.
+- **Visible twice**, in the ledger and as `pending / owner` in the acceptance
+  table. The gate goes green; the claim of doneness does not.
+- **Self-clearing.** If a later change makes `S3` genuinely pass, the next
+  acceptance pass records `pass` and the waiver is moot. Nothing to tidy up.
+
+The boundary — rule, record, waive, but never mark passed — is the implementing
+session's, not the owner's words. The context document flags it.
 
 ## Slice 3 — the template hosts its own gates
 
@@ -185,10 +218,12 @@ the template has never had one.
   the obligation to keep it that way is written where the oracle will read it.
 - **Files:** `template/docs/VISION.md.jinja`,
   `template/.claude/scripts/deliver-loop.sh`,
+  `template/.claude/scripts/collect-evidence.sh`,
   `template/.claude/commands/deliver-loop.md`,
   `template/.claude/commands/oracle.md`, `template/AGENTS.md.jinja`,
-  `template/.gitignore.jinja`
-- **Estimate:** ~140 lines
+  `template/.gitignore.jinja`, `template/.github/scripts/review.sh`,
+  `template/.github/workflows/review.yml`, `tests/test-collect-evidence.sh`
+- **Estimate:** ~240 lines
 
 The owner's ruling, and the gap it names: an unattended run produces a run log
 that is **gitignored**, and in web mode lives in a container that is reclaimed.
@@ -201,7 +236,26 @@ described — run, learn, fix the template, run again — has nothing to learn f
   because it is a thing the oracle must be able to *cite*: a decision to add a
   measurement needs a vision statement behind it, and there is none today.
 - The run report moves from `.claude/deliver-loop/run.md` (gitignored) to a
-  committed `docs/runs/<timestamp>.md`, appended by the driver at each stop.
+  committed `docs/runs/<timestamp>/run.md`, appended by the driver at each stop.
+- **The review gate stops discarding its own work.** `review.sh` currently
+  assembles a payload — a comment inside it calls that payload "an artifact of
+  what the gate was shown" — and then throws it away along with the model's
+  reply. Nothing is uploaded, nothing is committed, nothing is posted. So the
+  one gate with no fixtures is also the one gate that leaves no trace to build
+  fixtures from, which is what slice 5 needs.
+
+  `review.sh` writes both the payload and the full reply to files. The workflow
+  uploads them as run artifacts and posts the verdict and findings as a pull
+  request comment, where they sit against the diff they judged.
+  `collect-evidence.sh` then gathers them at run end into
+  `docs/runs/<timestamp>/reviews/`, **committed to the repository**, on the
+  owner's ruling — see the context document, because this overrode a
+  recommendation to leave the bulky payloads in expiring artifacts.
+
+  Collection happens once per run rather than per pull request, and that is
+  deliberate: a review job that committed its own output would push to the
+  branch it is reviewing and retrigger itself. The driver already opens pull
+  requests and already runs once per stop, so it is the right place.
 - **The rule that generalises it**, in `AGENTS.md` and `oracle.md`: when a
   decision changes behaviour that no existing measurement covers, adding the
   measurement is part of the decision. An oracle ruling whose effect nothing can
@@ -281,5 +335,6 @@ and only then run this repository against itself.
   at the root, asserted in CI.
 - **Flagged unverified-live, to observe on the first real run:** every criterion
   in slice 2 against a project that actually has success criteria; the oracle's
-  adjudication of a failing one; whether `docs/runs/` grows at a rate anyone
-  wants to read.
+  adjudication of a failing one, and whether a waiver actually unblocks the
+  pipeline; whether `docs/runs/` grows at a rate anyone wants to read, and how
+  fast committed review payloads accumulate.
