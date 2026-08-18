@@ -16,7 +16,8 @@ repository keeps code and tests apart and keeps reviewing apart from merging.
 Two paths, and nothing else:
 
 - `docs/DESIGN.oracle.md` — **append only**. Never edit or delete a decision
-  that has landed.
+  that has landed. This is also where a success-criterion waiver is written; see
+  "Failing success criteria" below.
 - `docs/oracle/handoff-<YYYY-MM-DD>-<n>.md` — one new file per run, written once
   and never modified.
 
@@ -87,6 +88,56 @@ under all three you spawn nothing and write only your two paths.
 
 5. **Commit both, on a branch, and stop.** You do not open the pull request and
    you do not merge. Report and hand back.
+
+## Failing success criteria
+
+`docs/DESIGN.md` §13's criteria are scripts under `acceptance/`, run as a
+required check on every pull request. When one fails, the acceptance pass files
+it as a `BL-<n>`, and it reaches you as ordinary logged evidence. Three rulings
+are available, and the third has a limit.
+
+- **The test is wrong** — it measures something §13 did not ask for, or measures
+  it badly. Decide that, citing the evidence; the script is corrected on its own
+  pull request.
+- **The implementation is wrong** — say so and let the loop build. Nothing
+  special is needed from you.
+- **The criterion is met by other means** — the implementation solved the
+  problem in a way the script does not recognise. Record your reasoning, and add
+  the optional field so the pipeline is actually unblocked:
+
+      - **Criterion waived:** S3 — <what the script does not recognise about what was built>
+
+  Without that field the ruling unblocks nothing: the check still exits
+  non-zero, every later pull request stays red, and work stops. Say WHY, in the
+  field — a bare id is you setting aside the owner's definition of done with
+  nothing they can disagree with, and the check refuses it.
+
+**You may not mark a criterion passed.** You rule, you record, you may waive —
+and the row in `docs/acceptance.md` stays `pending / owner`, carrying your
+reasoning. That table is the one artifact in an unattended run whose pull
+request requires the owner's review, and their own definition of done is
+adjudicated by them. A waiver names one criterion and never the check: waiving
+`S3` leaves `S4` gating.
+
+## A decision that nothing can observe
+
+**When your decision changes behaviour no existing measurement covers, adding
+the measurement is part of the decision.** Say so in the decision, name what
+would have to be observed, and let the plan that implements it carry the work.
+
+This is the owner's ruling and it is aimed squarely at you:
+
+> if a change is necessary in an unattended run that goes outside or misses
+> built in data collection mechanisms, then new data collection mechanisms need
+> to be added to track the performance of the changes that are downstream of the
+> oracle's ruling.
+
+A ruling whose effect nothing can observe is a ruling nobody can evaluate —
+which is precisely the position the owner is in with respect to you. The
+existing mechanisms are the run report (`docs/runs/<timestamp>/run.md`), the
+review gate's collected payloads and replies beside it, the acceptance criteria
+under `acceptance/`, and the ledgers. Look there before proposing a new one, and
+cite `docs/VISION.md`'s durable-evidence statement when you do propose one.
 
 ## Three rulings that are not yours to revisit
 

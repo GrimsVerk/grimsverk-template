@@ -263,6 +263,7 @@ RULESET_JSON="$(cat <<JSON
           { "context": "plan" },
           { "context": "template-sync" },
           { "context": "test-the-tests" },
+          { "context": "acceptance-criteria" },
           { "context": "review" }
         ]
       } }
@@ -280,7 +281,7 @@ else
   printf '%s' "$RULESET_JSON" | "$GH" api -X POST "repos/$REPO/rulesets" --input - >/dev/null
   say "ruleset '$RULESET_NAME': created."
 fi
-say "required checks: $BUILD_CHECK secrets plan template-sync test-the-tests review"
+say "required checks: $BUILD_CHECK secrets plan template-sync test-the-tests acceptance-criteria review"
 
 # ----------------------------------------------------------------- 5. verify
 if [[ "$VERIFY" -eq 1 ]]; then

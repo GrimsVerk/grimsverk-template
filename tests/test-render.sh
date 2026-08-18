@@ -67,7 +67,7 @@ for lang in python swift-ios; do
   # workflow leaves a required check that never reports — every PR waits forever
   # on something that cannot arrive.
   ci="$out/.github/workflows/ci.yml"
-  for job in plan template-sync secrets test-the-tests; do
+  for job in plan template-sync secrets test-the-tests acceptance-criteria; do
     if grep -qE "^  ${job}:" "$ci" 2>/dev/null; then ok "$lang ci.yml defines '$job'"
     else no "$lang ci.yml defines '$job'"; fi
   done
@@ -619,17 +619,35 @@ sys.exit(0 if \"!= 'closed'\" in d['jobs']['arm-auto-merge'].get('if', '') else 
   # template's history (ESC-24, ESC-25, and the review that found .claude/
   # outside every gate-path list). These assertions pin all three together, so
   # a future edit cannot quietly restore one of the old wordings.
+  #
+  # AND THE RULES ARE SPELLED `Edit(...)`. Claude Code matches file-permission
+  # rules on Edit(...) only — an Edit rule covers every file-editing tool
+  # including Write, and a `Write(path)` rule matches NOTHING. This file shipped
+  # with both spellings and this fixture asserted both were present, so it
+  # passed while half the deny list was inert; the CLI said so on startup, in a
+  # warning nobody read because the list looked complete. Asserting the Write
+  # form is ABSENT is the half that has teeth: it is what fails if somebody
+  # "restores" it.
   st="$out/.claude/settings.json"
   if [[ -f "$st" ]] && python3 -c "
 import json,sys
 d = json.load(open(sys.argv[1]))
 deny = d['permissions']['deny']
-need = ['Write(docs/DESIGN.md)','Edit(docs/DESIGN.md)',
-        'Write(docs/VISION.md)','Edit(docs/VISION.md)']
+need = ['Edit(docs/DESIGN.md)','Edit(./docs/DESIGN.md)',
+        'Edit(docs/VISION.md)','Edit(./docs/VISION.md)']
 sys.exit(0 if all(x in deny for x in need) else 1)
 " "$st"
   then ok "$lang the two intent documents are denied to every session"
   else no "$lang the two intent documents are denied to every session"; fi
+
+  if [[ -f "$st" ]] && python3 -c "
+import json,sys
+d = json.load(open(sys.argv[1]))
+bad = [r for r in d['permissions']['deny'] if r.startswith('Write(')]
+sys.exit(0 if not bad else 1)
+" "$st"
+  then ok "$lang no deny rule uses the Write(...) form, which binds to nothing"
+  else no "$lang no deny rule uses the Write(...) form, which binds to nothing"; fi
 
   # A session that can spawn a headless agent directly can hand it any grants
   # it likes, which walks around spawn-worker.sh's whole role system.

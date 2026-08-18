@@ -100,7 +100,7 @@ fi
 # required check whose name drifted from the workflow's job name waits forever;
 # a missing one silently stops gating. Compare the union of every active
 # ruleset's required checks against what the shipped workflows actually report.
-EXPECTED=(plan template-sync secrets test-the-tests review)
+EXPECTED=(plan template-sync secrets test-the-tests acceptance-criteria review)
 case "$LANGUAGE" in
   python)    EXPECTED+=(checks) ;;
   swift-ios) EXPECTED+=(test) ;;

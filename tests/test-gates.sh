@@ -468,4 +468,70 @@ out="$( cd "$R" && BASE_SHA="$BASE_ORACLE" HEAD_REF=feat/whole-transcripts \
 expect_rc "a plan in a subdirectory resolves" 0 $?
 expect_contains "and prints its nested path" "$out" "docs/plans/oracle/whole-transcripts.md"
 
+# ------------------- test-the-tests can be told its own directory names
+# The check picks src/tests or Sources/Tests from a manifest file, and SKIPS
+# when it finds neither. A skip exits 0, and GitHub reports a required check
+# that exited 0 as PASSING — so in a repository that is neither language (the
+# template repository itself, which builds template/ and checks it from
+# tests/) the one check that makes a coder's tests worth anything would report
+# green on every pull request while never running. That is the failure this
+# script exists to catch, committed by the script itself.
+TTT="$TEMPLATE/template/.github/scripts/test-the-tests.sh"
+T="$WORK/ttt"
+init_repo "$T"
+mkdir -p "$T/thing" "$T/checks"
+echo "answer() { echo 42; }" > "$T/thing/impl.sh"
+cat > "$T/checks/check.sh" <<'EOF'
+#!/usr/bin/env bash
+source thing/impl.sh 2>/dev/null || exit 1
+[[ "$(answer)" == "43" ]]
+EOF
+git -C "$T" add -A && git -C "$T" commit -qm "base"
+TBASE="$(git -C "$T" rev-parse HEAD)"
+
+# Both directories change, and the check must actually run.
+echo "answer() { echo 43; }" > "$T/thing/impl.sh"
+printf '# a comment the test file gained\n' >> "$T/checks/check.sh"
+git -C "$T" add -A && git -C "$T" commit -qm "work"
+THEAD="$(git -C "$T" rev-parse HEAD)"
+
+ttt() { ( cd "$T" && BASE_SHA="$TBASE" HEAD_SHA="$THEAD" "$@" bash "$TTT" 2>&1 ); }
+
+# Without the override this repository has no manifest, so the check skips —
+# and a skip is a PASSING required check. This is the near-miss slice 1 exists
+# for, pinned so it cannot come back.
+out="$(ttt env)"
+expect_rc "with no override and no manifest, the check skips" 0 $?
+expect_contains "and says it could not tell implementation from tests" "$out" "cannot tell implementation from tests"
+
+# All three or none: a half-configured override would name a deliberate
+# directory and guess the rest, and the guess is the half that is wrong.
+out="$(ttt env TEST_THE_TESTS_IMPL_DIR=thing)"
+expect_rc "a partial override is a setup error, not a skip" 2 $?
+expect_contains "and it names all three variables" "$out" "TEST_THE_TESTS_SUITE"
+out="$(ttt env TEST_THE_TESTS_IMPL_DIR=thing TEST_THE_TESTS_TEST_DIR=checks)"
+expect_rc "naming the directories without the runner is also refused" 2 $?
+
+# Configured: the suite fails without the implementation, so the tests depend
+# on it and the check passes.
+out="$(ttt env TEST_THE_TESTS_IMPL_DIR=thing TEST_THE_TESTS_TEST_DIR=checks \
+        TEST_THE_TESTS_SUITE='bash checks/check.sh')"
+expect_rc "with the override the check runs and passes a real test" 0 $?
+expect_contains "and says which directories it used" "$out" "implementation 'thing'"
+expect_contains "and reverted the named implementation directory" "$out" "reverting thing/"
+
+# ...and it fails when the test does NOT depend on the implementation, which is
+# the whole point of the check.
+git -C "$T" switch -q --detach "$THEAD"
+cat > "$T/checks/check.sh" <<'EOF'
+#!/usr/bin/env bash
+true
+EOF
+git -C "$T" add -A && git -C "$T" commit -qm "a test that tests nothing"
+THEAD="$(git -C "$T" rev-parse HEAD)"
+out="$(ttt env TEST_THE_TESTS_IMPL_DIR=thing TEST_THE_TESTS_TEST_DIR=checks \
+        TEST_THE_TESTS_SUITE='bash checks/check.sh')"
+expect_rc "a suite that passes without the implementation still fails the check" 1 $?
+expect_contains "and explains what it means" "$out" "not exercise the code they are supposed to cover"
+
 summary

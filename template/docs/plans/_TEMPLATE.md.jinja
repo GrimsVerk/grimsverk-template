@@ -1,6 +1,6 @@
 ---
 slug: <kebab-case-id>      # MUST appear in every branch name working this plan
-status: draft              # draft | in-flight | merged
+status: draft              # draft | in-flight | merged  (see below)
 created: <YYYY-MM-DD>
 design: <the docs/DESIGN.md milestone this implements>
 covers: [R1, R2]           # the DESIGN.md §5 requirement ids this plan delivers
@@ -19,6 +19,13 @@ what `.github/scripts/coverage.sh` reads to answer "is every requirement actuall
 planned?" — a requirement no plan covers is work nobody has scheduled, and
 without this field that gap is invisible until the end. List only what this plan
 genuinely delivers; padding it hides the same gap more convincingly. -->
+
+<!-- `status: merged` means THE WORK LANDED, not that this document merged. The
+delivery driver reads it: `.claude/scripts/deliver-phase.sh` otherwise calls a
+plan built only when a branch named `feat/<slug>` has merged, so a plan whose
+work shipped some other way — a retrospective record, or work that landed on a
+differently-named branch — would be asked for forever. Set it when the work is
+done, not when the plan is approved. -->
 
 ## Uncertainties
 

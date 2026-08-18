@@ -42,13 +42,17 @@
 # Required env:
 #   BASE_SHA   the PR's base commit — the ledgers there are the protected state
 # Optional env:
-#   LEDGERS    space-separated; default: "docs/BACKLOG.md docs/BACKLOG.done.md"
+#   LEDGERS    space-separated; default: the three backlog ledgers —
+#              docs/BACKLOG.md (what was asked for), docs/BACKLOG.done.md (what
+#              came of it), docs/BACKLOG.approved.md (who said yes, and whether
+#              it was the owner or the oracle). All three hold the same shape:
+#              a landed line carrying a BL-<n> never changes and never moves.
 
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 : "${BASE_SHA:?BASE_SHA is required (the PR base commit)}"
-LEDGERS="${LEDGERS:-docs/BACKLOG.md docs/BACKLOG.done.md}"
+LEDGERS="${LEDGERS:-docs/BACKLOG.md docs/BACKLOG.done.md docs/BACKLOG.approved.md}"
 
 declare -a PROBLEMS=()
 CHECKED=0
@@ -105,6 +109,10 @@ pipeline that benefits from the rewrite.
 What to do instead:
 
   - finished an item?    append a line to docs/BACKLOG.done.md naming its id.
+  - approved an item?    append a line to docs/BACKLOG.approved.md naming its id
+                         and WHO approved it — owner or oracle. Approval by
+                         MOVING the item is structurally impossible here, which
+                         is why that file exists.
   - changed your mind?   append a NEW item saying so, and cite the old id.
   - wrong wording?       append a correction that repeats the id, exactly as
                          docs/escapes.md handles the same problem.

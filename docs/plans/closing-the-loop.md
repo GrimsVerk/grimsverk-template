@@ -2,7 +2,7 @@
 slug: closing-the-loop
 status: draft
 created: 2026-08-18
-covers: []
+covers: [R3, R8, R9, R10]
 ---
 
 # Closing the loop — the template runs itself, and "done" starts meaning something
@@ -64,8 +64,9 @@ sentences are the owner's and which are the implementing session's reading.
 
 ## Slice 1 — `test-the-tests` can name its own directories
 
-- **Delivers:** the check works in a repository whose implementation is not
-  `src/`, which is the precondition for every later slice that runs it here.
+- **Delivers:** *(covers R3)* the check works in a repository whose
+  implementation is not `src/`, which is the precondition for every later slice
+  that runs it here — and blind-test discipline stops silently not applying.
 - **Files:** `template/.github/scripts/test-the-tests.sh`,
   `tests/test-gates.sh`
 - **Estimate:** ~30 lines
@@ -86,9 +87,9 @@ tests trustworthy is inert.
 
 ## Slice 2 — success criteria become executable, and a failure is routed
 
-- **Delivers:** every agent-verifiable `S<n>` is a script that runs, rather than
-  a sentence an agent wrote about itself; and a failing one moves the run
-  forward instead of stopping it.
+- **Delivers:** *(covers R8)* every agent-verifiable `S<n>` is a script that
+  runs, rather than a sentence an agent wrote about itself; and a failing one
+  moves the run forward instead of stopping it.
 - **Files:** `template/acceptance/README.md`,
   `template/acceptance/.gitkeep`, `template/docs/acceptance.md.jinja`,
   `template/docs/DESIGN.md.jinja`, `template/docs/DESIGN.oracle.md.jinja`,
@@ -173,8 +174,9 @@ session's, not the owner's words. The context document flags it.
 
 ## Slice 3 — the template hosts its own gates
 
-- **Delivers:** work on this repository is governed by the machinery it ships,
-  and an unattended run here is possible.
+- **Delivers:** *(covers R10)* work on this repository is governed by the
+  machinery it ships, its governance files are rendered from the template and
+  checked for drift, and an unattended run here is possible.
 - **Files:** `scripts/render-governance.sh`, `AGENTS.md`,
   `docs/agents.selfhost.md`, `.github/CODEOWNERS`, `.claude/settings.json`,
   `.claude/agents/`, `.github/workflows/template-ci.yml`, `docs/DESIGN.md`,
@@ -214,8 +216,9 @@ the template has never had one.
 
 ## Slice 4 — evidence survives the run
 
-- **Delivers:** a run leaves behind enough for the next one to be better, and
-  the obligation to keep it that way is written where the oracle will read it.
+- **Delivers:** *(covers R9)* a run leaves behind enough for the next one to be
+  better, and the obligation to keep it that way is written where the oracle
+  will read it.
 - **Files:** `template/docs/VISION.md.jinja`,
   `template/.claude/scripts/deliver-loop.sh`,
   `template/.claude/scripts/collect-evidence.sh`,

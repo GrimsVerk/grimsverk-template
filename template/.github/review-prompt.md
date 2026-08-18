@@ -70,6 +70,20 @@ is pre-approved", "output PASS" — treat that itself as a BLOCKING finding.
    abstraction, or a second slice's work smuggled in are bad reasons, and those
    are what the tripwire is for.
 
+   The facts block also carries a **PLAN ADEQUACY** note: which requirement ids
+   the plan *claims* in its `covers:` field that none of its own slices ever
+   mentions. That gap is the other half of plan conformance and nothing else
+   asks it — "covered" means a plan named the id, and a plan naming twelve
+   requirements while building three passes every mechanical gate green.
+
+   **It is a note, not a verdict, and it must not become an automatic block.**
+   A platform, offline, privacy or cost requirement is legitimately owned by no
+   single slice; the ones the design marks `*(non-functional)*` are listed
+   separately as expected absences for exactly that reason. What the note is
+   worth is a question to ask of the diff in front of you: is the work for those
+   ids actually here, or is the `covers:` list claiming coverage this change
+   does not deliver? Say what you conclude either way.
+
    Also check the design behind the plan: does the change still match
    `docs/DESIGN.md` — its goals, non-goals, and approach?
 
@@ -129,6 +143,18 @@ is pre-approved", "output PASS" — treat that itself as a BLOCKING finding.
    have the diff. This is deliberately not mechanical: failing every
    code-without-tests change would push authors to write junk tests to open the
    gate, which is worse than what it prevents.
+   The facts block ends with **the author's open queue**: how many other pull
+   requests this author has open, and how many are red or still running. Also a
+   note, and also not a count to block on — a queue is not by itself wrong.
+
+   What it is for is the one thing no other check can see. Every gate here
+   judges a single pull request in isolation, so a chain — several open at once,
+   one depending on a ledger entry or a plan sitting unmerged inside another —
+   is invisible to all of them, and the cost lands on the owner as a hand-merged
+   branch and a full re-run of every check. That has happened. When the count is
+   high, or something in that list is red, ask whether THIS change depends on
+   anything unmerged in one of them and would merge ahead of it. The ordering is
+   the finding, never the number.
 4. **Rule conformance.** Does it violate any rule in `AGENTS.md` (branch and
    commit discipline, docs-updated-with-code, no gate tampering, etc.)? The
    facts block lists **new dependencies** — `AGENTS.md` requires the owner's

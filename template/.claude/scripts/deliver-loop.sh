@@ -23,12 +23,25 @@
 # STATE IS RECOMPUTED, NOT TRUSTED. Every iteration re-reads the tree and the
 # open pull requests. The only persistence is `.claude/deliver-loop/`
 # (gitignored): failure signatures, evidence ids the oracle dismissed, the
-# design/vision SHAs at run start, and the run log the owner reads in the
-# morning (`run.md`).
+# design/vision SHAs at run start, and the run log as it is being written
+# (`run.md`).
+#
+# THE RUN LEAVES EVIDENCE BEHIND, AND THAT IS NEW. The run log used to end its
+# life gitignored — and in web mode, inside a container that is reclaimed — so
+# the loop the owner described (run, learn, fix the template, run again) had
+# nothing to learn from. At EVERY stop, whatever the reason, the driver copies
+# the run report to `docs/runs/<timestamp>/run.md`, collects the review gate's
+# payloads and replies beside it, and opens one pull request carrying both.
+#
+# It is written to the gitignored path DURING the run and copied at the stop,
+# rather than written straight into docs/runs/. An untracked file sitting in the
+# tree while an orchestrator session runs `git add -A` is a file that ends up
+# inside somebody's feature commit, and the report would then be spread across
+# the branches it was reporting on.
 #
 # STOPS, and their exit codes — every stop says why, none degrades silently:
-#   0  done: the acceptance pass ran (or was already recorded); run.md has the
-#      report and the pending-on-owner list
+#   0  done: the acceptance pass ran (or was already recorded);
+#      docs/runs/<timestamp>/run.md has the report and the pending-on-owner list
 #   2  setup: refused before dispatching anything — readiness check failed,
 #      no design ids, dirty tree, wrong branch
 #   3  the same failure signature three times — a pattern, not a blip
@@ -258,6 +271,21 @@ fi
 unset APP_TOKEN  # minted fresh per pull request; installation tokens last 1h
 
 mkdir -p "$STATE_DIR"
+# One identifier for this run, used for the evidence directory, its branch and
+# its pull request, so all three can be found from any one of them.
+#
+# Disambiguated if a second run starts inside the same second — two runs sharing
+# an id would append into one report and one branch, which is a record of
+# neither. Rare in life, routine in the test suite, and the failure is silent.
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+RUN_N=1
+while [[ -d "docs/runs/$RUN_ID" ]] \
+   || git rev-parse -q --verify "refs/heads/docs/run-$RUN_ID" >/dev/null 2>&1; do
+  RUN_N=$((RUN_N + 1))
+  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$RUN_N"
+done
+RUN_DIR="docs/runs/$RUN_ID"
+RUN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 PROCESSED_FILE="$STATE_DIR/processed-evidence"
 touch "$PROCESSED_FILE"
 SIG_FILE="$STATE_DIR/failure-signatures"
@@ -268,7 +296,77 @@ SIG_FILE="$STATE_DIR/failure-signatures"
 # that "recomputed state cannot go stale"; the driver's own persisted file was
 # the exception, and it decided the most consequential thing in the run.
 rm -f "$STATE_DIR/acceptance-dispatched"
-{ echo "# Delivery run — $(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo; } >> "$STATE_DIR/run.md"
+{ echo "# Delivery run $RUN_ID"; echo; echo "Started $RUN_STARTED_AT."; echo; } >> "$STATE_DIR/run.md"
+
+# ------------------------------------------------- the evidence, at every stop
+#
+# An EXIT trap rather than a call at each `exit`, because this script has eight
+# of them and the one that would get forgotten is the one that fires at 3am. A
+# stop that leaves no evidence is the failure this whole slice exists to fix, so
+# it must not be possible to add a ninth exit and lose it.
+#
+# Everything here is best-effort and nothing here changes the run's exit code. A
+# recorder that fails a run because it could not record has inverted its job.
+LANDED=0
+land_evidence() {
+  local rc=$?
+  [[ "$LANDED" -eq 1 ]] && return "$rc"
+  LANDED=1
+  # A dry run dispatches nothing, so it has nothing to report — and landing a
+  # branch and a pull request for it would make the "show me what you would do"
+  # flag do something.
+  [[ "$DRY_RUN" -eq 1 ]] && return "$rc"
+  [[ -f "$STATE_DIR/run.md" ]] || return "$rc"
+
+  echo "deliver-loop: landing this run's evidence in $RUN_DIR ..."
+  mkdir -p "$RUN_DIR"
+  {
+    cat "$STATE_DIR/run.md"
+    echo
+    echo "Stopped $(date -u +%Y-%m-%dT%H:%M:%SZ) with exit code $rc."
+    echo
+    echo "See .claude/scripts/deliver-loop.sh's header for what each exit code"
+    echo "means. Every stop says why; none degrades silently."
+  } > "$RUN_DIR/run.md"
+
+  .claude/scripts/collect-evidence.sh --run-dir "$RUN_DIR" \
+    --since "$RUN_STARTED_AT" 2>&1 | sed 's/^/deliver-loop: /' || true
+
+  # On a branch and a pull request, never straight onto the default branch:
+  # the same branch discipline every other change in this repository obeys, and
+  # a `docs/` prefix so the plan check exempts it.
+  # On a branch and a pull request, never straight onto the default branch: the
+  # same branch discipline every other change here obeys, and a `docs/` prefix
+  # so the plan check exempts it.
+  #
+  # ONE exit path, and it switches back. A stop that left the checkout sitting
+  # on docs/run-<id> would make the next run refuse ("not on the default
+  # branch") — the recorder breaking the thing it records.
+  local ref="docs/run-$RUN_ID" token
+  git switch -q "$DEFAULT_BRANCH" 2>/dev/null || true
+  if git switch -qc "$ref" 2>/dev/null || git switch -q "$ref" 2>/dev/null; then
+    git add "$RUN_DIR" 2>/dev/null || true
+    if git diff --cached --quiet 2>/dev/null; then
+      echo "deliver-loop: nothing to land."
+    elif ! git commit -q -m "Run evidence for $RUN_ID" 2>/dev/null; then
+      echo "deliver-loop: could not commit the run evidence."
+    elif ! git push -q origin "$ref" 2>/dev/null; then
+      echo "deliver-loop: could not push $ref — the evidence is committed locally."
+    elif token="$("$APP_TOKEN_CMD" 2>/dev/null)" && [[ -n "$token" ]]; then
+      GH_TOKEN="$token" "$GH" pr create --head "$ref" \
+        --title "Run evidence for $RUN_ID" \
+        --body "The run report and the review gate's payloads and replies, collected by .claude/scripts/collect-evidence.sh. Opened mechanically at the run's stop." \
+        >/dev/null 2>&1 || echo "deliver-loop: could not open the pull request for $ref"
+    else
+      echo "deliver-loop: no App token — $ref is pushed but has no pull request."
+    fi
+  else
+    echo "deliver-loop: could not create $ref — the report is at $RUN_DIR/run.md."
+  fi
+  git switch -q "$DEFAULT_BRANCH" 2>/dev/null || true
+  return "$rc"
+}
+trap land_evidence EXIT
 
 design_sha() { git rev-parse -q --verify "HEAD:docs/DESIGN.md" 2>/dev/null || echo none; }
 vision_sha() { git rev-parse -q --verify "HEAD:docs/VISION.md" 2>/dev/null || echo none; }
@@ -530,11 +628,13 @@ while :; do
 
   # What next? Recomputed from the world, never remembered.
   PHASE=""; PR=""; HEADREF=""; UNRULED=""; UNCITED=""; ODS=""; REQS=""; SLUG=""; REASON=""
+  CRITERIA=""
   while IFS='=' read -r k v; do
     case "$k" in
       PHASE) PHASE="$v" ;; PR) PR="$v" ;; HEADREF) HEADREF="$v" ;;
       UNRULED) UNRULED="$v" ;; UNCITED) UNCITED="$v" ;; ODS) ODS="$v" ;;
       REQS) REQS="$v" ;; SLUG) SLUG="$v" ;; REASON) REASON="$v" ;;
+      CRITERIA) CRITERIA="$v" ;;
     esac
   done < <(GH="$GH" PROCESSED_FILE="$PROCESSED_FILE" "$PHASE_SH")
   [[ -n "$PHASE" ]] || die "phase detection failed"
@@ -542,7 +642,8 @@ while :; do
   if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "PHASE=$PHASE"
     for kv in "PR=$PR" "HEADREF=$HEADREF" "UNRULED=$UNRULED" "UNCITED=$UNCITED" \
-              "ODS=$ODS" "REQS=$REQS" "SLUG=$SLUG" "REASON=$REASON"; do
+              "ODS=$ODS" "REQS=$REQS" "SLUG=$SLUG" "REASON=$REASON" \
+              "CRITERIA=$CRITERIA"; do
       [[ -n "${kv#*=}" ]] && echo "$kv"
     done
     exit 0
@@ -605,11 +706,11 @@ uncertainties that block it)." \
       # the session succeeded, and only if docs/acceptance.md actually changed.
       if [[ -f "$STATE_DIR/acceptance-dispatched" ]]; then
         log "acceptance recorded and nothing is open — the run is complete"
-        log "report: $STATE_DIR/run.md; the honest bottom line is the pending-on-owner list in docs/acceptance.md"
+        log "report: $RUN_DIR/run.md (landed at the stop); the honest bottom line is the pending-on-owner list in docs/acceptance.md"
         exit 0
       fi
       ACC_BEFORE="$(git rev-parse -q --verify "HEAD:docs/acceptance.md" 2>/dev/null || echo none)"
-      if run_session "acceptance" "/deliver — run ONLY step 6, the acceptance pass: check the built system against docs/DESIGN.md §13, record evidence per criterion in docs/acceptance.md, mark owner-only criteria pending with exactly what the owner should run. Land it on a docs/ branch and open the pull request."; then
+      if run_session "acceptance" "/deliver — run ONLY step 6, the acceptance pass: check the built system against docs/DESIGN.md §13, record evidence per criterion in docs/acceptance.md, mark owner-only criteria pending with exactly what the owner should run. Every criterion §13 does NOT mark (owner) is a script at acceptance/S<n>.sh — write it, run it, and cite its real output; the required check .github/scripts/acceptance-criteria.sh runs them on every pull request from then on.${CRITERIA:+ Scripts failing right now: $CRITERIA.} A failing criterion is recorded as fail AND filed as a BL-<n> under 'Uncertainties awaiting oracle ruling' in docs/BACKLOG.md, so the oracle can rule on it — never reclassified as (owner) and never quietly passed. Land it on a docs/ branch and open the pull request."; then
         ACC_AFTER="$(git rev-parse -q --verify "HEAD:docs/acceptance.md" 2>/dev/null || echo none)"
         if [[ "$ACC_AFTER" != "$ACC_BEFORE" ]] || [[ -n "$(git status --porcelain -- docs/acceptance.md)" ]]; then
           touch "$STATE_DIR/acceptance-dispatched"

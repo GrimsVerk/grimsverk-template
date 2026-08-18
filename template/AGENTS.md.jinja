@@ -338,6 +338,12 @@ required checks go green. Four of them, three mechanical and one judgment:
   prefixed `chore/` or `docs/` are exempt.
 - **`test-the-tests`** — reverts this PR's implementation, keeps its new tests,
   and fails if the suite still passes.
+- **`acceptance-criteria`** — runs every success criterion `docs/DESIGN.md` §13
+  does not mark **(owner)**, as a script under `acceptance/`. On every pull
+  request, not once at the acceptance pass: a criterion verified once and
+  trusted thereafter is the "verified once, trusted forever" shape this file
+  distrusts everywhere else. A failing one is routed to the oracle rather than
+  argued with — see `acceptance/README.md`.
 - **review** (`.github/workflows/review.yml`) — an independent read-only LLM
   reviewing the diff against this file, both design documents, the plan, and the
   mechanical facts CI computed, with fresh context. A different model than the
@@ -371,6 +377,23 @@ check would have been red on the day it was added, because it parsed a file whos
 placeholders the parser rejects by design, and it was caught by chance rather
 than by anything in the process. If you cannot run the check, say so and say what
 would have to be true to run it.
+
+**When a decision changes behaviour nothing measures, add the measurement.**
+This is the ratchet's other half and it applies to changes that are not defects.
+If a change alters behaviour that no existing check, test, run report or review
+artifact would notice, the thing that notices it is part of the change — not a
+follow-up, and not optional. An oracle ruling whose effect nothing can observe
+is a ruling nobody can evaluate, which is exactly the position the owner is in
+with respect to the oracle itself. `docs/VISION.md`'s durable-evidence section
+is what a decision cites when adding one.
+
+Two mechanisms already exist and are the first place to look before inventing a
+third: the run report at `docs/runs/<timestamp>/run.md`, appended by the
+delivery driver and committed at every stop, and the review gate's payload and
+reply, collected beside it. Both are committed deliberately — the run log used
+to be gitignored, and in a web session it lived in a container that is
+reclaimed, so the evidence that would tell the next run what went wrong was
+destroyed by default.
 
 **Gate paths are off-limits.** Never modify the things that check the code:
 CI workflows (`.github/workflows/`), the review check or its prompt

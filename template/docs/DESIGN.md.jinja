@@ -67,7 +67,23 @@ evidence cell instead of a green coverage line. A requirement you cannot name a
 criterion for is a requirement nothing will ever check was built. -->
 
 **Non-functional** <!-- fill only those that apply; keep numbering continuous -->
-- **R2** — Platform / targets: <!-- web, iOS, CLI, service, library, etc. -->
+
+<!-- GIVE THESE IDS TOO, and mark each one *(non-functional)* in the line
+itself. The mark is read by `.github/scripts/coverage.sh` and
+`.github/scripts/plan-metrics.sh`, which report which requirements a plan claims
+in `covers:` while none of its slices ever mentions them — an over-claimed
+covers list is how twenty requirements come to be "covered" by a hundred lines
+of code with every gate green.
+
+A platform or offline requirement is owned by no single slice by nature, so
+without the mark the report would fire on honest plans and teach planners to pad
+slice text with ids. Marked, the absence is listed as EXPECTED and the report
+stays readable. The mark is yours and durable: this document is CODEOWNERS-owned,
+so what counts as expected is decided here rather than by the planner.
+
+Both are notes and neither fails a build. -->
+
+- **R2** — Platform / targets: *(non-functional)* <!-- web, iOS, CLI, service, library, etc. -->
 - Performance / scale:
 - Privacy / security / data handling:
 - Offline / connectivity:
@@ -149,6 +165,26 @@ the criterion to rewrite until you can.
 EVERY §5 REQUIREMENT MUST BE NAMED BY AT LEAST ONE CRITERION HERE. Write the
 back-reference: "**S3** — *(covers R4, R10)* ...". A requirement with no
 criterion is invisible to the acceptance pass, which is the only place the built
-system is compared to the design rather than to a plan. -->
+system is compared to the design rather than to a plan.
 
-- **S1** — *(covers R<n>)* —
+EVERY CRITERION YOU DO NOT MARK **(owner)** BECOMES A SCRIPT: `acceptance/S3.sh`,
+exit 0 for pass, standard output as the evidence.
+`.github/scripts/acceptance-criteria.sh` runs them as a REQUIRED check on every
+pull request, and `acceptance/README.md` says how to write one. That is what
+turns the evidence column of docs/acceptance.md from an agent's sentence about
+itself into a command anyone can run — it was the one place in this whole
+template where narration was admitted as evidence, and it is the last thing you
+read.
+
+So write each unmarked criterion as something a script can decide. "Cold start
+under 2 seconds on the target device" is a script; "feels fast" is not, and
+neither is "the import path is sensible". If you cannot see the script, the
+criterion is not yet written — that is the signal to rewrite it, not to mark it
+(owner) and move on.
+
+The id below is written **S<n>** with the angle brackets on purpose: a literal
+placeholder carries no digit, so the required check does not demand a script for
+a criterion nobody has written yet. Replace it with real ids — S1, S2 — when you
+write them. -->
+
+- **S<n>** — *(covers R<n>)* —

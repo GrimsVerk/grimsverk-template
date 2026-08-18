@@ -18,8 +18,25 @@
 # Optional env:
 #   REVIEW_ENGINE        claude (default) | codex
 #   REVIEW_MODEL         model id for the engine (default: the engine's default)
+#   REVIEW_OUT_DIR       where to write this run's evidence (default
+#                        .claude/review-out). See below.
 #
 # Fails CLOSED: any engine error, or a missing / BLOCK verdict, exits non-zero.
+#
+# THIS GATE USED TO DISCARD ITS OWN WORK. It assembled a payload — a comment
+# inside this file called that payload "an artifact of what the gate was shown"
+# — sent it to a model, printed the reply to a job log nobody opens, and threw
+# both away. So the one gate with no fixtures was also the one gate that left
+# no trace to build fixtures from, and the one judgement in the pipeline nobody
+# could review after the fact.
+#
+# Now both are written to REVIEW_OUT_DIR: `payload.txt` (exactly what the model
+# was shown) and `reply.txt` (exactly what it said), plus `verdict.txt` and
+# `meta.txt`. The workflow uploads them and posts the verdict against the diff
+# it judged; the delivery driver's collect-evidence.sh gathers them at run end
+# into docs/runs/<timestamp>/, committed. Writing them is unconditional and
+# failure to write them is NOT fatal — a gate that fails closed because a disk
+# was full would be worse than one that keeps no records.
 
 set -euo pipefail
 
@@ -279,6 +296,11 @@ $("${HERE}/blind-tests.sh" 2>&1 \
   || echo "!!!!! blind-tests.sh FAILED — no blind-authorship facts were computed.
 This is a broken gate, not an absence of findings. Treat it as blocking.")
 
+$("${HERE}/pr-queue.sh" 2>&1 \
+  || echo "!!!!! pr-queue.sh FAILED — no queue facts were computed.
+This one is a NOTE rather than a gate, so its absence is not blocking on its
+own; say that you did not have it.")
+
 ${TEMPLATE_SYNC_NOTE}
 
 ===== END MECHANICAL FACTS [$NONCE] =====
@@ -327,6 +349,25 @@ esac
 
 PAYLOAD="$(printf '%s\n\n%s\n' "$INSTRUCTION" "$CONTEXT")"
 
+# The evidence. Written BEFORE the engine runs, so a hung or crashed engine
+# still leaves behind what it was asked — which is the half that matters for
+# building fixtures, and the half that was previously lost in exactly that case.
+OUT_DIR="${REVIEW_OUT_DIR:-$ROOT/.claude/review-out}"
+mkdir -p "$OUT_DIR" 2>/dev/null || true
+printf '%s\n' "$PAYLOAD" > "$OUT_DIR/payload.txt" 2>/dev/null || true
+{
+  echo "base:      $BASE_SHA"
+  echo "head:      $HEAD_SHA"
+  echo "branch:    ${HEAD_REF:-(not supplied)}"
+  echo "author:    ${PR_AUTHOR:-(not supplied)}"
+  echo "title:     ${PR_TITLE:-(not supplied)}"
+  echo "engine:    $ENGINE"
+  echo "model:     ${MODEL:-(engine default)}"
+  echo "plan:      ${PLAN_PATH:-(none)}"
+  echo "truncated: $DIFF_TRUNCATED"
+  echo "diff_bytes: $DIFF_BYTES"
+} > "$OUT_DIR/meta.txt" 2>/dev/null || true
+
 set +e
 if [[ "$ENGINE" == "claude" ]]; then
   # claude reads the (large) payload from stdin; codex takes it as an argument.
@@ -342,7 +383,10 @@ echo "----- review agent output -----"
 printf '%s\n' "$OUTPUT"
 echo "-------------------------------"
 
+printf '%s\n' "$OUTPUT" > "$OUT_DIR/reply.txt" 2>/dev/null || true
+
 if [[ "$rc" -ne 0 ]]; then
+  echo "ENGINE_ERROR" > "$OUT_DIR/verdict.txt" 2>/dev/null || true
   echo "review: engine '$ENGINE' exited non-zero ($rc) — failing closed" >&2
   exit 1
 fi
@@ -357,14 +401,17 @@ LAST_LINE="$(printf '%s\n' "$OUTPUT" | sed -e 's/[[:space:]]*$//' -e '/^$/d' | t
 
 case "$LAST_LINE" in
   "REVIEW_VERDICT: PASS")
+    echo "PASS" > "$OUT_DIR/verdict.txt" 2>/dev/null || true
     echo "review: PASS"
     exit 0
     ;;
   "REVIEW_VERDICT: BLOCK")
+    echo "BLOCK" > "$OUT_DIR/verdict.txt" 2>/dev/null || true
     echo "review: BLOCK — see findings above" >&2
     exit 1
     ;;
   *)
+    echo "NO_VERDICT" > "$OUT_DIR/verdict.txt" 2>/dev/null || true
     echo "review: no verdict on the final line — failing closed." >&2
     echo "review: expected exactly 'REVIEW_VERDICT: PASS' or 'REVIEW_VERDICT: BLOCK'," >&2
     echo "review: got: ${LAST_LINE:-(no output)}" >&2

@@ -360,7 +360,7 @@ least once, and the checks first report at different times:
 | Check | Runs on | First reports after |
 | --- | --- | --- |
 | `checks` (python) / `test` (swift-ios), `secrets` | every push | your first push |
-| `plan`, `template-sync`, `test-the-tests`, `review` | pull requests only | your first **PR** |
+| `plan`, `template-sync`, `test-the-tests`, `acceptance-criteria`, `review` | pull requests only | your first **PR** |
 
 So most of the list cannot be marked required straight after step 4 — the names
 won't be in the dropdown yet. Hence the order:
@@ -450,7 +450,8 @@ would otherwise fail an empty commit that has no plan. Let every check run.
   private repos (the rule simply does not appear), but at one-PR-at-a-time — which
   the orchestration design already enforces — the friction is negligible.
 - **Require status checks to pass** → add `checks` (or `test` for swift-ios),
-  `secrets`, `plan`, `template-sync`, `test-the-tests`, and `review`.
+  `secrets`, `plan`, `template-sync`, `test-the-tests`, `acceptance-criteria`,
+  and `review`.
 - **Do not enable** code scanning, code quality, coverage, or deployment rules.
   No workflow in this template emits those results, so every PR would wait
   forever on a check that never arrives.
