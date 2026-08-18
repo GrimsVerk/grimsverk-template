@@ -440,4 +440,43 @@ expect_rc "an oracle plan citing an unlanded decision fails" 1 $?
 expect_contains "says to land the decision first" "$out" "land the decision first"
 git -C "$R" reset -q --hard HEAD~1
 
+# ------------------------------------------- the optional waiver field
+# The ONE thing written in this ledger that changes what another gate does:
+# acceptance-criteria.sh skips a criterion a landed decision waives. It exists
+# because a ruling of "met by other means" would otherwise unblock nothing —
+# the criterion's script still exits non-zero, so every later pull request
+# stays red. Two rules keep it an exception rather than a hole.
+{ decision 30 "ESC-1" "(none)"
+  echo "- **Criterion waived:** S3 — the built system satisfies this through the cache layer, which the script cannot observe from outside"
+} >> "$R/docs/DESIGN.oracle.md"
+commit "Waive S3 with reasoning"
+expect_rc "a waiver naming a criterion and saying why passes" 0 "$(run >/dev/null; echo $?)"
+git -C "$R" reset -q --hard HEAD~1
+
+# A bare id is the oracle setting aside the OWNER'S definition of done with
+# nothing the owner can disagree with — which is exactly what the "may not mark
+# it passed" limit exists to prevent, arriving through the back door.
+{ decision 31 "ESC-1" "(none)"
+  echo "- **Criterion waived:** S3"
+} >> "$R/docs/DESIGN.oracle.md"
+commit "Waive S3 with no reasoning"
+out="$(run)"
+expect_rc "a waiver with no reasoning fails" 1 $?
+expect_contains "and says what the field is for" "$out" "changes what a gate does"
+git -C "$R" reset -q --hard HEAD~1
+
+# A field that waives nothing while reading as though it did.
+{ decision 32 "ESC-1" "(none)"
+  echo "- **Criterion waived:** the acceptance stuff is not really measurable here"
+} >> "$R/docs/DESIGN.oracle.md"
+commit "Waive nothing in particular"
+out="$(run)"
+expect_rc "a waiver naming no criterion fails" 1 $?
+expect_contains "and asks for an id" "$out" "naming no criterion"
+git -C "$R" reset -q --hard HEAD~1
+
+# And the field is OPTIONAL — the overwhelming majority of decisions waive
+# nothing, and requiring it would turn every ruling into a criterion override.
+expect_rc "a decision with no waiver field is still well-formed" 0 "$(run >/dev/null; echo $?)"
+
 summary

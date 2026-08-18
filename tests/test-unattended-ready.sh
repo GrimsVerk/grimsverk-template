@@ -86,7 +86,8 @@ ready_env() {
     {"type": "pull_request", "parameters": {"required_approving_review_count": 0}},
     {"type": "required_status_checks", "parameters": {"required_status_checks": [
       {"context": "checks"}, {"context": "secrets"}, {"context": "plan"},
-      {"context": "template-sync"}, {"context": "test-the-tests"}, {"context": "review"}
+      {"context": "template-sync"}, {"context": "test-the-tests"},
+      {"context": "acceptance-criteria"}, {"context": "review"}
     ]}}]}'
   STUB_SECRETS=$'CLAUDE_CODE_OAUTH_TOKEN\nTEMPLATE_TOKEN\nAPP_ID\nAPP_PRIVATE_KEY'
   STUB_CO_ERRORS="0"

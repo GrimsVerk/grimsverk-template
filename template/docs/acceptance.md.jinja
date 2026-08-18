@@ -16,10 +16,34 @@ For each criterion, record what was actually observed, not what should follow
 from the code. `AGENTS.md` applies in full here: never claim something is
 verified in an environment where it could not be observed.
 
+**An `agent` row is a script, not a sentence.** Every criterion §13 does not
+mark `(owner)` has one at `acceptance/S<n>.sh` — exit 0 is pass, standard output
+is the evidence — and `.github/scripts/acceptance-criteria.sh` runs them as a
+required check on **every** pull request, not once here.
+
+That is the whole reason this file changed shape. Its evidence used to be
+narration: *"I ran X and it printed Y."* Everywhere else this template separates
+computed facts from judged verdicts; this was the one place narration was
+admitted as evidence, and it is the last thing the owner reads. The check now
+refuses a row marked `pass / agent` with no script behind it — a pass an agent
+claims is a pass somebody else can re-run, or it is narration.
+
+Running them per pull request rather than only here is deliberate: a criterion
+verified once and trusted thereafter is exactly the "verified once, trusted
+forever" shape this template distrusts everywhere else.
+
+**A failing criterion is not a stop.** File it as a `BL-<n>` in
+`docs/BACKLOG.md`, record the row as `fail` with the script's real output, and
+let the oracle rule — the test may be wrong, the implementation may be wrong, or
+the criterion may be met in a way the script does not recognise. In that last
+case the oracle records a waiver in `docs/DESIGN.oracle.md` and **the row here
+stays `pending / owner`**. The oracle may not mark a criterion passed; that is
+the owner's.
+
 The **Verified by** column is the one that matters. Split it honestly:
 
-- `agent` — checked by running something and reading real output. Cite the
-  command and what it printed.
+- `agent` — checked by running `acceptance/S<n>.sh` and reading its real output.
+  Cite the script and what it printed.
 - `owner` — needs real hardware, real users, real data, or a judgement call. An
   agent **must not** fill these in. Write exactly what the owner should run or
   look at, then leave the status `pending` until they report back.
@@ -50,7 +74,7 @@ its id, and this table is the only place that claim meets the built system.
 
 | Criterion | Status | Verified by | Evidence |
 | --- | --- | --- | --- |
-| _S1_ | _pass / fail / pending_ | _agent / owner_ | _what was run, and what it printed_ |
+| _S<n>_ | _pass / fail / pending_ | _agent / owner_ | _the script that was run, and what it printed_ |
 
 <!-- Replace the row above with one per success criterion. Keep the id column
 matching docs/DESIGN.md §13 exactly — that pairing is the whole point. -->

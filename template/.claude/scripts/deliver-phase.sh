@@ -36,9 +36,15 @@
 #                                     plan the next milestone
 #   PHASE=ORCHESTRATE SLUG=<slug>     a merged plan with no merged feat/ pull
 #                                     request — build it
-#   PHASE=ACCEPTANCE                  everything planned and merged — check
+#   PHASE=ACCEPTANCE [CRITERIA=<S ids>]
+#                                     everything planned and merged — check
 #                                     the built system against the design's
-#                                     success criteria
+#                                     success criteria. CRITERIA lists the
+#                                     scripted criteria failing right now, as
+#                                     information for the acceptance session;
+#                                     the route out of a failing one is the
+#                                     ORACLE phase, reached because the
+#                                     acceptance pass files it as a BL-<n>
 #   PHASE=SETUP REASON=<text>         coverage.sh rc 2: no design, or a design
 #                                     without ids. /design is interactive and
 #                                     owner-landed; no loop can do it
@@ -49,7 +55,7 @@
 #                   read and explicitly declined to act on — the driver records
 #                   these from the handoff so the loop cannot thrash re-running
 #                   the oracle over evidence it already dismissed
-#   BACKLOG, LEDGER, ORACLE_DOC, PLANS_DIR   the usual overrides
+#   BACKLOG, LEDGER, ORACLE_DOC, PLANS_DIR, ACCEPTANCE_DIR   the usual overrides
 
 # No -e: this file is greps all the way down, and under errexit a grep that
 # legitimately matches nothing aborts the whole detection mid-phase. Failures
@@ -61,6 +67,7 @@ BACKLOG="${BACKLOG:-docs/BACKLOG.md}"
 LEDGER="${LEDGER:-docs/escapes.md}"
 ORACLE_DOC="${ORACLE_DOC:-docs/DESIGN.oracle.md}"
 PLANS_DIR="${PLANS_DIR:-docs/plans}"
+ACCEPTANCE_DIR="${ACCEPTANCE_DIR:-acceptance}"
 PROCESSED_FILE="${PROCESSED_FILE:-}"
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" \
@@ -223,4 +230,21 @@ while IFS= read -r f; do
 done < <(find "$PLANS_DIR" -name '*.md' 2>/dev/null | sort)
 
 # ---------------------------------------------------------------- 6. done
+# ...and say which scripted success criteria are currently failing, so the
+# acceptance session is told what it is walking into rather than discovering it.
+#
+# Reported, never branched on. A failing criterion does not become its own
+# phase: the route out of one is the ORACLE phase above, reached because the
+# acceptance pass FILES the failure as a BL-<n>. Making it a phase here would
+# put the loop in charge of deciding a criterion is unmeetable, which is exactly
+# the judgement docs/acceptance.md exists to keep away from the pipeline.
 echo "PHASE=ACCEPTANCE"
+FAILING=""
+if [[ -d "$ACCEPTANCE_DIR" ]]; then
+  while IFS= read -r s; do
+    [[ -z "$s" ]] && continue
+    bash "$s" >/dev/null 2>&1 || FAILING="$FAILING $(basename "$s" .sh)"
+  done < <(find "$ACCEPTANCE_DIR" -maxdepth 1 -name 'S[0-9]*.sh' 2>/dev/null | sort)
+fi
+[[ -n "${FAILING# }" ]] && echo "CRITERIA=${FAILING# }"
+exit 0

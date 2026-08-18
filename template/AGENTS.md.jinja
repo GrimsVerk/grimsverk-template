@@ -338,6 +338,12 @@ required checks go green. Four of them, three mechanical and one judgment:
   prefixed `chore/` or `docs/` are exempt.
 - **`test-the-tests`** — reverts this PR's implementation, keeps its new tests,
   and fails if the suite still passes.
+- **`acceptance-criteria`** — runs every success criterion `docs/DESIGN.md` §13
+  does not mark **(owner)**, as a script under `acceptance/`. On every pull
+  request, not once at the acceptance pass: a criterion verified once and
+  trusted thereafter is the "verified once, trusted forever" shape this file
+  distrusts everywhere else. A failing one is routed to the oracle rather than
+  argued with — see `acceptance/README.md`.
 - **review** (`.github/workflows/review.yml`) — an independent read-only LLM
   reviewing the diff against this file, both design documents, the plan, and the
   mechanical facts CI computed, with fresh context. A different model than the

@@ -263,6 +263,71 @@ jobs:
           HEAD_REF="$GITHUB_HEAD_REF" \
           .github/scripts/template-sync.sh
 
+  # The success criteria, as scripts that run.
+  #
+  # docs/acceptance.md is the ONE artifact in an unattended run whose pull
+  # request requires the owner's review, and until this job existed its evidence
+  # was an agent's narration — "I ran X and it printed Y." Everywhere else this
+  # template separates computed facts from judged verdicts; that table was the
+  # one place narration was admitted as evidence, and it is the last thing the
+  # owner reads. Every criterion docs/DESIGN.md §13 does not mark (owner) is
+  # acceptance/S<n>.sh, and this runs them.
+  #
+  # ON EVERY PULL REQUEST rather than once at the acceptance pass, which is the
+  # point: a criterion verified once and trusted thereafter is the "verified
+  # once, trusted forever" shape this template distrusts everywhere else, and
+  # one that regressed three merges later would be caught by nothing until the
+  # next acceptance pass — which may be the last one.
+  #
+  # A SEPARATE JOB rather than a step in `plan`, for two reasons. These scripts
+  # exercise the BUILT SYSTEM, so they need the project's toolchain installed,
+  # which the text-matching `plan` job deliberately does not have. And a red
+  # `acceptance-criteria` should read as "a success criterion is not met", never
+  # as "the plan wiring is broken" — the same reason `plan` and `review` are
+  # kept apart.
+  #
+  # The scripts are deliberately NOT CODEOWNERS-owned, on the owner's ruling: a
+  # feature that depends on another would block waiting for a review, and a
+  # failing criterion is diagnostic information the loop should act on rather
+  # than a door it waits at. §13 IS owned, so the SET of criteria stays the
+  # owner's even though the scripts are not.
+  acceptance-criteria:
+    if: github.event_name == 'pull_request'
+{%- if language == 'python' %}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+{%- else %}
+    # macOS, and it is not free: a criterion script for an iOS app exercises a
+    # built app, which needs Xcode. The cheaper option — run them on ubuntu and
+    # let every script that touches the app fail — would make this check report
+    # on the runner rather than on the software.
+    runs-on: macos-15
+    timeout-minutes: 45
+{%- endif %}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: §13, the acceptance table and the landed waivers are
+          # all read at the merge base, never from this pull request's own copy.
+          fetch-depth: 0
+{%- if language == 'python' %}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+{%- else %}
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+{%- endif %}
+      - name: Every scripted success criterion still holds
+        # Exits 0 with nothing to say on a project whose design has no criteria
+        # yet, rather than being skipped with an `if:` — a skipped job counts as
+        # PASSING for a required check, which is the failure mode ci.yml already
+        # takes care to avoid twice above.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            .github/scripts/acceptance-criteria.sh
+
   # Secret scanning belongs in CI, not only in a local hook. gitleaks runs in
   # pre-commit too, but pre-commit requires `pre-commit install` on every clone
   # — an agent working in a fresh worktree, or anyone who skipped that step,

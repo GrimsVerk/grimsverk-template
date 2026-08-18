@@ -67,7 +67,7 @@ for lang in python swift-ios; do
   # workflow leaves a required check that never reports — every PR waits forever
   # on something that cannot arrive.
   ci="$out/.github/workflows/ci.yml"
-  for job in plan template-sync secrets test-the-tests; do
+  for job in plan template-sync secrets test-the-tests acceptance-criteria; do
     if grep -qE "^  ${job}:" "$ci" 2>/dev/null; then ok "$lang ci.yml defines '$job'"
     else no "$lang ci.yml defines '$job'"; fi
   done

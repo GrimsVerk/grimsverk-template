@@ -89,7 +89,7 @@ expect_contains "force pushes are blocked" "$rs" '"type": "non_fast_forward"'
 expect_contains "deletions are blocked" "$rs" '"type": "deletion"'
 expect_not_contains "linear history is NOT required — it breaks 'git revert -m 1'" \
   "$rs" "linear_history"
-for ctx in checks secrets plan template-sync test-the-tests review; do
+for ctx in checks secrets plan template-sync test-the-tests acceptance-criteria review; do
   expect_contains "ruleset requires '$ctx'" "$rs" "\"context\": \"$ctx\""
 done
 

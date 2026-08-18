@@ -149,6 +149,26 @@ the criterion to rewrite until you can.
 EVERY §5 REQUIREMENT MUST BE NAMED BY AT LEAST ONE CRITERION HERE. Write the
 back-reference: "**S3** — *(covers R4, R10)* ...". A requirement with no
 criterion is invisible to the acceptance pass, which is the only place the built
-system is compared to the design rather than to a plan. -->
+system is compared to the design rather than to a plan.
 
-- **S1** — *(covers R<n>)* —
+EVERY CRITERION YOU DO NOT MARK **(owner)** BECOMES A SCRIPT: `acceptance/S3.sh`,
+exit 0 for pass, standard output as the evidence.
+`.github/scripts/acceptance-criteria.sh` runs them as a REQUIRED check on every
+pull request, and `acceptance/README.md` says how to write one. That is what
+turns the evidence column of docs/acceptance.md from an agent's sentence about
+itself into a command anyone can run — it was the one place in this whole
+template where narration was admitted as evidence, and it is the last thing you
+read.
+
+So write each unmarked criterion as something a script can decide. "Cold start
+under 2 seconds on the target device" is a script; "feels fast" is not, and
+neither is "the import path is sensible". If you cannot see the script, the
+criterion is not yet written — that is the signal to rewrite it, not to mark it
+(owner) and move on.
+
+The id below is written **S<n>** with the angle brackets on purpose: a literal
+placeholder carries no digit, so the required check does not demand a script for
+a criterion nobody has written yet. Replace it with real ids — S1, S2 — when you
+write them. -->
+
+- **S<n>** — *(covers R<n>)* —

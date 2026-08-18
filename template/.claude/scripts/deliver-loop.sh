@@ -530,11 +530,13 @@ while :; do
 
   # What next? Recomputed from the world, never remembered.
   PHASE=""; PR=""; HEADREF=""; UNRULED=""; UNCITED=""; ODS=""; REQS=""; SLUG=""; REASON=""
+  CRITERIA=""
   while IFS='=' read -r k v; do
     case "$k" in
       PHASE) PHASE="$v" ;; PR) PR="$v" ;; HEADREF) HEADREF="$v" ;;
       UNRULED) UNRULED="$v" ;; UNCITED) UNCITED="$v" ;; ODS) ODS="$v" ;;
       REQS) REQS="$v" ;; SLUG) SLUG="$v" ;; REASON) REASON="$v" ;;
+      CRITERIA) CRITERIA="$v" ;;
     esac
   done < <(GH="$GH" PROCESSED_FILE="$PROCESSED_FILE" "$PHASE_SH")
   [[ -n "$PHASE" ]] || die "phase detection failed"
@@ -542,7 +544,8 @@ while :; do
   if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "PHASE=$PHASE"
     for kv in "PR=$PR" "HEADREF=$HEADREF" "UNRULED=$UNRULED" "UNCITED=$UNCITED" \
-              "ODS=$ODS" "REQS=$REQS" "SLUG=$SLUG" "REASON=$REASON"; do
+              "ODS=$ODS" "REQS=$REQS" "SLUG=$SLUG" "REASON=$REASON" \
+              "CRITERIA=$CRITERIA"; do
       [[ -n "${kv#*=}" ]] && echo "$kv"
     done
     exit 0
@@ -609,7 +612,7 @@ uncertainties that block it)." \
         exit 0
       fi
       ACC_BEFORE="$(git rev-parse -q --verify "HEAD:docs/acceptance.md" 2>/dev/null || echo none)"
-      if run_session "acceptance" "/deliver — run ONLY step 6, the acceptance pass: check the built system against docs/DESIGN.md §13, record evidence per criterion in docs/acceptance.md, mark owner-only criteria pending with exactly what the owner should run. Land it on a docs/ branch and open the pull request."; then
+      if run_session "acceptance" "/deliver — run ONLY step 6, the acceptance pass: check the built system against docs/DESIGN.md §13, record evidence per criterion in docs/acceptance.md, mark owner-only criteria pending with exactly what the owner should run. Every criterion §13 does NOT mark (owner) is a script at acceptance/S<n>.sh — write it, run it, and cite its real output; the required check .github/scripts/acceptance-criteria.sh runs them on every pull request from then on.${CRITERIA:+ Scripts failing right now: $CRITERIA.} A failing criterion is recorded as fail AND filed as a BL-<n> under 'Uncertainties awaiting oracle ruling' in docs/BACKLOG.md, so the oracle can rule on it — never reclassified as (owner) and never quietly passed. Land it on a docs/ branch and open the pull request."; then
         ACC_AFTER="$(git rev-parse -q --verify "HEAD:docs/acceptance.md" 2>/dev/null || echo none)"
         if [[ "$ACC_AFTER" != "$ACC_BEFORE" ]] || [[ -n "$(git status --porcelain -- docs/acceptance.md)" ]]; then
           touch "$STATE_DIR/acceptance-dispatched"

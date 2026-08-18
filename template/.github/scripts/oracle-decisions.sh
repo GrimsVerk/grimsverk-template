@@ -39,6 +39,10 @@
 #    vision statement produced it and edit THAT, rather than guessing which of
 #    ten sentences was doing the work.
 #
+#    One OPTIONAL field, `Criterion waived`, is checked too — it is the only
+#    thing in this ledger that changes what another gate does, so it must name
+#    a criterion and carry a reason. See the block around it.
+#
 # 4. A CAP. 150 decisions. Not a real bound — a runaway-loop backstop.
 #
 # Two smaller duties over the artifacts around the ledger:
@@ -293,6 +297,44 @@ steering lever — they are told that editing the sentence changes what comes
 next — so a sentence they never wrote makes the lever a decoration."
         done
       fi
+    fi
+  fi
+
+  # An OPTIONAL eighth field, and the only one that changes what a gate does:
+  #
+  #     - **Criterion waived:** S3 — <why the test does not recognise what was built>
+  #
+  # acceptance-criteria.sh reads landed waivers at the base commit and skips
+  # that criterion. It exists because the owner found the hole in the first
+  # version of this arrangement: a criterion the oracle ruled "met by other
+  # means" still exits non-zero, so every later pull request would stay red and
+  # the ruling would have unblocked nothing.
+  #
+  # It is an exception rather than a hole because it NAMES A CRITERION AND NEVER
+  # THE CHECK — a waiver on S3 leaves S4 gating — and because it lives here,
+  # where it inherits evidence-citation, immutability and permanence for free.
+  # A future version that let a waiver name a directory, a prefix or a whole run
+  # would be the bypass this design is carefully not.
+  #
+  # Two rules, and both are about the waiver still being an argument:
+  #   - it names at least one S id, or it waives nothing while reading as though
+  #     it did;
+  #   - it says WHY, in more than the id. A bare "- **Criterion waived:** S3"
+  #     is the oracle overruling the owner's definition of done with no
+  #     reasoning the owner can disagree with, which is exactly the shape the
+  #     'may not mark it passed' limit exists to prevent.
+  waived_line="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Criterion waived:\*\*[[:space:]]*//p' | head -1)"
+  if printf '%s\n' "$block" | grep -qF "**Criterion waived:**"; then
+    mapfile -t WAIVED_IDS < <(printf '%s\n' "$waived_line" | grep -oE '\bS[0-9]+\b' | sort -u)
+    if [[ ${#WAIVED_IDS[@]} -eq 0 ]]; then
+      fail "$id has a **Criterion waived:** field naming no criterion — write ids as S<n>, or drop the field"
+    fi
+    rest="$waived_line"
+    for w in "${WAIVED_IDS[@]:-}"; do rest="${rest//$w/}"; done
+    rest="$(printf '%s' "$rest" | tr -cd '[:alnum:]')"
+    if [[ "${#rest}" -lt 20 ]]; then
+      fail "$id waives ${WAIVED_IDS[*]:-a criterion} with no reasoning — a waiver is the one field here that changes what a gate does, and the owner reading it has to be able to disagree with something. Say what the criterion's script does not recognise about what was built."
     fi
   fi
 
