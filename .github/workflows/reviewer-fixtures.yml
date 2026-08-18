@@ -1,0 +1,56 @@
+name: Reviewer fixtures
+
+# The review gate, measured against the traced attacks in
+# docs/reviews/gate-seams/findings.md.
+#
+# NIGHTLY AND ON DEMAND, NEVER PER PULL REQUEST. Two reasons, and both are
+# reasons rather than excuses:
+#
+#   - it costs a model call per fixture, drawn from the same subscription the
+#     workers and the review gate itself run on;
+#   - the gate under test is NONDETERMINISTIC, so this is a measurement to be
+#     read, not a check to be green. Wiring it into the pull-request path would
+#     make it a check people re-run until it passes, which is the exact
+#     toothless-check failure this repository keeps logging.
+#
+# A red result is read, not obeyed. One flip on one fixture is noise; the same
+# fixture flipping across runs is the finding. And a PASS fixture that BLOCKed
+# matters as much as the reverse — that is the failure mode that gets the gate
+# switched off.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 04:17 UTC. Not on the hour: GitHub's scheduler queues heavily at :00 and
+    # a nightly job nobody is waiting for should not join that queue.
+    - cron: "17 4 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reviewer-fixtures
+  cancel-in-progress: false
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    # Twelve fixtures, each a model call over a full review payload.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv tool install copier
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install -g @anthropic-ai/claude-code
+      - name: Judge every fixture
+        env:
+          # The same subscription credential the review gate itself uses. If it
+          # is absent the suite SKIPS rather than failing: a nightly job that
+          # goes red because a secret is unset teaches people to ignore it.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REVIEWER_FIXTURES: "1"
+        run: tests/test-reviewer.sh
