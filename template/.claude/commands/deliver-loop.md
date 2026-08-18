@@ -90,6 +90,30 @@ sleep to wait for CI.
   run bookkeeping (start SHAs, PR count, failure signatures) in your session
   notes, not in files.
 
+## The run leaves evidence behind, and that is your job here
+
+This mode is exactly where a gitignored run log dies: the container is
+reclaimed, so a report that lives only on disk is a report nobody reads. The
+local driver lands one automatically at every stop; **here, you are the driver,
+so you land it.**
+
+At the run's stop, whatever the reason — done, blocked on the owner, a limit
+reached, a pattern of failures, a setup refusal:
+
+1. Write your run report to `docs/runs/<timestamp>/run.md`, using the same
+   timestamp you fixed at run start. It carries what each iteration did, every
+   dispatch and its outcome, which stop ended the run and why, and anything that
+   looked anomalous.
+2. Run `.claude/scripts/collect-evidence.sh --run-dir docs/runs/<timestamp>
+   --since <run start, RFC3339>`. It gathers the review gate's payloads and
+   replies — what the reviewer was shown and what it said — beside the report.
+   The review gate is the only load-bearing gate with no fixtures, and it was
+   also the only one leaving no trace to build fixtures from.
+3. Commit both on a `docs/run-<timestamp>` branch and open the pull request.
+
+**Do this even when the run failed.** A run that ended badly is the one whose
+evidence is worth most, and it is the one a stop-and-report instinct skips.
+
 ## What never changes between the two frontends
 
 One pipeline pull request in flight; the design layer rules (AGENTS.md,

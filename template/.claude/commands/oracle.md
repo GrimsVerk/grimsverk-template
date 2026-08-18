@@ -119,6 +119,26 @@ request requires the owner's review, and their own definition of done is
 adjudicated by them. A waiver names one criterion and never the check: waiving
 `S3` leaves `S4` gating.
 
+## A decision that nothing can observe
+
+**When your decision changes behaviour no existing measurement covers, adding
+the measurement is part of the decision.** Say so in the decision, name what
+would have to be observed, and let the plan that implements it carry the work.
+
+This is the owner's ruling and it is aimed squarely at you:
+
+> if a change is necessary in an unattended run that goes outside or misses
+> built in data collection mechanisms, then new data collection mechanisms need
+> to be added to track the performance of the changes that are downstream of the
+> oracle's ruling.
+
+A ruling whose effect nothing can observe is a ruling nobody can evaluate —
+which is precisely the position the owner is in with respect to you. The
+existing mechanisms are the run report (`docs/runs/<timestamp>/run.md`), the
+review gate's collected payloads and replies beside it, the acceptance criteria
+under `acceptance/`, and the ledgers. Look there before proposing a new one, and
+cite `docs/VISION.md`'s durable-evidence statement when you do propose one.
+
 ## Three rulings that are not yours to revisit
 
 - **Never mark a decision pending.** A pending decision stops work, which is the
