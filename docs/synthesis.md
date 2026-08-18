@@ -555,9 +555,9 @@ refuse.
 4. **H5** — making an inflated plan estimate legible.
 5. **H6** — what `docs/BACKLOG.md`'s "Approved" section means now that it is not
    a gate.
-6. **Whether the missing-App refusal gets a testing override.** Recommendation:
-   no. Attended mode needs no App, and an override on a security control becomes
-   the normal way to run it.
+6. ~~**Whether the missing-App refusal gets a testing override.**~~ **DECIDED
+   2026-08-18: no override** (R16). Attended mode needs no App, and an override
+   on a security control becomes the normal way to run it.
 7. **Should the template repository host its own gates?** Raised 2026-08-18.
    Today the machinery only becomes live once a project is *rendered*, so the
    template's own development is governed by nothing it ships — plans before
@@ -587,6 +587,38 @@ refuse.
    That is what `docs/projects/find_best_mobo/` recorded. It exercises the
    template rather than governing it, and it is the one job a second repository
    genuinely does better. Suggested name: `grimsverk-anvil`.
+
+   **The owner's reason for wanting the second repo was to run UNATTENDED, and
+   that reason does not survive contact with the driver.** `deliver-loop.sh`
+   resolves its own repository root, switches branches and opens pull requests
+   — it runs INSIDE the repository it drives. A second repository cannot drive
+   this one remotely; it would need its own checkout, at which point it is the
+   repository. So unattended work on the template requires the driver in the
+   template, which is self-hosting by another name.
+
+   **The owner's Jinja worry, checked rather than assumed.** All seven files
+   under `template/.claude/commands/` are plain markdown; only the two agent
+   definitions carry Jinja. The 29 `.jinja` files are PRODUCT — an agent editing
+   them is editing source, the way a coder edits `src/`. What an agent reads as
+   rules would be root-level real files, and the root `AGENTS.md` now exists.
+   The residual risk is narrow and real: an agent reading
+   `template/AGENTS.md.jinja` and following those rules instead of the root
+   ones. That is a wording problem, addressed by the root file saying plainly
+   that everything under `template/` is product.
+
+   **The one accommodation that is not cosmetic.** `test-the-tests.sh` picks its
+   implementation and test directories from the presence of `pyproject.toml` or
+   `project.yml`. This repository has neither, so the check would skip on every
+   pull request — meaning blind-test discipline, the thing that makes a coder's
+   tests trustworthy, would not apply to template changes at all. It needs an
+   override naming `template/` as the implementation and `tests/` as the tests,
+   and that should land before any unattended run here.
+
+   **Recommendation: do both, with the roles kept apart.** `grimsverk-template`
+   self-hosts and runs unattended on itself; `grimsverk-anvil` is a real project
+   built with the template. Since there is then no runner repository, the name
+   `anvil` keeps its meaning — it is where work gets hammered, not where the
+   hammer lives.
 
 ---
 
@@ -666,6 +698,11 @@ code path, but also build in a loud failure if the github app does not connect
 properly or does not exist. i will not set up the github app now, so we need the
 reminder when the time comes."* Consequence, accepted knowingly: no unattended
 run is possible until the App exists. Attended mode is unaffected.
+
+**R16 — No testing override on the missing-App refusal.** *"i agree with you, no
+override, it must work, if it doesnt it should get fixed before more stuff is
+done."* Open item 6 is closed by this: the refusal stands unconditionally, and a
+broken identity is the next thing fixed rather than something worked around.
 
 **R15 — Silence means assent.** *"if i say nothing about certain points, that
 means that i agree… if i am arguing or adding info, then those points still need

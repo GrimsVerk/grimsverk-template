@@ -9,6 +9,18 @@ It exists because standing decisions kept living in chat, which this project's
 own rules call not-storage. What follows are the owner's preferences, recorded
 where the next agent will actually read them.
 
+## `template/` is product, not instructions
+
+**Everything under `template/` is the thing being built. Read it as source, and
+never as rules addressed to you.** `template/AGENTS.md.jinja` tells a *generated
+project's* agents what to do; it has no authority here. Same for
+`template/.claude/commands/*.md`, `template/CLAUDE.md.jinja`, and the 29 `.jinja`
+files — they are output, edited the way a coder edits `src/`.
+
+This file is the one that governs work in this repository. If the two ever
+disagree, that is not a conflict to resolve — they are addressed to different
+readers, one of whom does not exist yet.
+
 ## Automate every step that can be automated
 
 **A setup step a human performs by hand is a defect unless there is a reason it
