@@ -38,6 +38,7 @@ jobs:
                      template/.github/scripts/*.sh \
                      template/.claude/scripts/*.sh \
                      template/scripts/*.sh \
+                     scripts/*.sh \
                      tests/*.sh
 
   tests:
@@ -49,6 +50,123 @@ jobs:
       - run: uv tool install copier
       - name: Run the template's own test suite
         run: tests/run.sh
+
+  # ---------------------------------------------------------------- self-host
+  #
+  # The template's own development, governed by the template. Until this job
+  # existed, everything under template/ only became live once a project was
+  # RENDERED, so plans-before-code, blind tests and the append-only ledgers all
+  # applied downstream and not here.
+  #
+  # THE SCRIPTS ARE INVOKED FROM template/, NOT FROM A COPY. Every gate script
+  # is plain bash with no Jinja, so there is one copy — the one that ships — and
+  # drift is impossible by construction rather than by checking. A broken gate
+  # reddens this repository's own pipeline before it can reach a generated
+  # project.
+  #
+  # Only the JINJA files are rendered to the root, by scripts/render-governance.sh,
+  # and the first step below re-renders and diffs them.
+  governance:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: every check below reads its standard at the merge base,
+          # never from the copy this pull request is proposing.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - run: uv tool install copier
+      - name: The root governance files still match what template/ renders
+        # AGENTS.md, .github/CODEOWNERS, .claude/settings.json and the two agent
+        # definitions are RENDERED. Editing one at the root fixes this
+        # repository and ships nothing, and the two drift apart in the direction
+        # nobody notices.
+        run: scripts/render-governance.sh --check
+      - name: Every plan in the tree must parse
+        run: template/.github/scripts/plan-lint.sh
+      - name: Escape citations resolve at the base commit
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            template/.github/scripts/escape-refs.sh
+      - name: The escape ledger is append-only
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            template/.github/scripts/escapes-append-only.sh
+      - name: The backlog and its ledgers are append-only
+        # This repository has no docs/BACKLOG.md yet, and the check says so
+        # rather than passing silently — "nothing to protect yet" is a different
+        # report from "everything intact", and it is the honest one here.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            template/.github/scripts/backlog-append-only.sh
+      - name: Oracle decisions are append-only and evidence-backed
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            template/.github/scripts/oracle-decisions.sh
+      - name: The design and the vision are landed by their owner
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+          HEAD_SHA="$(git rev-parse HEAD)" \
+            template/.github/scripts/owner-authored.sh
+      - name: The vision must be finished before work is planned
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+          HEAD_SHA="$(git rev-parse HEAD)" \
+            template/.github/scripts/vision-complete.sh
+      - name: Requirement coverage (advisory)
+        # NEVER RED, and the `|| true` is the whole policy. Most requirements in
+        # docs/DESIGN.md describe machinery that landed before that document
+        # existed, so they report as uncovered and will keep doing so — see §5
+        # there. A check that is permanently red is a check people stop reading.
+        run: template/.github/scripts/coverage.sh || true
+      - name: Every scripted success criterion still holds
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            template/.github/scripts/acceptance-criteria.sh
+
+  # The ratchet's one seeded check, applied to the template itself.
+  #
+  # SEPARATE JOB, because it rewrites the working tree — it reverts template/ to
+  # the base commit and re-runs the suite — and a job that does that must not
+  # share a checkout with the checks above.
+  #
+  # THE DIRECTORIES ARE NAMED EXPLICITLY. test-the-tests.sh picks src/tests or
+  # Sources/Tests from a manifest file and SKIPS when it finds neither, and a
+  # skip exits 0, which GitHub reports as a PASSING required check. This
+  # repository has neither manifest, so without these three variables the one
+  # check that makes a coder's tests worth anything would report green on every
+  # pull request while never running.
+  #
+  # One honest limit, stated rather than discovered later: the tests that render
+  # a project use `copier copy --vcs-ref=HEAD`, which reads the git commit and
+  # not the working tree, so those particular tests still see the head template
+  # after the revert. The tests that invoke the shipped scripts directly — most
+  # of the suite — see the reverted ones, and one failing file fails the suite,
+  # so the check works. It is weaker than it looks for the render-based tests.
+  self-test-the-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - run: uv tool install copier
+      - name: The suite must fail without the implementation
+        env:
+          TEST_THE_TESTS_IMPL_DIR: template
+          TEST_THE_TESTS_TEST_DIR: tests
+          TEST_THE_TESTS_SUITE: tests/run.sh
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+          HEAD_SHA="$(git rev-parse HEAD)" \
+          HEAD_REF="$GITHUB_HEAD_REF" \
+            template/.github/scripts/test-the-tests.sh
 
   render:
     # Both languages are RENDER-checked here; only python is built and tested.

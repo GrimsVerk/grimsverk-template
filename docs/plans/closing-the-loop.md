@@ -2,7 +2,7 @@
 slug: closing-the-loop
 status: draft
 created: 2026-08-18
-covers: []
+covers: [R3, R8, R9, R10]
 ---
 
 # Closing the loop — the template runs itself, and "done" starts meaning something
