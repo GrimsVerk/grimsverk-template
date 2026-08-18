@@ -14,7 +14,7 @@ decisions taken at the bottom. Nothing here is authorization: as
   seven commits, with `ESC-26` … `ESC-33` recording each defect and the check
   that now names it. The suite is green (19 files; `test-app-token.sh`,
   `test-backlog-append-only.sh` and `test-budget-probe.sh` are new). What
-  remains is the six open items in Part 4 and the live run — see "Where this
+  remains is the open items in Part 4 and the live run — see "Where this
   stands" below.
 - **Covers:** `docs/plans/` (2 plans + 2 context documents) and `docs/reviews/`
   (5 sessions, 14 distinct documents — `testbed-vs-template-report.md` and
@@ -558,6 +558,35 @@ refuse.
 6. **Whether the missing-App refusal gets a testing override.** Recommendation:
    no. Attended mode needs no App, and an override on a security control becomes
    the normal way to run it.
+7. **Should the template repository host its own gates?** Raised 2026-08-18.
+   Today the machinery only becomes live once a project is *rendered*, so the
+   template's own development is governed by nothing it ships — plans before
+   code, the review gate, blind tests and the oracle all apply downstream and
+   not here. The owner proposed a second repository to run the automation
+   against this one.
+
+   My reading, for the discussion rather than as a decision: **the split does
+   not do the job, and self-hosting does.** Gates are per-repository — a pull
+   request here is judged by this repository's CI, so a second repo could open
+   pull requests but could enforce nothing on them, and the gates would have to
+   be installed here anyway. And installing them is cheap, because every script
+   under `template/.github/scripts/` is plain bash with no Jinja: the root CI
+   can invoke the shipped scripts *directly*, so there are no copies to drift
+   and a broken gate reddens the template's own pipeline before it can reach a
+   generated project.
+
+   What it costs, which is the part to weigh: this repository would need its own
+   `docs/DESIGN.md` and `docs/VISION.md` — it has neither, which is itself
+   worth noticing, since nothing currently states what the template is for in a
+   form any check can read — plus a root `CODEOWNERS`, and `R` ids for
+   `coverage.sh` to count. `test-the-tests` would skip for want of a `src/`,
+   which is now visible rather than silent.
+
+   Separately, and often confused with the above: a **proving ground** — a real
+   project built with the template end to end, to find what only real use finds.
+   That is what `docs/projects/find_best_mobo/` recorded. It exercises the
+   template rather than governing it, and it is the one job a second repository
+   genuinely does better. Suggested name: `grimsverk-anvil`.
 
 ---
 
