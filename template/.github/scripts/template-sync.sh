@@ -172,6 +172,84 @@ if [[ "$REPLAYED_TREE" == "$HEAD_TREE" ]]; then
   exit 0
 fi
 
+# ------------------------------------------------- the files copier delegated
+#
+# ESC-14: this check could not pass ANY update that conflicts. It demands a
+# byte-identical tree, and a conflict is precisely the case copier hands back to
+# a human — the replay reproduces the same markers, so the only tree that
+# satisfied the comparison was one committing conflict markers to the default
+# branch. Reported twice from one project, on separate updates. A gate blocking
+# the change it exists to authorise is the shape of ESC-20, ESC-22 and ESC-24.
+#
+# So a file the replay left conflict markers in is EXEMPT from byte-matching,
+# and named in the output. Everything else is still exact.
+#
+# FILE LEVEL, NOT HUNK LEVEL, and that is a deliberate trade rather than an
+# oversight: a hand edit hidden inside a conflicted file still gets through.
+# What replaces the lost precision is the reviewer, who is now told exactly
+# which files carry a hand resolution and therefore which ones to read. Hunk
+# level — comparing only the unconflicted regions of a marked file — is
+# strictly better and materially harder; if a hand edit is ever observed
+# riding in this way, that is an escape and the ratchet asks for it.
+#
+# The markers are copier's own inline-conflict output, which is git's format.
+# A file the TEMPLATE legitimately ships containing those tokens would be
+# exempted wrongly; no such file exists in this template, and one would be a
+# strange thing to ship.
+mapfile -t CONFLICTED < <(
+  git -C "$WORKTREE" grep -lE '^<<<<<<< ' -- . 2>/dev/null | sort -u || true
+)
+
+if [[ ${#CONFLICTED[@]} -gt 0 ]]; then
+  # Compare every path EXCEPT those, by diffing the two trees and dropping the
+  # exempt paths from the result. An empty remainder means the pull request
+  # matches the replay everywhere copier did not delegate.
+  mapfile -t DIFFERING < <(
+    git -C "$ROOT" diff --name-only "$REPLAYED_TREE" "$HEAD_TREE" || true
+  )
+  declare -a UNEXPLAINED=()
+  for path in "${DIFFERING[@]:-}"; do
+    [[ -z "$path" ]] && continue
+    exempt=0
+    for c in "${CONFLICTED[@]}"; do [[ "$c" == "$path" ]] && exempt=1 && break; done
+    [[ "$exempt" -eq 1 ]] || UNEXPLAINED+=("$path")
+  done
+
+  if [[ ${#UNEXPLAINED[@]} -eq 0 ]]; then
+    echo "template-sync: PASS — the diff is \`copier update\` to ${TARGET_REF}, with"
+    echo "template-sync: ${#CONFLICTED[@]} file(s) copier could not merge and handed to a human:"
+    printf 'template-sync:   %s\n' "${CONFLICTED[@]}"
+    cat <<MSG
+template-sync:
+template-sync: Those files are EXEMPT from the byte-for-byte comparison, because
+template-sync: the replay left conflict markers in them and the only tree that
+template-sync: would otherwise pass is one committing markers to the default
+template-sync: branch. Every other path matches the replay exactly.
+template-sync:
+template-sync: THE EXEMPTION IS FILE-WIDE. A hand edit inside one of those files
+template-sync: is not detected here — read them.
+MSG
+    exit 0
+  fi
+
+  echo "template-sync: FAIL — this pull request is not a pure template sync." >&2
+  echo >&2
+  echo "copier could not merge these files and handed them to a human, so they" >&2
+  echo "are exempt from the comparison:" >&2
+  printf '  %s\n' "${CONFLICTED[@]}" >&2
+  echo >&2
+  echo "But these differ from the replay and copier did NOT delegate them:" >&2
+  printf '  %s\n' "${UNEXPLAINED[@]}" >&2
+  echo >&2
+  cat >&2 <<'EOF'
+A conflict resolution explains a difference in a conflicted file. It does not
+explain a difference anywhere else. Rebuild the branch from the template's
+output, resolve only what copier marks, and put any hand change in its own
+later pull request with a plan.
+EOF
+  exit 1
+fi
+
 echo "template-sync: FAIL — this pull request is not a pure template sync." >&2
 echo >&2
 echo "Replaying the update from the base commit produced a different tree." >&2

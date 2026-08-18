@@ -75,7 +75,7 @@ jobs:
         run: |
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
             .github/scripts/escape-refs.sh
-      - name: The escape ledger is append-only
+      - name: The escape ledgers are append-only
         # docs/escapes.md has said "never rewrite an entry" since it existed,
         # and the oracle ledger gets that promise ENFORCED — the asymmetry was
         # ESC-15. The escape ledger is the oracle's other evidence source, and
@@ -83,6 +83,13 @@ jobs:
         # decision's citation means. Corrections still pass: a correction is an
         # APPENDED row repeating the id, which is the file's own documented
         # lifecycle.
+        #
+        # It covers docs/escapes.done.md too, which records which escapes are
+        # FINISHED. An append-only ledger cannot be edited to mark something
+        # done, so that fact needed its own file — the same reason the backlog
+        # has a done-log. A row there makes the delivery driver stop handing the
+        # escape to the oracle, so the check additionally requires every closure
+        # to name a path that exists: "closed, it is fine now" is refused.
         run: |
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
             .github/scripts/escapes-append-only.sh

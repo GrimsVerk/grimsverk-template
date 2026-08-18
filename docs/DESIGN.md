@@ -79,7 +79,7 @@ estimates are measured rather than forecast. Coverage now reports 16/16.
 
 It is still a report rather than a gate. What it *is* load-bearing for is the
 delivery driver, which reads an uncovered requirement as work to plan — see §11
-for the one thing that still blocks a run here.
+for where that now stands.
 
 **Functional**
 
@@ -221,27 +221,19 @@ their language toolchain. Nothing else, deliberately.
   as much as its verdict stability, which is unmeasured.
 - **Committed run evidence grows without bound** until a retention rule exists.
   The owner has accepted that risk deliberately (V8).
-- **The delivery driver cannot be pointed at this repository yet, and one thing
-  is left.** Coverage is settled — `docs/plans/template-foundations.md` covers
-  the twelve requirements that landed before this document existed. What remains
-  is the other half of the same reading: `.claude/scripts/deliver-phase.sh` calls
-  a plan BUILT when a merged `feat/<slug>` branch exists, and no such branch will
-  ever exist for a retrospective plan, so once the phases ahead of it clear the
-  detector emits `PHASE=ORCHESTRATE SLUG=template-foundations` and commissions an
-  orchestrator to build what is already here. The smallest honest fix is for the
-  detector to treat `status: merged` as built, which is what the field already
-  means; that is a change to shipped behaviour and so the owner's to rule on.
-  Ahead of it sits a second, older precondition: run the detector here today and
-  it answers `PHASE=ORACLE` over thirty-four uncited escape ids, because this
-  repository has kept that ledger since long before the oracle existed. Neither
-  is a defect in the machinery; both are what self-hosting a design layer onto an
-  existing repository actually costs. Until both are ruled on, do not start the
-  driver here. Slice 3 of `docs/plans/closing-the-loop.md` makes an
-  unattended run here *possible*; it does not make it correct to start one.
-
-## 12. Milestones / phasing
-
-**MVP** *(landed)*
+- **The delivery driver's first two answers are now correct, and what remains is
+  not code.** `docs/plans/template-foundations.md` settled coverage;
+  `docs/escapes.done.md` settled the oracle's evidence, dropping it from
+  thirty-four ids to two; and `deliver-phase.sh` now reads a plan's
+  `status: merged` rather than demanding a `feat/<slug>` branch that will never
+  exist for a retrospective record. Run the detector here today and it answers
+  `PHASE=ORACLE` over exactly `ESC-21` and `ESC-26` — the two escapes that are
+  built and have never been observed working. **Neither closes without a real
+  run**: ESC-21 needs a merge where a branch actually disappears, ESC-26 needs a
+  GitHub App that does not exist. `unattended-ready.sh` refuses without the App
+  regardless, which is the owner's ruling working rather than a defect. So the
+  remaining preconditions are an App and one watched run, not a change to any
+  file.
 - Scope: render a project with live gates, a plan discipline, blind tests, a
   review gate, and append-only ledgers.
 - Acceptance criteria: S1–S3, S5, S11–S12.

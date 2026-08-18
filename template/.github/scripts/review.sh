@@ -296,6 +296,11 @@ $("${HERE}/blind-tests.sh" 2>&1 \
   || echo "!!!!! blind-tests.sh FAILED — no blind-authorship facts were computed.
 This is a broken gate, not an absence of findings. Treat it as blocking.")
 
+$("${HERE}/pr-queue.sh" 2>&1 \
+  || echo "!!!!! pr-queue.sh FAILED — no queue facts were computed.
+This one is a NOTE rather than a gate, so its absence is not blocking on its
+own; say that you did not have it.")
+
 ${TEMPLATE_SYNC_NOTE}
 
 ===== END MECHANICAL FACTS [$NONCE] =====

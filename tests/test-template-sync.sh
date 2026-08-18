@@ -233,4 +233,55 @@ else
   no "the real template generates"
 fi
 
+# ==================== a conflicted update can land (ESC-14) ====================
+#
+# The defect: this check demanded a byte-identical tree, and a conflict is
+# exactly the case copier hands back to a human. The replay reproduces the same
+# markers, so the ONLY tree that satisfied the comparison was one committing
+# conflict markers to the default branch. Reported twice from one project.
+#
+# A real conflict, built rather than simulated: the project edits a
+# template-owned file, then the template edits the same file.
+git -C "$PROJ" switch -q main 2>/dev/null || git -C "$PROJ" switch -q master
+git -C "$PROJ" switch -qc conflict-base "$BASE"
+printf 'shared\nthe project changed this line\n' > "$PROJ/shared.txt"
+git -C "$PROJ" commit -qam "The project edits a template-owned file"
+CBASE="$(git -C "$PROJ" rev-parse HEAD)"
+
+printf 'shared\nthe template changed this line\n' > "$TPL/template/shared.txt"
+git -C "$TPL" add -A && git -C "$TPL" commit -qm "v4"
+git -C "$TPL" tag v4.0.0
+
+git -C "$PROJ" switch -qc template/v4.0.0
+( cd "$PROJ" && copier update --defaults --trust --quiet --vcs-ref v4.0.0 >/dev/null 2>&1 || true )
+git -C "$PROJ" add -A && git -C "$PROJ" commit -qm "Update from template v4.0.0" >/dev/null 2>&1 || true
+
+run_conflict() { ( cd "$PROJ" && BASE_SHA="$CBASE" HEAD_SHA="$(git rev-parse HEAD)" \
+  HEAD_REF="template/v4.0.0" bash "$SCRIPT" 2>&1 ); }
+
+if grep -q '^<<<<<<< ' "$PROJ/shared.txt" 2>/dev/null; then
+  ok "copier produced a real conflict to test against"
+
+  # Resolving it is what a human does, and it is what used to be impossible:
+  # before the fix the only passing tree was one with the markers still in it.
+  printf 'shared\nthe template changed this line\n' > "$PROJ/shared.txt"
+  git -C "$PROJ" commit -qam "Resolve the conflict"
+  out="$(run_conflict)"
+  expect_rc "a resolved conflict passes" 0 $?
+  expect_contains "and the file copier delegated is named" "$out" "shared.txt"
+  expect_contains "and the exemption's limit is stated" "$out" "EXEMPTION IS FILE-WIDE"
+
+  # The exemption is per FILE and explains nothing outside it. This is the line
+  # that keeps a conflict from becoming cover for whatever else rode along.
+  echo "an unrelated hand edit" >> "$PROJ/greeting.txt"
+  git -C "$PROJ" commit -qam "Sneak a change in alongside the resolution"
+  out="$(run_conflict)"
+  expect_rc "a hand edit outside the conflicted file still fails" 1 $?
+  expect_contains "names the unexplained file" "$out" "greeting.txt"
+  expect_contains "and says a resolution does not explain it" "$out" "does not"
+  expect_contains "while still listing what copier did delegate" "$out" "shared.txt"
+else
+  echo "  SKIP  this copier build did not produce inline conflict markers"
+fi
+
 summary

@@ -98,6 +98,13 @@ jobs:
           # commit. Collected at run end into docs/runs/ by
           # .claude/scripts/collect-evidence.sh.
           REVIEW_OUT_DIR: ${{ github.workspace }}/.review-out
+          # The queue fact (.github/scripts/pr-queue.sh, ESC-17): what else this
+          # author has open, and how much of it is red. Needs a token to list
+          # pull requests and this pull request's own number so it can leave
+          # itself out. Absent, the fact says it was not computed rather than
+          # reporting an empty queue.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: .github/scripts/review.sh
 
       # `always()`: the evidence is most valuable when the gate BLOCKED or died,

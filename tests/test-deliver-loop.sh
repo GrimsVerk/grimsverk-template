@@ -394,7 +394,14 @@ out="$(raw_loop)"
 expect_rc "no gauge and no limit refuses to start" 2 $?
 expect_contains "and says nothing would stop it" "$out" "nothing would ever stop this run"
 expect_contains "and names the countable limits" "$out" "--max-prs"
-expect_not_contains "and invents no allowance of its own" "$out" "25"
+# The number 25 was the invented default this replaced. Asserted as "25 points"
+# rather than as a bare "25": the driver now prints a timestamped run directory
+# on every stop, so a bare substring makes this assertion fail whenever the
+# clock happens to read 25 seconds or minutes past. A time-dependent test is a
+# test that is wrong twice an hour and right the rest of the time, which is
+# worse than no test — it teaches people to re-run rather than read.
+expect_not_contains "and invents no allowance of its own" "$out" "25 points"
+expect_not_contains "nor any other allowance it chose itself" "$out" "allowance 2"
 
 # With a gauge but no allowance, the question is the other one — a percentage of
 # the weekly window, which is the limit the owner actually specified.
@@ -503,5 +510,75 @@ out="$(run_loop STUB_MERGED_REFS="$BUILT" STUB_ACCEPT_RC=0 \
 expect_not_contains "a marker from a previous run does not end this one" \
   "$out" "acceptance recorded and nothing is open"
 rm -rf "$R/.worktrees"
+
+# ---------------------------- the detector reads what the repository knows
+# Two facts sit in git that the detector used to ignore, and it consulted a
+# gitignored file and a branch name instead. Both gaps had the same shape: the
+# same repository gave different answers depending on where the driver ran.
+git -C "$R" switch -q main 2>/dev/null || true
+
+# (a) An escape CLOSED in docs/escapes.done.md is finished, and the oracle is
+# not handed it again. Before this, the detector read the id and never the row,
+# so a project with any history handed the oracle everything it ever logged —
+# including defects fixed months earlier with a demonstrated check.
+cat > "$R/docs/escapes.md" <<'EOF'
+# Escapes
+
+| Id | Date | What escaped | Gate | Check added |
+| --- | --- | --- | --- | --- |
+| ESC-1 | 2026-08-15 | a check reported green by not running | CI | `tests/a.sh` |
+| ESC-2 | 2026-08-16 | still open, nobody has ruled | none existed | unverified — pending: something |
+EOF
+out="$(run_phase)"
+expect_contains "an unclosed escape still reaches the oracle" "$out" "ESC-1"
+
+cat > "$R/docs/escapes.done.md" <<'EOF'
+# Escapes — closed
+
+| Id | Date | Check that closes it | How it was demonstrated |
+| --- | --- | --- | --- |
+| ESC-1 | 2026-08-17 | `tests/a.sh` | red against the defect, green after |
+EOF
+out="$(run_phase)"
+expect_not_contains "a closed escape is not handed to the oracle again" "$out" "ESC-1"
+expect_contains "and the one still open is" "$out" "ESC-2"
+
+# The point of the file being COMMITTED rather than gitignored: the answer does
+# not depend on which machine the driver runs on.
+out="$( cd "$R" && env PROCESSED_FILE=/nonexistent GH="$WORK/bin/gh" \
+        bash "$PHASE" 2>&1 )"
+expect_not_contains "and the closure holds with no run memory at all" "$out" "ESC-1"
+
+rm -f "$R/docs/escapes.done.md" "$R/docs/escapes.md"
+printf '| Id |\n| --- |\n' > "$R/docs/escapes.md"
+
+# (b) A plan whose front matter says the work landed is BUILT. Without this a
+# retrospective plan — one recording work that shipped before the plan existed —
+# can never be satisfied, because no feat/<slug> branch will ever exist for it,
+# so the detector asks for an orchestrator to rebuild it forever.
+mkdir -p "$R/docs/plans"
+cat > "$R/docs/plans/already-done.md" <<'EOF'
+---
+slug: already-done
+status: draft
+covers: [R1]
+---
+# Already done — Plan
+## Slice 1 — a thing
+- **Files:** `src/x.py`
+- **Estimate:** ~10 lines
+EOF
+out="$(run_phase)"
+expect_contains "a plan with no merged feature branch is orchestrated" "$out" "SLUG=already-done"
+
+sed -i 's/^status: draft$/status: merged/' "$R/docs/plans/already-done.md"
+out="$(run_phase)"
+expect_not_contains "a plan declaring status: merged is not orchestrated again" "$out" "SLUG=already-done"
+
+# And the word means the WORK landed, so nothing else in the vocabulary counts.
+sed -i 's/^status: merged$/status: in-flight/' "$R/docs/plans/already-done.md"
+out="$(run_phase)"
+expect_contains "in-flight is not built" "$out" "SLUG=already-done"
+rm -f "$R/docs/plans/already-done.md"
 
 summary
