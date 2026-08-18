@@ -359,6 +359,30 @@ PYCHK
   if grep -q '^\.claude/deliver-loop/' "$out/.gitignore"
   then ok "$lang gitignores the driver's run state"
   else no "$lang gitignores the driver's run state"; fi
+
+  # WHO OPENS THE PULL REQUEST. The driver's orchestrate and acceptance
+  # sessions used to open their own, under the owner's ambient `gh` auth,
+  # because these two command files could not tell an unattended dispatch from
+  # a human one and had to write prose that was right for both. The marker is
+  # what makes the split sayable, so all three documents must carry it.
+  if says "$orch" "Your prompt says \`UNATTENDED RUN\`"
+  then ok "$lang orchestrate.md splits attended from unattended"
+  else no "$lang orchestrate.md splits attended from unattended"; fi
+  if says "$orch" "Push \`feat/<slug>\` and stop there"
+  then ok "$lang orchestrate.md stops an unattended run at a pushed branch"
+  else no "$lang orchestrate.md stops an unattended run at a pushed branch"; fi
+  if says "$orch" "open **one** pull request for it yourself"
+  then ok "$lang orchestrate.md still opens it when a human is running"
+  else no "$lang orchestrate.md still opens it when a human is running"; fi
+  # The acceptance pull request is the one that is not interchangeable:
+  # docs/acceptance.md is CODEOWNERS-owned, so opening it as the owner produces
+  # the single pull request of the run that they cannot approve.
+  if says "$del" "does not let an author approve their own"
+  then ok "$lang deliver.md gives the reason acceptance must not self-open"
+  else no "$lang deliver.md gives the reason acceptance must not self-open"; fi
+  if says "$out/.claude/commands/deliver-loop.md" "does not let an author approve their own"
+  then ok "$lang deliver-loop.md opens the acceptance pull request itself"
+  else no "$lang deliver-loop.md opens the acceptance pull request itself"; fi
   # ESC-16: the orchestrator looks at its own diff the way the gate will,
   # BEFORE the pull request exists — three of four recent escapes were found
   # by use because nothing looked earlier.

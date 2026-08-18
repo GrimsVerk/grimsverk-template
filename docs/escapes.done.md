@@ -71,3 +71,4 @@ those two rows and this file does not get to flatten it.
 | ESC-32 | 2026-08-18 | `tests/test-budget-probe.sh` | 20 assertions over a probe that had never been run; the weekly window, both limits, and a mid-run rollover |
 | ESC-33 | 2026-08-18 | `tests/test-reviewer.sh`, `tests/reviewer-fixtures/` | twelve fixtures from the traced attacks — eight the gate must block, four it must pass — closing the "nothing tests the reviewer" half this entry left open |
 | ESC-34 | 2026-08-18 | `tests/test-render.sh` | no deny rule uses the `Write(...)` form, which binds to nothing; red against the previous settings |
+| ESC-35 | 2026-08-18 | `tests/test-deliver-loop.sh` | `gh pr create` is absent from the orchestrator's grant and the driver opens both pull requests itself, as the App; red against the previous dispatches, green after |
