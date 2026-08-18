@@ -85,13 +85,26 @@ jobs:
     # last attempt, and a timeout that kills the job mid-ladder turns "waited
     # out a rate limit" back into "failed the check".
     timeout-minutes: 10
+    # The secrets context is NOT available in ANY `if:` — not job level, not step
+    # level. A workflow that references it there does not skip a step: the FILE
+    # FAILS VALIDATION, the run is created with zero jobs, and every job in the
+    # file dies with it, including the two below that have nothing to do with the
+    # App. That is ESC-36, and the reason it survived review is that the comment
+    # which used to sit here stated a wrong rule confidently: it claimed a step
+    # `if:` was being used precisely BECAUSE a job one cannot read secrets. So
+    # the line read as a deliberate workaround rather than as a mistake.
+    #
+    # Secrets ARE allowed in `env:`, and the `env` context IS available in a step
+    # `if:`. So the value is hoisted here and the step tests the hoisted copy.
+    # Same behaviour, valid file.
+    env:
+      APP_ID: ${{ secrets.APP_ID }}
     steps:
       - name: Mint the App token
         # Skipped in repositories where the App is not configured; the arming
-        # step's token fallback chain handles both outcomes. Step-level `if` is
-        # used because the secrets context is not available in job-level `if`.
+        # step's token fallback chain handles both outcomes.
         id: app-token
-        if: ${{ secrets.APP_ID != '' }}
+        if: env.APP_ID != ''
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.APP_ID }}
