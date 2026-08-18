@@ -31,6 +31,10 @@ case "$args" in
     [[ -n "${STUB_OPEN_PR:-}" ]] && echo "$STUB_OPEN_PR" ;;
   "pr list --state merged --limit 200 --json headRefName --jq "*)
     [[ -n "${STUB_MERGED_REFS:-}" ]] && printf '%s\n' "$STUB_MERGED_REFS" ;;
+  "pr list --head "*)
+    # The idempotency probe mechanical_pr() makes before opening: a head ref
+    # that already has an open pull request must not get a second one.
+    [[ -n "${STUB_HEAD_PR:-}" ]] && echo "$STUB_HEAD_PR" ;;
   "pr checks "*"--watch"*)
     exit "${STUB_CHECKS_RC:-0}" ;;
   "pr checks "*)
@@ -41,7 +45,7 @@ case "$args" in
     # Record whether a non-owner token was supplied. The whole point of the
     # App identity is that this is NOT the owner's ambient credential, so the
     # test asserts the value actually arrives here.
-    echo "GH_TOKEN=${GH_TOKEN:-<unset>}" >> "${PR_CREATE_LOG:-/dev/null}" ;;
+    echo "GH_TOKEN=${GH_TOKEN:-<unset>} ARGS=$*" >> "${PR_CREATE_LOG:-/dev/null}" ;;
 esac
 exit 0
 STUB
@@ -53,7 +57,20 @@ echo "$*" >> "${CLAUDE_LOG:-/dev/null}"
 # A session that fails, or that exits 0 having written nothing, is the case the
 # acceptance path used to record as "the run is complete".
 case "$*" in
-  *"acceptance pass"*) exit "${STUB_ACCEPT_RC:-0}" ;;
+  *"acceptance pass"*)
+    # STUB_ACC_BRANCH makes the stub behave like a session that did its job:
+    # commit the acceptance table on the branch the DRIVER named, push nothing,
+    # open nothing. The branch name is read out of the prompt because that is
+    # the only place the session learns it too.
+    if [[ "${STUB_ACC_BRANCH:-0}" == "1" ]]; then
+      ref="$(printf '%s' "$*" | grep -oE 'docs/acceptance-[0-9A-Za-z-]+' | head -1)"
+      if [[ -n "$ref" ]]; then
+        git switch -q -c "$ref" 2>/dev/null || git switch -q "$ref"
+        printf '| S1 | pass | agent |\n' >> docs/acceptance.md
+        git add -A && git commit -qm "acceptance" >/dev/null
+      fi
+    fi
+    exit "${STUB_ACCEPT_RC:-0}" ;;
 esac
 exit 0
 STUB
@@ -297,6 +314,15 @@ expect_contains "grants on the command line (the ESC-5 lesson)" "$out" \
   "--allowed-tools"
 expect_not_contains "merging is not in the orchestrator's reach" "$out" "gh pr merge"
 expect_not_contains "nor is a hard reset" "$out" "git reset"
+
+# NOR IS OPENING A PULL REQUEST. This grant existed, and run_session() passes no
+# credential, so an orchestrate or acceptance session inherited the owner's
+# ambient `gh` auth and opened every feature and acceptance pull request of an
+# unattended run under their name. ESC-26 gave the driver an App identity and
+# fixed the two places the DRIVER opens one; it never asked which OTHER things
+# open one. The driver opens both now, after the session returns.
+expect_not_contains "opening a pull request belongs to the driver, not the session" \
+  "$out" "gh pr create"
 
 # THE ONE DOOR TO A NEW AGENT. The orchestrator's whole job is spawning paired
 # coder and test-writer workers, so it must be able to — and it must be able to
@@ -580,5 +606,96 @@ sed -i 's/^status: merged$/status: in-flight/' "$R/docs/plans/already-done.md"
 out="$(run_phase)"
 expect_contains "in-flight is not built" "$out" "SLUG=already-done"
 rm -f "$R/docs/plans/already-done.md"
+
+# ------------------------------- the driver opens BOTH pull requests, as the App
+# ORCH_TOOLS granted `Bash(gh pr create:*)` and run_session() passes no
+# credential, so the orchestrate and acceptance SESSIONS opened their own pull
+# requests using the owner's ambient `gh` auth. ESC-26 fixed the two places the
+# DRIVER opens one and never asked which other things do.
+#
+# The acceptance one is the sharp end and it is not tidiness: docs/acceptance.md
+# is CODEOWNERS-owned, and GitHub does not let an author approve their own pull
+# request — so the single artifact of an unattended run whose review is the
+# entire point was one the owner could not approve.
+git -C "$R" switch -q main 2>/dev/null || true
+git -C "$R" add -A >/dev/null 2>&1; git -C "$R" commit -qm "before the pr tests" >/dev/null 2>&1
+
+# A real remote, because mechanical_pr() pushes before it opens. Without one it
+# would fail at its first line and every assertion below would pass by never
+# happening.
+ORIGIN="$WORK/origin.git"
+git init -q --bare "$ORIGIN"
+git -C "$R" remote add origin "$ORIGIN" 2>/dev/null || git -C "$R" remote set-url origin "$ORIGIN"
+git -C "$R" push -q origin main
+
+PRLOG="$WORK/cap/prcreate.log"
+ORCHLOG="$WORK/cap/claude.pr.log"
+reset_pr_run() { rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"; : > "$PRLOG"; : > "$ORCHLOG"; }
+
+# ---- the feature pull request
+reset_pr_run
+git -C "$R" branch -f feat/sqlite-store main
+out="$(run_loop STUB_MERGED_REFS=$'feat/notes' PR_CREATE_LOG="$PRLOG" \
+        CLAUDE_LOG="$ORCHLOG" -- --max-iterations 1)"
+expect_contains "the fixture reaches ORCHESTRATE" "$out" "phase ORCHESTRATE"
+
+# The marker is what lets the command file tell the two modes apart. Without it
+# the same prose has to be right for an attended human and an unattended
+# driver, and "open the pull request" is right for exactly one of them.
+expect_contains "the dispatch says it is unattended" "$(cat "$ORCHLOG")" "UNATTENDED RUN"
+expect_contains "and says to push and stop" "$(cat "$ORCHLOG")" "Do NOT open the pull request"
+
+expect_contains "the driver opens the feature pull request itself" \
+  "$(cat "$PRLOG")" "--head feat/sqlite-store"
+# The head ref keeps its own name rather than being renamed under docs/, or
+# plan-resolve.sh could not match the slug against a plan. Scoped to the feature
+# pull request's own line: the driver also opens a docs/run-<id> evidence pull
+# request at the run's stop, and that one is meant to be under docs/.
+expect_not_contains "and does not rename the branch out of plan-resolve's reach" \
+  "$(grep -F 'Build: sqlite-store' "$PRLOG" || true)" "--head docs/"
+expect_not_contains "and never under the owner's ambient credential" \
+  "$(cat "$PRLOG")" "GH_TOKEN=<unset>"
+
+# ---- opening twice
+# An attended session that already opened one, or an iteration retried after a
+# timeout, is a harmless race. A driver that hard-failed there would turn it
+# into a stopped run, so it reports and continues.
+reset_pr_run
+git -C "$R" branch -f feat/sqlite-store main
+out="$(run_loop STUB_MERGED_REFS=$'feat/notes' STUB_HEAD_PR="42" \
+        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 1)"
+expect_contains "an existing pull request for the head ref is reported" "$out" \
+  "already open for feat/sqlite-store"
+if grep -q -- "--head feat/sqlite-store" "$PRLOG"; then
+  no "and no second one is opened" "$(cat "$PRLOG")"
+else ok "and no second one is opened"; fi
+
+# ---- a session that pushed nothing
+# Removing the grant means the orchestrator cannot open a pull request at all,
+# so a session that ends without a branch leaves nothing behind. That has to
+# read as nothing-to-open, not as a crash.
+reset_pr_run
+git -C "$R" branch -D feat/sqlite-store >/dev/null 2>&1 || true
+out="$(run_loop STUB_MERGED_REFS=$'feat/notes' PR_CREATE_LOG="$PRLOG" \
+        CLAUDE_LOG="$ORCHLOG" -- --max-iterations 1)"
+expect_contains "a session that left no branch is reported, not crashed" "$out" \
+  "does not exist — nothing to open"
+
+# ---- the acceptance pull request
+reset_pr_run
+out="$(run_loop STUB_MERGED_REFS="$BUILT" STUB_ACCEPT_RC=0 STUB_ACC_BRANCH=1 \
+        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" SESSION_TIMEOUT=30 \
+        -- --max-iterations 1)"
+expect_contains "the fixture reaches ACCEPTANCE" "$out" "phase ACCEPTANCE"
+expect_contains "the acceptance dispatch says it is unattended" \
+  "$(cat "$ORCHLOG")" "UNATTENDED RUN"
+expect_contains "and names the branch the driver will open" \
+  "$(cat "$ORCHLOG")" "docs/acceptance-"
+expect_contains "and says why the session must not open it" "$(cat "$ORCHLOG")" \
+  "does not let an author approve their own pull request"
+expect_contains "the driver opens the acceptance pull request itself" \
+  "$(cat "$PRLOG")" "--head docs/acceptance-"
+expect_not_contains "as the App, never as the owner" "$(cat "$PRLOG")" "GH_TOKEN=<unset>"
+git -C "$R" switch -q main 2>/dev/null || true
 
 summary
