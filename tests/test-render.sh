@@ -195,6 +195,36 @@ PYCHK
     else no "$lang ships $f"; fi
   done
 
+  # The evidence sources and the oracle's directories must exist on day one.
+  # AGENTS.md, oracle.md, steward.md and deliver.md all point at these; before
+  # they shipped, a fresh project started with half the oracle's evidence space
+  # nonexistent and every pointer dangling.
+  for f in docs/BACKLOG.md docs/DECISIONS.md docs/oracle/.gitkeep \
+           docs/plans/oracle/.gitkeep; do
+    if [[ -f "$out/$f" ]]; then ok "$lang ships $f"
+    else no "$lang ships $f"; fi
+  done
+
+  # The shipped backlog must contain no literal BL id. oracle-decisions.sh
+  # greps the WHOLE file for the id pattern with no column anchoring, so an
+  # example id in the skeleton is phantom evidence in every project on day one
+  # — the ESC-19 failure shape, one file over. Talk about ids as BL-<n> only.
+  if grep -qE 'BL-[0-9]+' "$out/docs/BACKLOG.md" 2>/dev/null; then
+    no "$lang backlog skeleton has no phantom evidence id" \
+      "$(grep -nE 'BL-[0-9]+' "$out/docs/BACKLOG.md" | head -3)"
+  else
+    ok "$lang backlog skeleton has no phantom evidence id"
+  fi
+
+  # The steward's base branch must be real. orchestrate.md used to name
+  # docs/oracle-plans, a branch nothing creates — a worker based on it dies at
+  # checkout, deep inside a headless run.
+  if grep -q 'docs/oracle-plans' "$out/.claude/commands/orchestrate.md" 2>/dev/null; then
+    no "$lang orchestrate.md names no phantom base branch"
+  else
+    ok "$lang orchestrate.md names no phantom base branch"
+  fi
+
   # The shipped oracle ledger must pass the gate it ships with, on day one, in a
   # project that has no decisions and no evidence. A skeleton whose own example
   # rows parsed as real decisions would fail every generated project instantly.
@@ -289,6 +319,55 @@ PYCHK
   if says "$ora" "it never marks a decision pending"
   then ok "$lang oracle ledger states that nothing is left pending"
   else no "$lang oracle ledger states that nothing is left pending"; fi
+
+  # The mid-run authority chain, and the hybrid uncertainty rule that removed
+  # the 1am owner stop. Each phrase below is the load-bearing half of a ruling
+  # in docs/DECISIONS.md; a template edit that rewords one out of existence
+  # silently reinstates a stop (or removes a record) an unattended run depends
+  # on. "unsure means HIGH" is the tiebreak that keeps the fast path from
+  # eating the safe one; the no-vision class is what lets the oracle rule on
+  # questions the vision never answered instead of paraphrasing it.
+  if says "$ag" "unsure means HIGH"
+  then ok "$lang AGENTS.md carries the risk tiebreak"
+  else no "$lang AGENTS.md carries the risk tiebreak"; fi
+  if says "$ag" "One pipeline pull request in flight at a time"
+  then ok "$lang AGENTS.md states the one-open-PR rule"
+  else no "$lang AGENTS.md states the one-open-PR rule"; fi
+  if says "$out/.claude/commands/plan.md" "plan pending oracle rulings"
+  then ok "$lang plan.md routes unattended uncertainties to the oracle"
+  else no "$lang plan.md routes unattended uncertainties to the oracle"; fi
+  if says "$ora" "(no vision statement decided this)"
+  then ok "$lang oracle ledger documents the no-vision class"
+  else no "$lang oracle ledger documents the no-vision class"; fi
+
+  # The delivery driver. deliver.md carried an unresolved OPEN QUESTION block
+  # that told every unattended run to stop at each pull request; the ruling
+  # replaced it, and its reappearance would silently reinstate the stop.
+  if grep -q "OPEN QUESTION" "$del" 2>/dev/null
+  then no "$lang deliver.md no longer carries the open question" \
+    "the waiting strategy is ruled in docs/DECISIONS.md"
+  else ok "$lang deliver.md no longer carries the open question"; fi
+  for f in .claude/scripts/deliver-loop.sh .claude/scripts/deliver-phase.sh \
+           .claude/scripts/budget-probe.sh .claude/commands/deliver-loop.md; do
+    if [[ -f "$out/$f" ]]; then ok "$lang ships $f"
+    else no "$lang ships $f"; fi
+  done
+  for f in deliver-loop deliver-phase budget-probe; do
+    if [[ -x "$out/.claude/scripts/$f.sh" ]]; then ok "$lang $f.sh is executable"
+    else no "$lang $f.sh is executable"; fi
+  done
+  if grep -q '^\.claude/deliver-loop/' "$out/.gitignore"
+  then ok "$lang gitignores the driver's run state"
+  else no "$lang gitignores the driver's run state"; fi
+  # ESC-16: the orchestrator looks at its own diff the way the gate will,
+  # BEFORE the pull request exists — three of four recent escapes were found
+  # by use because nothing looked earlier.
+  if says "$orch" "review your own diff the way the gate will"
+  then ok "$lang orchestrate.md requires the pre-PR self-review"
+  else no "$lang orchestrate.md requires the pre-PR self-review"; fi
+  if says "$del" "wait until no check is still pending, never until the pull request is no longer open"
+  then ok "$lang deliver.md keeps the exit condition"
+  else no "$lang deliver.md keeps the exit condition"; fi
   # WRITING versus LANDING. Two earlier wordings failed in opposite directions:
   # "no agent may edit it" made the file unwritable, since /design fills it in
   # by interviewing the owner; the transcription carve-out that replaced it let
@@ -467,6 +546,26 @@ sys.exit(0 if 'closed' in d[True]['pull_request']['types'] else 1)
     else no "$lang auto-merge prefers a real token when one exists" \
       "GITHUB_TOKEN-driven merges dispatch no events"; fi
 
+    # The App outranks the PAT outranks the built-in token, on the SAME
+    # GH_TOKEN line — the App has its own rate budget and its merges are not
+    # authored as the owner (docs/DECISIONS.md). Order matters: a ladder that
+    # reaches the PAT first quietly keeps the shared-budget problem.
+    if grep -E '^[[:space:]]*GH_TOKEN:' "$am" \
+       | grep -qE 'app-token.*AUTO_MERGE_TOKEN.*GITHUB_TOKEN'
+    then ok "$lang auto-merge tries App, then PAT, then built-in token"
+    else no "$lang auto-merge tries App, then PAT, then built-in token"; fi
+    if grep -q 'create-github-app-token' "$am"
+    then ok "$lang auto-merge can mint an App token"
+    else no "$lang auto-merge can mint an App token"; fi
+
+    # Arming retries with backoff and, on giving up, says WHEN the limit
+    # resets. The GraphQL limit is hourly and per-identity; an unattended run
+    # opening a PR every twenty minutes meets it repeatedly, so a single
+    # failed arm is not an edge case and must not be a red check.
+    if grep -q 'retrying in' "$am" && grep -q 'rate_limit' "$am"
+    then ok "$lang arming retries and reports the rate-limit reset"
+    else no "$lang arming retries and reports the rate-limit reset"; fi
+
     if python3 -c "
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
@@ -513,6 +612,96 @@ sys.exit(0 if \"!= 'closed'\" in d['jobs']['arm-auto-merge'].get('if', '') else 
   done < <(find "$out" -name '*.sh' -type f)
   if [[ -z "$nonexec" ]]; then ok "$lang scripts are executable"
   else no "$lang scripts are executable" "$nonexec"; fi
+
+  # ------------------------------------------------- the intent boundary
+  # docs/DESIGN.md and docs/VISION.md are the owner's. Three separate things
+  # have to agree for that to be true, and each was wrong at some point in this
+  # template's history (ESC-24, ESC-25, and the review that found .claude/
+  # outside every gate-path list). These assertions pin all three together, so
+  # a future edit cannot quietly restore one of the old wordings.
+  st="$out/.claude/settings.json"
+  if [[ -f "$st" ]] && python3 -c "
+import json,sys
+d = json.load(open(sys.argv[1]))
+deny = d['permissions']['deny']
+need = ['Write(docs/DESIGN.md)','Edit(docs/DESIGN.md)',
+        'Write(docs/VISION.md)','Edit(docs/VISION.md)']
+sys.exit(0 if all(x in deny for x in need) else 1)
+" "$st"
+  then ok "$lang the two intent documents are denied to every session"
+  else no "$lang the two intent documents are denied to every session"; fi
+
+  # A session that can spawn a headless agent directly can hand it any grants
+  # it likes, which walks around spawn-worker.sh's whole role system.
+  if [[ -f "$st" ]] && python3 -c "
+import json,sys
+d = json.load(open(sys.argv[1]))
+allow = ' '.join(d['permissions']['allow'])
+sys.exit(0 if 'claude -p' not in allow and 'codex exec' not in allow else 1)
+" "$st"
+  then ok "$lang no session may spawn a headless agent around the role system"
+  else no "$lang no session may spawn a headless agent around the role system"; fi
+
+  co="$out/.github/CODEOWNERS"
+  missing=""
+  for p in '/.claude/scripts/' '/.claude/commands/' '/.claude/agents/' \
+           '/.claude/orchestration.md' '/.claude/settings.json'; do
+    grep -q "^${p}" "$co" || missing="$missing $p"
+  done
+  if [[ -z "$missing" ]]; then ok "$lang the delivery machinery is owned"
+  else no "$lang the delivery machinery is owned" "unowned:$missing"; fi
+
+  # docs/BACKLOG.md must NOT be owned: the unattended planner files items there
+  # mid-run, so an owner review on that path stops work overnight. This asserts
+  # the deliberate absence, so nobody "fixes" it later without reading why.
+  if grep -qE '^/docs/BACKLOG\.md[[:space:]]+@' "$co"; then
+    no "$lang the backlog stays un-owned so filing never blocks a run" \
+       "CODEOWNERS claims /docs/BACKLOG.md — that stops the unattended planner"
+  else ok "$lang the backlog stays un-owned so filing never blocks a run"; fi
+
+  for f in AGENTS.md .github/review-prompt.md; do
+    if grep -q '\.claude/scripts/' "$out/$f"; then
+      ok "$lang $f lists .claude/ among the gate paths"
+    else no "$lang $f lists .claude/ among the gate paths"; fi
+  done
+
+  if grep -q 'not spawnable' "$out/.claude/scripts/spawn-worker.sh"; then
+    ok "$lang the architect role cannot be spawned"
+  else no "$lang the architect role cannot be spawned"; fi
+
+  # The backlog pair and its enforcer.
+  for f in docs/BACKLOG.done.md .github/scripts/backlog-append-only.sh; do
+    if [[ -f "$out/$f" ]]; then ok "$lang $f ships"
+    else no "$lang $f ships"; fi
+  done
+  if grep -q 'backlog-append-only.sh' "$out/.github/workflows/ci.yml"; then
+    ok "$lang the backlog check runs in CI"
+  else no "$lang the backlog check runs in CI"; fi
+
+  # The setup a human has to do by hand should be reduced to typing values, so
+  # the skeleton ships and the script writes the real file. Both halves are
+  # asserted because setting one and not the other leaves the App looking
+  # configured while every unattended run still refuses.
+  if [[ -f "$out/.claude/app-identity.example" ]]; then
+    ok "$lang the App identity skeleton ships"
+  else no "$lang the App identity skeleton ships"; fi
+  if grep -q 'app-identity' "$out/scripts/setup-github.sh"; then
+    ok "$lang setup-github.sh writes the driver's half of the identity"
+  else no "$lang setup-github.sh writes the driver's half of the identity"; fi
+  # The delete advice was wrong once the driver started reading that path on
+  # every run; it must not come back.
+  if grep -qE "Consider deleting the local .pem|rm '\$pem_path'" "$out/scripts/setup-github.sh"; then
+    no "$lang setup no longer tells the owner to delete the key it needs" \
+       "the .pem delete advice is back"
+  else ok "$lang setup no longer tells the owner to delete the key it needs"; fi
+
+  # The identity minter, and the driver actually using it.
+  if [[ -f "$out/.claude/scripts/app-token.sh" ]]; then
+    ok "$lang app-token.sh ships"
+  else no "$lang app-token.sh ships"; fi
+  if grep -q 'GH_TOKEN=' "$out/.claude/scripts/deliver-loop.sh"; then
+    ok "$lang the driver opens pull requests with a minted token"
+  else no "$lang the driver opens pull requests with a minted token"; fi
 done
 
 # --------------------------------- the directory-name validator bites

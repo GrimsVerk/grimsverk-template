@@ -90,6 +90,63 @@ auto-merge (armed by `.github/workflows/auto-merge.yml`, completed by GitHub
 when checks pass — as a merge commit, preserving history).{% else %}Both gates run on every PR, but this project does **not** auto-merge: a human
 performs the final merge once the checks are green.{% endif %}
 
+## Unattended delivery
+
+Once `docs/DESIGN.md` and `docs/VISION.md` have landed, the whole loop — plan,
+build, merge, next — can run with nobody watching. Two frontends, one phase
+detector (`.claude/scripts/deliver-phase.sh`), chosen by which you start:
+
+```sh
+.claude/scripts/deliver-loop.sh          # local: waits on `gh pr checks --watch`
+```
+
+or `/deliver-loop` in a Claude Code web session, which waits on PR events and
+scheduled check-ins instead of holding a turn open. Before dispatching
+anything, the driver runs `.github/scripts/unattended-ready.sh`, which reads
+the *repository's* configuration back and **refuses** a run that cannot
+succeed, naming each missing setting.
+
+Your three jobs, and the loop never adds a fourth: land the design and vision;
+optionally steer mid-run by editing those two documents (they are the steering
+lever — every oracle ruling quotes `docs/VISION.md`, so editing a sentence
+moves everything downstream); review at the end. Mid-run questions go to the
+oracle, not to you: HIGH-risk uncertainties block planning until a ruling
+lands, LOW-risk ones proceed on a recorded default (`docs/DECISIONS.md` ships
+the rulings behind this). Every stop states its reason — the same failure
+three times, the allowance spent, or a green pull request only you can merge —
+and the morning read is `.claude/deliver-loop/run.md` plus
+`docs/acceptance.md`'s pending-on-owner list.
+
+**The run asks you for its ceiling before it starts, every time, and refuses to
+start without one.** No number is defaulted, because a limit you did not choose
+is one you will not recognise when it fires while you are asleep. Which question
+you get is decided by probing the usage gauge rather than by guessing where you
+are running:
+
+- **In a terminal, with a usage reader** — *how many percentage points of your
+  **weekly** limit may this run spend?* That percentage is the only stop that
+  applies by default. Both weekly limits are watched: the all-models one and
+  the per-model one, which has its own smaller cap and can bind first.
+- **In a web session, or with no reader** — the subscription percentage cannot
+  be read at all, so you are asked for at least one limit that *can* be counted
+  here: pull requests, wall-clock hours, or iterations.
+
+`--budget-points`, `--max-prs`, `--max-hours` and `--max-iterations` answer the
+question up front, which is what you want for a deliberately short run ("give it
+twenty minutes; if it needs longer, something is wrong").
+
+On a machine with a free usage reader, point `BUDGET_PROBE_CMD` at it — the
+built-in fallback is `claude -p "/usage"`, which works but starts a small
+session every time it is asked, and the driver asks once per iteration. On
+Omarchy:
+
+```sh
+export BUDGET_PROBE_CMD='omarchy-agent-usage-claude --limits-only --force'
+```
+
+`--force` matters: the reading is cached for 15 seconds, so without it two
+probes in a row return the same number and a short iteration reads as zero spend.
+
 ## Repository setup (manual, once)
 
 These are GitHub settings the template can't set from inside the repo. Enable

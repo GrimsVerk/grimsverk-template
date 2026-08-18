@@ -31,6 +31,22 @@ So write it for that use. A sentence here is worth having if a reasonable agent
 could cite it to justify one choice over another. A sentence nobody could ever
 cite is decoration.
 
+**Give every statement an id — `V1`, `V2`, `V3` — running continuously across
+every section of this file, and never renumber one; append instead.** The ids
+are not bookkeeping. Each oracle decision names the statement it relied on, and
+`.github/scripts/oracle-decisions.sh` now checks that the quoted sentence really
+appears here — so an id turns your check of a ruling into one `grep` instead of
+a memory test across five sections. It also makes a *new* statement visible: an
+id you do not recognise, in a diff you must open, is an agent having written
+something you never said.
+
+**Deleting this whole file opts the project out of the tiebreaker, not out of
+the oracle.** The oracle still runs, still rules on logged evidence, and still
+writes decisions — it simply rules with nothing to weigh them against, and each
+decision then says so with `(no vision statement decided this)`. If what you
+want is for no agent to amend the design unattended, that is a different thing
+and it is achieved by not starting the delivery driver.
+
 ## What this project is for
 
 <!-- One paragraph. The outcome, in the owner's words. Not a feature list —
@@ -39,26 +55,55 @@ cite is decoration.
 ## Priorities, in order
 
 <!-- Ordered, and the order is the useful part. "Correctness, then cost, then
-     speed" answers a real question; an unordered list of virtues does not. -->
+     speed" answers a real question; an unordered list of virtues does not.
+     Ids run continuously across the whole file — carry on from wherever the
+     previous section stopped. -->
 
-1.
-2.
-3.
+- **V1** —
+- **V2** —
+- **V3** —
 
 ## What I would trade away
 
 <!-- The half that actually decides things. Name what is expendable: features,
      completeness, generality, polish, latency, breadth of support. An agent
      that knows what may be sacrificed can make a call; one that only knows
-     what matters cannot. -->
+     what matters cannot.
+
+     Ids continue from the section above.
+
+     DELETING THIS SECTION IS A LEGITIMATE ANSWER, and it is the one people most
+     want to skip. If you mean it, do not delete the heading — replace the body
+     with a stated "None." A missing heading is a fact about the file; a stated
+     "none" is a decision you can find again in six weeks. -->
+
+- **V4** —
 
 ## Core tenets
 
-<!-- The stops. A decision that would violate one of these is not made at all —
-     the oracle halts and reports instead of deciding. Keep this list SHORT;
+<!-- The stops. A decision that would violate one of these is not made at all:
+     the oracle writes a HALT entry in docs/DESIGN.oracle.md instead of a
+     decision, and the run carries on to the next phase. Keep this list SHORT;
      a long one turns every decision into an escalation and unattended work
      stops entirely, which is the failure this whole arrangement exists to
-     prevent. Two or three. -->
+     prevent. Two or three.
+
+     WRITE EACH ONE AS A PROPERTY A SPECIFIC CHANGE COULD VIOLATE, not as a
+     value you hold. "No configuration option may weaken a security property"
+     names something a diff can be observed doing; "we care about security"
+     does not, and an agent asking "would this decision violate it?" can only
+     answer the first. The test is whether a reader holding only this sentence
+     and a diff could DISAGREE with how the oracle applied it. If they could
+     not, the sentence is decoration however true it is.
+
+     DELETING THIS SECTION IS ALSO LEGITIMATE — plumbing may genuinely have no
+     stops — and it means the oracle has no halt condition and will decide
+     everything the evidence reaches. If that is what you want, keep the
+     heading and write "None. This project has no decision that should stop
+     for me." Same reason as above: an absent heading is a fact about the file,
+     a stated "none" is a decision. -->
+
+- **V5** —
 
 ## What makes an answer unacceptable
 

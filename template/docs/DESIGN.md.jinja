@@ -49,7 +49,22 @@ neither counted as covered nor reported as missing, so it reads like a tracked
 requirement while being tracked by nothing. Append R3 and R4 instead. -->
 
 **Functional**
-- **R1** —
+- **R1** — <what it must do> — *Evidenced by:* S<n>
+
+<!-- Every requirement names the §13 success criterion that would notice its
+absence, and this is not bookkeeping.
+
+`.github/scripts/coverage.sh` reports a requirement as "covered" when some plan
+lists its id in `covers:`. That is a CLAIM, not a delivery, and nothing
+downstream compares the claim to what the plan's slices actually build — a plan
+naming twelve requirements and building three passes every gate green, and the
+run then walks to acceptance reporting "every requirement is covered by a plan".
+
+docs/acceptance.md is the one artifact in an unattended run whose pull request
+requires your review, so it is the single place a failure is guaranteed to reach
+you. An S id here is what turns an over-claimed `covers:` into a visible empty
+evidence cell instead of a green coverage line. A requirement you cannot name a
+criterion for is a requirement nothing will ever check was built. -->
 
 **Non-functional** <!-- fill only those that apply; keep numbering continuous -->
 - **R2** — Platform / targets: <!-- web, iOS, CLI, service, library, etc. -->
@@ -112,7 +127,28 @@ Give each one a stable id (S1, S2, ...). These are what the acceptance pass
 checks at the end, one row per id in `docs/acceptance.md`, with evidence. Write
 them so that evidence is possible: "startup under 2s on the target device" can be
 shown, "feels fast" cannot. Mark the ones only you can verify — anything needing
-real hardware, real users, or a judgement call — because an agent must not claim
-to have checked those. -->
+real hardware, real users, or a judgement call — by writing **(owner)** in the
+criterion itself, here, in this file.
 
-- **S1** —
+THAT MARK IS YOURS AND IT IS DURABLE: docs/DESIGN.md is CODEOWNERS-owned and the
+acceptance pass reads it at the base commit. Every criterion you do NOT mark is
+an agent's to verify with real output, and that is a commitment made now rather
+than a judgement made later.
+
+This matters because the split costs the acceptance agent asymmetrically. An
+"owner" row is one sentence and a clean stop — the driver exits 4, "blocked on
+the owner", which is a documented SUCCESSFUL stop. An "agent" row is a command
+that has to actually run and produce output. Every incentive points one way, and
+it is the way that produces an honest-looking table containing almost no
+verification. A criterion left unmarked here can be reclassified as yours at the
+end, by the party that saves work by doing so, and nothing observes it.
+
+If you cannot decide now whether a criterion is checkable without you, that is
+the criterion to rewrite until you can.
+
+EVERY §5 REQUIREMENT MUST BE NAMED BY AT LEAST ONE CRITERION HERE. Write the
+back-reference: "**S3** — *(covers R4, R10)* ...". A requirement with no
+criterion is invisible to the acceptance pass, which is the only place the built
+system is compared to the design rather than to a plan. -->
+
+- **S1** — *(covers R<n>)* —

@@ -38,6 +38,12 @@ Batch requires no different gates: the plans still exist before the code that
 implements them, `CODEOWNERS` still reviewed them, and each feature branch still
 resolves to its plan. What changes is only how many times the owner is asked.
 
+**The fully unattended shape of this loop is the delivery driver** — the owner
+starts `.claude/scripts/deliver-loop.sh` in a terminal or `/deliver-loop` in a
+web session, and the driver runs these same steps with the oracle ruling where
+this document says the owner does (see `AGENTS.md`, "Mid-run authority"). This
+command stays the attended shape: you, the owner, and the milestones.
+
 **Say the cost out loud when proposing batch.** Planning everything before
 building anything means milestone 4's plan was written by someone who had not
 built milestones 1–3 — that is *waterfall*, and vertical slices exist precisely
@@ -101,32 +107,18 @@ two means two sessions, which is the owner's call to make, not yours.
 
 ## 4. Wait for the pipeline
 
-> **⚠ OPEN QUESTION — RAISE THIS WITH THE OWNER BEFORE A LONG UNATTENDED RUN.**
->
-> This step says "wait" without saying *how*, and nobody has decided yet. Each
-> feature costs minutes of CI plus an LLM review, and in batch mode that repeats
-> per plan, so an unattended run is mostly waiting. The options have real
-> tradeoffs and the owner wants to pick:
->
-> - **idle** — end the turn and let the owner resume. Costs nothing, but the run
->   is not actually unattended.
-> - **poll** — re-check every N seconds. Unattended, but spends budget on
->   information that usually has not changed, and that budget is shared with the
->   review gate you are waiting for.
-> - **something else** — a scheduled wake-up, a webhook, or a stop-and-report at
->   each PR boundary.
->
-> Until this is decided: **stop at the pull request and report**, rather than
-> guessing. Say plainly that you are stopping because the waiting strategy is
-> undecided, and offer the options above. Delete this block once the owner rules,
-> and record the ruling in `docs/DECISIONS.md`.
->
-> **Whichever strategy is chosen, the exit condition is not in question: wait
-> until no check is still pending, never until the pull request is no longer
-> open.** A failing pull request never leaves the open state, so that second
-> condition makes red indistinguishable from still-running — and, where nothing
-> is watching, from success. This is the one part of the step that is already
-> decided; it constrains the options above rather than being one of them.
+**The waiting strategy is ruled** (`docs/DECISIONS.md`, "Waiting is mechanical,
+and belongs to the driver"): waiting is not agentic work. In an unattended run
+the **delivery driver** does it — `.claude/scripts/deliver-loop.sh` locally, or
+`/deliver-loop` in a web session — watching `gh pr checks` mechanically so no
+model budget is spent on information that has not changed. If you are running
+attended, *without* a driver, do what this step always said: **stop at the pull
+request and report**; the owner resumes you when it lands.
+
+**The exit condition: wait until no check is still pending, never until the
+pull request is no longer open.** A failing pull request never leaves the open
+state, so that second condition makes red indistinguishable from still-running
+— and, where nothing is watching, from success.
 
 PRs merge when their required checks go green — CI, `plan`, `test-the-tests`,
 and the review gate. That is mechanical and none of it is yours to drive. Do not

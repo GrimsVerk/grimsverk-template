@@ -1,3 +1,11 @@
 .DS_Store
 __pycache__/
 *.py[cod]
+
+# GitHub App credentials, if the App identity is ever set up against THIS
+# repository the way a generated project sets it up against its own. The
+# template ships the same two lines in template/.gitignore.jinja; they belong
+# here for the same reason — a private key must not be one `git add -A` away
+# from being published.
+.claude/app-identity
+*.pem

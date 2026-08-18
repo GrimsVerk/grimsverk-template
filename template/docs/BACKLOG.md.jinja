@@ -1,0 +1,66 @@
+# Backlog — {{ project_name }}
+
+The standing queue of what *might* be built, as opposed to a plan, which covers
+the one change being built now. Three sections, and what separates them is who
+has ruled:
+
+- **Approved** — the owner has said yes. An agent working unattended implements
+  these top to bottom, and keeps going until the list is done or it is truly
+  blocked (`AGENTS.md`, "Work queue").
+- **Proposed** — ideas, written as text, **never coded unprompted**. They move
+  up when the owner moves them.
+- **Uncertainties awaiting oracle ruling** — questions a plan raised that the
+  design did not answer, filed here so the oracle can rule on them
+  (`.claude/commands/plan.md`, the uncertainty gate). Each carries the
+  planner's proposed default and its risk class. An item leaves this section
+  only by being cited from a decision in `docs/DESIGN.oracle.md` — the ruling
+  is recorded there, never edited in here.
+
+**Every item gets an id** — `BL-<n>`, the next unused integer. Not "if you want
+it citable": always. The oracle's gate
+(`.github/scripts/oracle-decisions.sh`) treats an id in this file as evidence a
+decision may cite, and an unnumbered item is invisible to it — which means an
+item nobody can point at, and a queue nobody can audit.
+
+**This file is append-only, and enforced**
+(`.github/scripts/backlog-append-only.sh`). Once an item carrying an id has
+landed, its line never changes and never moves. That is not tidiness. It is the
+one property that makes citation mean anything: the oracle may amend the design
+layer on evidence found here, an agent may file that evidence, and both of those
+are deliberate — so the thing that has to hold is that a landed item cannot be
+quietly reworded into evidence for something else after the fact.
+
+Three rules follow:
+
+- **Never delete an id a decision cites.** A citation resolves against this file
+  at the pull request's base commit, and removing the item turns a landed
+  decision's evidence into a dangling reference.
+- **Never edit a landed item — append instead.** Finished? Add a line to
+  [`BACKLOG.done.md`](BACKLOG.done.md). Changed your mind? File a new item that
+  cites the old id. Got the wording wrong? Append a correction repeating the id,
+  the way `docs/escapes.md` handles the same problem.
+- **Never ship or paste an id you did not mean.** The check greps this whole
+  file for the id pattern, so a stray id in prose is phantom evidence — write
+  the pattern with `<n>` when talking *about* ids, as this paragraph does.
+
+**Say who filed it.** Each item ends with `— filed by: <owner | plan | oracle |
+steward | coder>`. This costs one word and answers the question the owner cannot
+otherwise answer when reviewing a design decision months later: did this
+evidence come from something that actually happened, or did the pipeline write
+its own permission slip? Both are legitimate — an agent filing what it hit is
+the intended path — but they are not the same, and until this field existed
+nothing anywhere recorded the difference.
+
+## Approved
+
+_(nothing yet)_
+
+## Proposed
+
+_(nothing yet)_
+
+## Uncertainties awaiting oracle ruling
+
+_(nothing yet — filed by `/plan` when a design leaves a question open; format:_
+_`BL-<n>` — the question, the proposed default, HIGH or LOW risk, one line on_
+_why that class, and `— filed by: plan`.)_

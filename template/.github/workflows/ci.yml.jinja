@@ -75,6 +75,29 @@ jobs:
         run: |
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
             .github/scripts/escape-refs.sh
+      - name: The escape ledger is append-only
+        # docs/escapes.md has said "never rewrite an entry" since it existed,
+        # and the oracle ledger gets that promise ENFORCED — the asymmetry was
+        # ESC-15. The escape ledger is the oracle's other evidence source, and
+        # an agent editing an inconvenient row would change what a landed
+        # decision's citation means. Corrections still pass: a correction is an
+        # APPENDED row repeating the id, which is the file's own documented
+        # lifecycle.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            .github/scripts/escapes-append-only.sh
+      - name: The backlog and its done-log are append-only
+        # The backlog is the OTHER evidence source oracle-decisions.sh resolves
+        # citations against, and it had no such protection — so an item could be
+        # reworded after a decision cited it, by the same pipeline that wrote
+        # both. Deliberately immutability rather than ownership: an unattended
+        # planner files uncertainties here mid-run, and requiring the owner's
+        # review on this path would stop work overnight, which is the failure
+        # the whole arrangement exists to prevent. Filing stays free; rewriting
+        # does not.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            .github/scripts/backlog-append-only.sh
       - name: Oracle decisions are append-only and evidence-backed
         # docs/DESIGN.oracle.md is the one design document an agent may write
         # unattended, so it is deliberately NOT behind CODEOWNERS — ownership
@@ -118,6 +141,62 @@ jobs:
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
           HEAD_SHA="$(git rev-parse HEAD)" \
             .github/scripts/vision-complete.sh
+      - name: Unattended readiness (advisory)
+        # ADVISORY, never red: `|| true` is the whole policy. The binding run
+        # of this script is the delivery driver's preflight, where it REFUSES;
+        # here it only surfaces repository-settings drift in the log, because
+        # settings live outside every file a pull request can diff. Some lines
+        # will read "cannot list" — the CI token cannot see secrets, and that
+        # is expected here, not a finding.
+        env:
+          GH_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+        run: .github/scripts/unattended-ready.sh || true
+      - name: CODEOWNERS actually binds
+        # NOT advisory, and the one part of the readiness check that belongs on
+        # every pull request rather than only at dispatch.
+        #
+        # GitHub SILENTLY IGNORES a CODEOWNERS entry that does not resolve —
+        # copier.yml warns about this in its own words: the rule "simply never
+        # binds, and the gate paths quietly become writable by anything that
+        # passes CI". Every deterministic protection in this repository rests on
+        # that file resolving: the design and vision documents, the workflows,
+        # the review prompt, the delivery machinery under .claude/. If the
+        # handle goes stale — renamed account, removed collaborator — nothing
+        # turns red and nothing says so. The last line of defence becomes the
+        # LLM reviewer, which is a judgement gate, and auto-merge does the rest.
+        #
+        # This checks the PLATFORM's own validation rather than re-implementing
+        # the path list, which would be a second copy of the carve-out logic in
+        # plan-resolve.sh and would drift from it. One source of truth, one
+        # extra API call.
+        #
+        # It fails only on a definite answer. An unreadable API is a note, not a
+        # block: a check that goes red when GitHub is having a bad morning is a
+        # check people learn to re-run without reading.
+        env:
+          GH_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+        run: |
+          errs="$(gh api "repos/${GITHUB_REPOSITORY}/codeowners/errors" \
+                    --jq '.errors | length' 2>/dev/null || true)"
+          if [ -z "$errs" ]; then
+            echo "codeowners: cannot read the validation API here — not treating that as a failure."
+          elif [ "$errs" = "0" ]; then
+            echo "codeowners: resolves cleanly, so the ownership rules actually bind."
+          else
+            echo "codeowners: $errs unresolvable line(s) in .github/CODEOWNERS." >&2
+            gh api "repos/${GITHUB_REPOSITORY}/codeowners/errors" \
+              --jq '.errors[] | "  line \(.line): \(.message)"' >&2 || true
+            {
+              echo ""
+              echo "GitHub ignores a CODEOWNERS line it cannot resolve. It does not warn,"
+              echo "and the paths that line was protecting become writable by anything that"
+              echo "passes CI — including docs/DESIGN.md, the workflows, the review prompt,"
+              echo "and the delivery machinery under .claude/. Nothing else here turns red."
+              echo ""
+              echo "Fix the handle, or remove the line deliberately if the person is gone."
+            } >&2
+            exit 1
+          fi
 
   # The other half of the planning story. A `template/` branch is exempt from
   # the `plan` check above, because a template update is specified in the

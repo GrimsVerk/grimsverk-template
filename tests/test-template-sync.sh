@@ -98,6 +98,27 @@ out="$(run_sync template/pretend)"
 expect_rc "a template/ branch with no version change fails" 1 $?
 expect_contains "says the version did not move" "$out" "changes no template version"
 
+# --------------------------------- swapping the template repository must FAIL
+# `_commit` says which VERSION to replay; `_src_path` says which REPOSITORY to
+# replay it FROM, and only the first was compared. The replay then runs
+# `copier update --trust` — which executes the template's own _migrations — in a
+# job whose git config carries TEMPLATE_TOKEN, and four other mechanisms
+# (plan-resolve, test-the-tests, the review gate's TEMPLATE SYNC note, and
+# CODEOWNERS for anything outside .github/) all step aside on the strength of
+# this check. So the tree would be "verified" against a repository the pull
+# request itself chose.
+git -C "$PROJ" switch -q main 2>/dev/null || git -C "$PROJ" switch -q master
+git -C "$PROJ" switch -qc template/v3.0.0-elsewhere
+sed -i 's|^_src_path:.*|_src_path: https://github.com/somebody-else/grimsverk-template.git|' \
+  "$PROJ/.copier-answers.yml"
+sed -i 's|^_commit:.*|_commit: v3.0.0|' "$PROJ/.copier-answers.yml"
+git -C "$PROJ" commit -qam "Update from template v3.0.0"
+out="$(run_sync template/v3.0.0-elsewhere)"
+expect_rc "changing which template the project syncs FROM fails" 1 $?
+expect_contains "and says the source moved" "$out" "which TEMPLATE"
+expect_contains "and shows both sources" "$out" "somebody-else"
+expect_contains "and refuses to let the prefix carry it" "$out" "not exempt from planning"
+
 # ===================================================================
 # scripts/update-from-template.sh — the other half: producing a sync that
 # template-sync will accept, without assembling it by hand.

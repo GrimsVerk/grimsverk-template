@@ -75,6 +75,36 @@ BASE_REF="$(git -C "$ROOT" show "${BASE_SHA}:${ANSWERS}" 2>/dev/null \
 
 echo "template-sync: base is at template ${BASE_REF:-<unknown>}, PR targets ${TARGET_REF}"
 
+# WHICH template. `_commit` says which VERSION to replay; `_src_path` says which
+# REPOSITORY to replay it from, and until this comparison existed the pull
+# request chose that freely. The replay then runs `copier update --trust`, which
+# executes the template's own `_migrations`, inside a job whose git config has
+# just been given a credential rewrite carrying TEMPLATE_TOKEN. Meanwhile
+# plan-resolve.sh steps aside by prefix, test-the-tests.sh skips by prefix, and
+# the review gate is told by the TEMPLATE SYNC note that provenance is
+# mechanically settled — four mechanisms deferring to one comparison that was
+# not being made. Both fields are the template's identity; both are pinned.
+BASE_SRC="$(git -C "$ROOT" show "${BASE_SHA}:${ANSWERS}" 2>/dev/null \
+  | sed -n 's/^_src_path:[[:space:]]*//p' | tr -d "\"'" | head -1)"
+HEAD_SRC="$(git -C "$ROOT" show "${HEAD_SHA}:${ANSWERS}" \
+  | sed -n 's/^_src_path:[[:space:]]*//p' | tr -d "\"'" | head -1)"
+if [[ -n "$BASE_SRC" && "$HEAD_SRC" != "$BASE_SRC" ]]; then
+  die "this branch changes which TEMPLATE the project is generated from.
+
+  base: ${BASE_SRC}
+  head: ${HEAD_SRC:-<missing>}
+
+A template sync replays \`copier update\` from the recorded template and proves
+the diff is exactly its output. That proof says nothing about WHICH template
+produced it, so a changed _src_path would have this check verify the tree
+against a repository chosen by this pull request — and run that repository's
+migrations, with credentials, before any reviewer sees the diff.
+
+Moving a project to a different template is a real thing to want and it is not
+this. Do it deliberately, on a branch that is not exempt from planning and
+review, so a human reads the source change as the change it is."
+fi
+
 if [[ "$TARGET_REF" == "$BASE_REF" ]]; then
   die "the answers file still records template version '$TARGET_REF'.
 
