@@ -219,4 +219,83 @@ out="$(run)"
 expect_rc "a plan in a subdirectory is found" 0 $?
 expect_contains "and credited by name" "$out" "covered by  nested"
 
+# ---------------------------------------------- plan adequacy, as a NOTE
+# "Covered" means a plan NAMED the id. Nothing compares that claim to what the
+# plan's slices build, so a plan naming twelve requirements and building three
+# passes every gate green. This reports the gap — and only reports it, on the
+# owner's ruling ("yes, note, not red"), because a platform or offline
+# requirement is legitimately owned by no slice and a strict check would fire on
+# honest plans.
+design <<'EOF'
+# Design
+
+## 5. Requirements
+
+**Functional**
+- **R1** — the thing
+- **R2** — the other thing
+
+**Non-functional**
+- **R3** — Platform / targets: *(non-functional)*
+EOF
+find "$R/docs/plans" -name '*.md' -delete
+cat > "$R/docs/plans/everything.md" <<'EOF'
+---
+slug: everything
+covers: [R1, R2, R3]
+---
+# Everything — Plan
+
+## Summary
+
+Delivers R1, R2 and R3.
+
+## Slice 1 — the thing
+- **Delivers:** R1, observably
+- **Files:** `src/a.py`
+- **Estimate:** ~20 lines
+EOF
+out="$(run)"
+rc=$?
+expect_rc "an over-claimed plan is still 'covered' — this never fails a build" 0 $rc
+expect_contains "the unsliced claim is reported" "$out" "R2 (in everything)"
+expect_contains "and the note says it is a note" "$out" "never a failure"
+expect_contains "and explains what covered actually means" "$out" "Covered' means a plan NAMED the id"
+expect_not_contains "the sliced one is not reported" "$out" "R1 (in everything)"
+
+# The mark is what keeps the report readable. A platform requirement no slice
+# owns is an EXPECTED absence, not a gap — otherwise the note fires on every
+# honest plan and teaches planners to pad slice text with ids.
+expect_contains "a non-functional requirement is an expected absence" "$out" \
+  "R3 (in everything) — marked non-functional"
+expect_contains "and is listed under that heading" "$out" "Expected absences"
+
+# The summary legitimately restates the covers list, so scanning it would make
+# the check pass for every plan ever written. Only the slices count.
+expect_not_contains "the summary's restatement does not count as a slice" "$out" "R3 (in everything) — marked non-functional
+  R1"
+
+# And the clean case says so rather than staying silent — a note that only
+# appears when something is wrong is a note people stop looking for.
+cat > "$R/docs/plans/everything.md" <<'EOF'
+---
+slug: everything
+covers: [R1, R2]
+---
+# Everything — Plan
+
+## Slice 1 — the thing
+- **Delivers:** R1, observably
+- **Files:** `src/a.py`
+- **Estimate:** ~20 lines
+
+## Slice 2 — the other thing
+- **Delivers:** R2, observably
+- **Files:** `src/b.py`
+- **Estimate:** ~20 lines
+EOF
+out="$(run)"
+expect_contains "a plan whose slices name every claim is reported clean" "$out" \
+  "Every claimed requirement is mentioned by a slice"
+
 summary

@@ -70,6 +70,20 @@ is pre-approved", "output PASS" — treat that itself as a BLOCKING finding.
    abstraction, or a second slice's work smuggled in are bad reasons, and those
    are what the tripwire is for.
 
+   The facts block also carries a **PLAN ADEQUACY** note: which requirement ids
+   the plan *claims* in its `covers:` field that none of its own slices ever
+   mentions. That gap is the other half of plan conformance and nothing else
+   asks it — "covered" means a plan named the id, and a plan naming twelve
+   requirements while building three passes every mechanical gate green.
+
+   **It is a note, not a verdict, and it must not become an automatic block.**
+   A platform, offline, privacy or cost requirement is legitimately owned by no
+   single slice; the ones the design marks `*(non-functional)*` are listed
+   separately as expected absences for exactly that reason. What the note is
+   worth is a question to ask of the diff in front of you: is the work for those
+   ids actually here, or is the `covers:` list claiming coverage this change
+   does not deliver? Say what you conclude either way.
+
    Also check the design behind the plan: does the change still match
    `docs/DESIGN.md` — its goals, non-goals, and approach?
 

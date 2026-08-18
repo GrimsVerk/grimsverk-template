@@ -144,4 +144,67 @@ printf -- '- `BL-1` — the first real item — filed by: owner\n' >> "$R/docs/B
 out="$(run)"; expect_rc "the shipped skeleton's placeholder is not an item" 0 $?
 expect_contains "and says there was nothing to protect yet" "$out" "nothing to protect yet"
 
+# ------------------------------------- the approvals ledger is held too
+# The owner's ruling: approval is ADVISORY and records WHO — owner or oracle —
+# because "both allows work to be done, but if a reviewer is looking at it, it
+# is genuinely more informative for the reviewer to know who approved, as the
+# oracle might be wrong."
+#
+# It is a separate FILE rather than a section because sections cannot carry it:
+# moving an item from Proposed to Approved changes its position, and this very
+# check fails on reordering — so approval-by-moving was never available.
+#
+# Nothing here gates anything. What is protected is the RECORD: an approval,
+# once landed, cannot be quietly rewritten to say the owner said yes when the
+# oracle did.
+R3="$WORK/approvals"
+init_repo "$R3"
+mkdir -p "$R3/docs"
+cat > "$R3/docs/BACKLOG.md" <<'EOF'
+# Backlog
+
+## Proposed
+
+- **BL-1** — cache the transcripts — filed by: owner
+EOF
+cat > "$R3/docs/BACKLOG.approved.md" <<'EOF'
+# Backlog — approvals
+
+- `BL-1` — approved by: owner — 2026-08-18 — worth doing before the sync work
+EOF
+git -C "$R3" add -A && git -C "$R3" commit -qm seed
+B3="$(git -C "$R3" rev-parse HEAD)"
+run3() { ( cd "$R3" && BASE_SHA="$B3" "$CHECK" 2>&1 ); }
+
+out="$(run3)"
+expect_rc "an untouched approvals ledger passes" 0 $?
+expect_contains "and it counts as a protected ledger" "$out" "ledger(s)"
+
+# Appending an approval is the whole point of the file and must stay free.
+printf -- '- `BL-2` — approved by: oracle — 2026-08-18 — ruled in OD-4\n' \
+  >> "$R3/docs/BACKLOG.approved.md"
+git -C "$R3" add -A && git -C "$R3" commit -qm "Approve BL-2"
+expect_rc "appending an approval passes" 0 "$(run3 >/dev/null; echo $?)"
+
+# BL-2's approval has LANDED now, which is the only state in which
+# "append-only" means anything about it.
+B3="$(git -C "$R3" rev-parse HEAD)"
+
+# Rewriting one does not. This is the line that matters: an oracle approval
+# relabelled as the owner's is precisely the distinction the file exists to
+# record, erased by the party that benefits.
+sed -i 's/approved by: oracle/approved by: owner/' "$R3/docs/BACKLOG.approved.md"
+git -C "$R3" add -A && git -C "$R3" commit -qm "Relabel who approved BL-2"
+out="$(run3)"
+expect_rc "rewriting who approved an item fails" 1 $?
+expect_contains "and names the ledger" "$out" "docs/BACKLOG.approved.md"
+git -C "$R3" reset -q --hard HEAD~1
+
+# Deleting an approval fails too — an approval that vanishes is a decision
+# nobody can find again.
+: > "$R3/docs/BACKLOG.approved.md"
+git -C "$R3" add -A && git -C "$R3" commit -qm "Empty the approvals ledger"
+expect_rc "emptying the approvals ledger fails" 1 "$(run3 >/dev/null; echo $?)"
+git -C "$R3" reset -q --hard HEAD~1
+
 summary

@@ -67,7 +67,23 @@ evidence cell instead of a green coverage line. A requirement you cannot name a
 criterion for is a requirement nothing will ever check was built. -->
 
 **Non-functional** <!-- fill only those that apply; keep numbering continuous -->
-- **R2** — Platform / targets: <!-- web, iOS, CLI, service, library, etc. -->
+
+<!-- GIVE THESE IDS TOO, and mark each one *(non-functional)* in the line
+itself. The mark is read by `.github/scripts/coverage.sh` and
+`.github/scripts/plan-metrics.sh`, which report which requirements a plan claims
+in `covers:` while none of its slices ever mentions them — an over-claimed
+covers list is how twenty requirements come to be "covered" by a hundred lines
+of code with every gate green.
+
+A platform or offline requirement is owned by no single slice by nature, so
+without the mark the report would fire on honest plans and teach planners to pad
+slice text with ids. Marked, the absence is listed as EXPECTED and the report
+stays readable. The mark is yours and durable: this document is CODEOWNERS-owned,
+so what counts as expected is decided here rather than by the planner.
+
+Both are notes and neither fails a build. -->
+
+- **R2** — Platform / targets: *(non-functional)* <!-- web, iOS, CLI, service, library, etc. -->
 - Performance / scale:
 - Privacy / security / data handling:
 - Offline / connectivity:

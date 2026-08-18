@@ -4,9 +4,15 @@ The standing queue of what *might* be built, as opposed to a plan, which covers
 the one change being built now. Three sections, and what separates them is who
 has ruled:
 
-- **Approved** — the owner has said yes. An agent working unattended implements
-  these top to bottom, and keeps going until the list is done or it is truly
-  blocked (`AGENTS.md`, "Work queue").
+- **Approved** — somebody has said yes. **Advisory, and recorded in
+  [`BACKLOG.approved.md`](BACKLOG.approved.md) rather than by moving the item
+  here.** Moving an item changes its position, and this file is append-only, so
+  approval-by-moving was never actually available. That file also records WHO
+  approved — owner or oracle — which is the part a reviewer needs: both allow
+  work to proceed, but the oracle can be wrong, and an item it blessed reads
+  differently from one the owner chose. No gate reads it; an approval gate on
+  this path would put the owner back in the loop at 3am, which is the single
+  thing the unattended arrangement exists to prevent.
 - **Proposed** — ideas, written as text, **never coded unprompted**. They move
   up when the owner moves them.
 - **Uncertainties awaiting oracle ruling** — questions a plan raised that the
@@ -36,7 +42,8 @@ Three rules follow:
   at the pull request's base commit, and removing the item turns a landed
   decision's evidence into a dangling reference.
 - **Never edit a landed item — append instead.** Finished? Add a line to
-  [`BACKLOG.done.md`](BACKLOG.done.md). Changed your mind? File a new item that
+  [`BACKLOG.done.md`](BACKLOG.done.md). Approved? Add a line to
+  [`BACKLOG.approved.md`](BACKLOG.approved.md), naming who. Changed your mind? File a new item that
   cites the old id. Got the wording wrong? Append a correction repeating the id,
   the way `docs/escapes.md` handles the same problem.
 - **Never ship or paste an id you did not mean.** The check greps this whole
@@ -53,7 +60,9 @@ nothing anywhere recorded the difference.
 
 ## Approved
 
-_(nothing yet)_
+_(advisory — approvals are recorded in_ [`BACKLOG.approved.md`](BACKLOG.approved.md),
+_which says who approved each one. Nothing moves into this section: the file is_
+_append-only, so a landed item never changes position.)_
 
 ## Proposed
 
