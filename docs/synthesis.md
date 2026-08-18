@@ -16,7 +16,12 @@ decisions taken at the bottom. Nothing here is authorization: as
   `test-backlog-append-only.sh` and `test-budget-probe.sh` are new). What
   remains is the open items in Part 4 and the live run — see "Where this
   stands" below.
-- **Covers:** `docs/plans/` (2 plans + 2 context documents) and `docs/reviews/`
+- **Revision 4:** 2026-08-18 — the two plans this document reconciled were
+  **deleted**, having been implemented; `docs/plans/closing-the-loop.md` and its
+  context replace them, carrying the open items this document ruled on. Part 1.1
+  is kept unedited as the record of what those plans said, and the reviews in
+  `docs/reviews/` quote them as they were.
+- **Covered:** `docs/plans/` (2 plans + 2 context documents, since removed) and `docs/reviews/`
   (5 sessions, 14 distinct documents — `testbed-vs-template-report.md` and
   `comparative-report.md` are byte-identical copies of one file)
 - **Source material:** ~63,000 words of review, plus one working session.
@@ -548,6 +553,12 @@ refuses on 11 conditions and notes on 5; missing App identity moves from note to
 refuse.
 
 ### Still open, in priority order
+
+> **All of these are now planned.** `docs/plans/closing-the-loop.md` covers items
+> 1, 2, 3, 5 and 7 as slices, and folds 4 into slice 6's reporting. Item 6 was
+> decided outright. The list below is kept because a plan is a proposal until it
+> lands, and because each entry says *why* the item exists in a way the plan's
+> slice text assumes rather than repeats.
 
 1. **D5's mechanical half** — an adequacy check comparing `covers:` to slices.
 2. **D10 / T1** — success criteria as runnable tests.
