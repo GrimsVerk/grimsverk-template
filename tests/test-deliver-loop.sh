@@ -736,4 +736,38 @@ expect_contains "the oracle dispatch carries the command file's body" \
 expect_not_contains "and not its YAML frontmatter" "$prompt_log" \
   "description: Correct the design from logged evidence"
 
+# ------------------------------ one report buffer carries exactly one run
+# ESC-44. The report buffer is appended during the run and landed at the stop;
+# a run killed too hard for its EXIT trap to fire leaves its lines behind, and
+# the next run's landed report then opened with the PREVIOUS run's header —
+# observed downstream, flagged by the review gate reading the evidence. The
+# dead run's lines must survive (wiping them is the evidence-destroyed defect
+# this machinery exists to repair), but as a labeled unlanded/ file beside the
+# next report, never inside it — and a successfully landed buffer is cleared,
+# or the rotation would land the same report twice.
+rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"
+mkdir -p "$R/.claude/deliver-loop"
+printf '# Delivery run OLDRUN\n\n- 00:00:00Z the run that never landed\n' \
+  > "$R/.claude/deliver-loop/run.md"
+out="$(run_loop CLAUDE_LOG=/dev/null SESSION_TIMEOUT=30 -- --max-iterations 1)"
+runref="$(git -C "$R" for-each-ref --format='%(refname:short)' 'refs/heads/docs/run-*' | sort | tail -1)"
+runid="${runref#docs/run-}"
+report="$(git -C "$R" show "$runref:docs/runs/$runid/run.md" 2>/dev/null)"
+expect_contains "the fixture landed a run report at all" "$report" "# Delivery run $runid"
+expect_not_contains "the landed report carries only its own run" "$report" \
+  "Delivery run OLDRUN"
+unlanded="$(git -C "$R" show "$runref:docs/runs/$runid/unlanded/unlanded-OLDRUN.md" 2>/dev/null)"
+expect_contains "the killed run's buffer is landed beside it, labeled" "$unlanded" \
+  "the run that never landed"
+if [[ -s "$R/.claude/deliver-loop/run.md" ]]; then
+  no "a landed buffer is cleared" "the buffer still has content after a successful landing"
+else
+  ok "a landed buffer is cleared"
+fi
+if compgen -G "$R/.claude/deliver-loop/unlanded-*.md" >/dev/null 2>&1; then
+  no "a landed unlanded file is cleared too" "$(ls "$R/.claude/deliver-loop")"
+else
+  ok "a landed unlanded file is cleared too"
+fi
+
 summary
