@@ -102,6 +102,24 @@ last="$(printf '%s' "$out" | tail -1)"
 if [[ "$last" == "hi" ]]; then ok "the prompt survives the variadic tool list"
 else no "the prompt survives the variadic tool list" "last argument was: $last"; fi
 
+# A prompt that BEGINS WITH DASHES must reach the engine as a prompt, not die as
+# an "unknown option". Every command file opens with YAML frontmatter, so every
+# prompt the delivery driver builds from one starts with `---` — and without an
+# option terminator before the prompt, the first dispatch of the first
+# unattended run failed on exactly this, eight times in thirty seconds, for
+# both defined engines' code paths (ESC-37).
+for eng in claude codex; do
+  out="$("$SPAWN" --id x --prompt '--- looks like a flag' --engine "$eng" --print-command 2>&1)"
+  last="$(printf '%s' "$out" | tail -1)"
+  before="$(printf '%s' "$out" | tail -2 | head -1)"
+  if [[ "$last" == "--- looks like a flag" && "$before" == "--" ]]; then
+    ok "a ----leading prompt is terminator-protected ($eng)"
+  else
+    no "a ----leading prompt is terminator-protected ($eng)" \
+      "last two arguments were: $before / $last"
+  fi
+done
+
 out="$(SPAWN_WORKER_ALLOWED_TOOLS='Bash(just this:*)' \
   "$SPAWN" --id x --prompt hi --engine claude --print-command 2>&1)"
 expect_contains "the grant list is overridable" "$out" "Bash(just this:*)"
@@ -155,6 +173,18 @@ out="$(role_cmd steward)"
 expect_contains "the steward may write oracle plans" "$out" "Write(docs/plans/oracle/**)"
 expect_not_contains "the steward cannot write the ledger" "$out" "DESIGN.oracle.md"
 expect_not_contains "the steward cannot write a handoff" "$out" "docs/oracle/**"
+
+# The commands a role's own prompt names must be in its grant list, or the
+# instruction is unfollowable as shipped: plan.md tells the steward to run
+# oracle-decisions.sh, and the first-run stewards found out at CI instead. And
+# a denied `git switch` does not fail loudly — it made a steward abandon a
+# finished plan, uncommitted, in its worktree (ESC-38).
+expect_contains "the steward may run the oracle-decisions gate its prompt names" \
+  "$out" "Bash(.github/scripts/oracle-decisions.sh:*)"
+expect_contains "and the plan parser" "$out" "Bash(.github/scripts/plan-parse.sh:*)"
+expect_contains "and the plan linter" "$out" "Bash(.github/scripts/plan-lint.sh:*)"
+expect_contains "a denied git switch no longer costs the commit" "$out" \
+  "Bash(git switch:*)"
 
 for role in reviewer explore; do
   out="$(role_cmd "$role")"

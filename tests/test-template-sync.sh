@@ -206,10 +206,17 @@ if copier copy --defaults --trust --quiet --vcs-ref=v9.9.9 \
 
   # Updating to the same ref changes no content, but exercises the whole update
   # machinery — including how every answer is reused or re-derived.
-  if ( cd "$R1" && copier update --defaults --trust --vcs-ref=v9.9.9 ) >/dev/null 2>&1; then
+  # The error is captured, not swallowed: this assertion failed in CI while
+  # green locally, and a discarded stderr left nothing to diagnose from — the
+  # exact evidence-destroyed-by-default shape this repository keeps fixing.
+  upd_out="$( cd "$R1" && copier update --defaults --trust --vcs-ref=v9.9.9 2>&1 )"
+  upd_rc=$?
+  if [[ "$upd_rc" -eq 0 ]]; then
     ok "the real template survives copier update"
   else
-    no "the real template survives copier update"
+    no "the real template survives copier update" \
+      "copier exited $upd_rc; last lines:" \
+      "$(printf '%s\n' "$upd_out" | tail -15)"
   fi
 
   leaked="$(grep -rl 'copier\._main' "$R1" 2>/dev/null | grep -v '/\.git/' || true)"
