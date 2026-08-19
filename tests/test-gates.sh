@@ -426,6 +426,66 @@ out="$(resolve_now docs/oracle-and-code)"
 expect_rc "an oracle-design branch that also carries code is capped" 1 $?
 expect_contains "says the exemption does not cover it" "$out" "touches something else"
 
+# ------------------------------------- run evidence is exempt at any size
+# The sixth instance of the same mistake, found by the first unattended run:
+# the driver lands docs/runs/<timestamp>/ — the run report and the review
+# gate's payloads — on a docs/ branch at EVERY stop, and a real run's report is
+# always longer than the cap. So the evidence the design calls "committed, on
+# its own pull request, at every stop" was the one thing that could not land:
+# the run finished and left an unmergeable pull request behind (ESC-40).
+on_branch docs/run-evidence
+mkdir -p "$R/docs/runs/20260819T001105Z/reviews"
+{ echo '# Delivery run 20260819T001105Z'
+  seq 1 150 | sed 's/^/- iteration line /'; } > "$R/docs/runs/20260819T001105Z/run.md"
+echo '| branch | verdict |' > "$R/docs/runs/20260819T001105Z/reviews/index.md"
+commit_all "Run evidence for 20260819T001105Z"
+out="$(resolve_now docs/run-evidence)"
+expect_rc "a run-evidence branch is exempt at any size" 0 $?
+expect_contains "and says why" "$out" "run evidence"
+
+# One path outside docs/runs/ and the cap is back — evidence is not cover.
+on_branch docs/run-and-code
+mkdir -p "$R/docs/runs/20260819T0-2"
+seq 1 150 | sed 's/^/- line /' > "$R/docs/runs/20260819T0-2/run.md"
+seq 1 30 > "$R/src/demo_app/smuggled_run.py"
+commit_all "Run evidence, and code with it"
+out="$(resolve_now docs/run-and-code)"
+expect_rc "a run-evidence branch that also carries code is capped" 1 $?
+
+# -------------------------- a plan may carry its BL filings alongside it
+# AGENTS.md's Planning rule REQUIRES the unattended planner to file guessed
+# decisions as BL-<n> items in docs/BACKLOG.md — but the moment that file
+# joined a plan's diff, the branch fell out of the carve-out and the whole
+# plan hit the 50-line cap. Filing was mechanically impossible on the only
+# branch the rule requires it on, which pushed first-run plans into
+# self-ruling their uncertainties instead (ESC-41).
+on_branch docs/plan-with-filings
+{
+  echo '---'; echo 'slug: plan-with-filings'; echo '---'
+  echo '# Filed — Plan'
+  echo '## Slice 1 — thing'
+  echo '- **Files:** `src/demo_app/filed.py`'
+  echo '- **Estimate:** ~10 lines'
+  seq 1 100 | sed 's/^/prose line /'
+} > "$R/docs/plans/plan-with-filings.md"
+cat >> "$R/docs/BACKLOG.md" <<'EOF'
+- **BL-7** — a question for the oracle — proposed: a default — LOW: no slice
+  boundary moves either way.
+EOF
+commit_all "A plan and the BL filings its uncertainty gate produced"
+out="$(resolve_now docs/plan-with-filings)"
+expect_rc "a plan travelling with its BL filings is exempt" 0 $?
+
+# And the backlog is not a smuggling route either.
+on_branch docs/backlog-and-code
+cat >> "$R/docs/BACKLOG.md" <<'EOF'
+- **BL-8** — cover story.
+EOF
+seq 1 60 > "$R/src/demo_app/smuggled_backlog.py"
+commit_all "Backlog and code"
+out="$(resolve_now docs/backlog-and-code)"
+expect_rc "a backlog branch that also carries code is capped" 1 $?
+
 # ------------------------------ a plan in a SUBDIRECTORY resolves and lints
 # plan-resolve.sh, plan-lint.sh and coverage.sh all enumerated plans with
 # `find -maxdepth 1`. A steward writes into docs/plans/oracle/, so a depth limit
