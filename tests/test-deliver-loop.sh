@@ -815,6 +815,59 @@ expect_contains "the oracle dispatch carries the command file's body" \
 expect_not_contains "and not its YAML frontmatter" "$prompt_log" \
   "description: Correct the design from logged evidence"
 
+# ------------------------------ landing a dead run's evidence, run-free
+# The buffer rotation (below) rescues a killed run's report ON THE NEXT RUN.
+# A one-shot run, a finished test lane, or a retired machine has no next run,
+# and evidence waiting on one is evidence dying by default. --land-evidence
+# lands the leftover buffer now, under the dead run's own id, dispatching
+# nothing — and skips the readiness/identity/worktree preflights, because a
+# recovery that refuses over the repository's state would hold a dead run's
+# only record hostage to it.
+land_only() { ( cd "$R" && env PATH="$WORK/bin:$PATH" GH="$WORK/bin/gh" \
+    DELIVER_APP_TOKEN_CMD="$WORK/bin/app-token" \
+    CLAUDE_LOG="$WORK/cap/claude.land.log" "$@" \
+    bash "$LOOP" --land-evidence 2>&1 ); }
+
+git -C "$R" switch -q main 2>/dev/null || true
+rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"
+mkdir -p "$R/.claude/deliver-loop" "$R/.worktrees/leftover-worker"
+printf '# Delivery run 20260819T010203Z\n\n- 01:02:03Z dispatch oracle worker\n- 01:05:00Z the line before the kill\n' \
+  > "$R/.claude/deliver-loop/run.md"
+: > "$WORK/cap/claude.land.log"
+: > "$WORK/cap/prcreate.log"
+out="$(land_only PR_CREATE_LOG="$WORK/cap/prcreate.log")"
+expect_rc "--land-evidence lands a dead run's buffer" 0 $?
+expect_contains "and says it dispatches nothing" "$out" "dispatching nothing"
+landref="docs/run-20260819T010203Z"
+landed="$(git -C "$R" show "$landref:docs/runs/20260819T010203Z/run.md" 2>/dev/null)"
+expect_contains "the evidence lands under the dead run's OWN id" "$landed" \
+  "# Delivery run 20260819T010203Z"
+expect_contains "carrying the killed run's last lines" "$landed" \
+  "the line before the kill"
+expect_contains "with an honest post-mortem marker" "$landed" "Landed post-mortem"
+expect_not_contains "and no invented exit code" "$landed" "with exit code"
+expect_contains "the pull request is opened for it" "$(cat "$WORK/cap/prcreate.log")" \
+  "--head $landref"
+if [[ -s "$WORK/cap/claude.land.log" ]]; then
+  no "nothing is dispatched on the way" "$(head -c 200 "$WORK/cap/claude.land.log")"
+else ok "nothing is dispatched on the way"; fi
+if [[ -s "$R/.claude/deliver-loop/run.md" ]]; then
+  no "the landed buffer is cleared" "buffer still has content"
+else ok "the landed buffer is cleared"; fi
+out="$(land_only)"
+expect_rc "a second landing finds nothing and exits clean" 0 $?
+expect_contains "and says so" "$out" "nothing to land"
+
+# Without an App identity a RUN refuses; a RECOVERY degrades — the branch still
+# pushes and the missing pull request is said out loud.
+printf '# Delivery run 20260819T020304Z\n\n- 02:03:04Z another dead run\n' \
+  > "$R/.claude/deliver-loop/run.md"
+out="$(land_only STUB_APP_TOKEN_RC=3)"
+expect_rc "no App identity does not refuse a landing" 0 $?
+expect_contains "the missing pull request is stated, not hidden" "$out" "no App token"
+rm -rf "$R/.worktrees"
+git -C "$R" switch -q main 2>/dev/null || true
+
 # ------------------------------ one report buffer carries exactly one run
 # ESC-44. The report buffer is appended during the run and landed at the stop;
 # a run killed too hard for its EXIT trap to fire leaves its lines behind, and
