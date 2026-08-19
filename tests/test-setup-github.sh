@@ -105,7 +105,7 @@ unset STUB_EXISTING_ID
 # --------------------------------- run 3: secrets missing, values over stdin
 : > "$WORK/cap/gh.log"
 : > "$STUB_SECRET_LIST"
-printf 'tok-claude-123\ntok-template-456\n\n' > "$WORK/cap/answers.txt"
+printf 'tok-claude-123\n' > "$WORK/cap/answers.txt"
 out="$(run_setup "$WORK/cap/answers.txt")"
 expect_rc "prompts for the missing secrets" 0 $?
 log="$(cat "$WORK/cap/gh.log")"
@@ -116,7 +116,13 @@ else
 fi
 expect_not_contains "the value appears in NO argument list" "$log" "tok-claude-123"
 expect_not_contains "and is never echoed" "$out" "tok-claude-123"
-expect_contains "an empty line skips an optional secret" "$out" "AUTO_MERGE_TOKEN: skipped"
+# The owner's App-only ruling: no PAT is ever prompted for, set, or offered.
+expect_not_contains "TEMPLATE_TOKEN is never prompted for" "$out" "TEMPLATE_TOKEN"
+expect_not_contains "AUTO_MERGE_TOKEN is never prompted for" "$out" "AUTO_MERGE_TOKEN"
+if [[ -e "$WORK/cap/secret-TEMPLATE_TOKEN" || -e "$WORK/cap/secret-AUTO_MERGE_TOKEN" ]]; then
+  no "and no PAT secret is ever set" "$(find "$WORK/cap" -name 'secret-*')"
+else ok "and no PAT secret is ever set"; fi
+expect_contains "without --app, the App path is named as the only one" "$out" "Re-run with --app"
 
 # ------------------------------------------------ the transcript (evidence)
 # Setup friction is evidence with nowhere to live until now: the script

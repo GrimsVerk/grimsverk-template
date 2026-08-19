@@ -225,10 +225,10 @@ configuration back before trusting it:
 
 **What stays manual, each for a security reason rather than a missing
 feature:** typing the secret *values* (`claude setup-token` is an interactive
-OAuth flow, and the script never fetches or stores a credential), minting the
-two fine-grained PATs and creating the GitHub App in the GitHub UI (token
-minting is a human credential decision, and the App form has no API — `--app`
-prints the exact URL and permission list), `gh auth login`'s browser grant, and
+OAuth flow, and the script never fetches or stores a credential), creating the
+GitHub App in the GitHub UI (the App form has no API — `--app` prints the
+exact URL and permission list; there are deliberately no PATs to mint any
+more), `gh auth login`'s browser grant, and
 the Pro-vs-public choice at the top of this file.
 
 The REST API accepts required-check contexts that have not reported yet — the
@@ -257,13 +257,19 @@ exists, and that refusal is deliberate.
 | Webhook → Active | **uncheck it** |
 | Repository permissions → Contents | **Read and write** |
 | Repository permissions → Pull requests | **Read and write** |
+| Repository permissions → Checks | **Read-only** (a web-session driver reads CI results through the App) |
 | Where can this GitHub App be installed? | **Only on this account** |
+
+Keep it at exactly those three permissions — the App is the identity the
+unattended driver acts as, so it must never hold Administration or Secrets.
 
 Nothing else needs changing. Create it, then on the App's page:
 
 - note the **App ID** (a number near the top — not the Client ID);
 - **Generate a private key**, which downloads a `.pem`;
-- **Install App** → install it on this repository.
+- **Install App** → install it on this repository **and on the template
+  repository** (`template-sync` reads the template through this App; there is
+  no PAT path).
 
 **2. Give the credentials their two homes.** This is the part that is easy to
 half-do, because the two halves are read by different things:
@@ -371,12 +377,13 @@ value by running `claude setup-token` locally (uses your subscription, not a
 metered API key). Do this *before* making `review` required — the job fails
 closed without a credential, so every PR would block.
 
-**a2. Add the template read token.** Same place, named `TEMPLATE_TOKEN`: a
-fine-grained PAT with **Contents: Read-only** on `grimsverk-template`. The
-`template-sync` check fetches this template to verify an update, and a project's
-built-in CI token cannot reach another repository — without the secret that check
-fails closed and no template update can ever merge. See *Updating generated
-projects* below for how to create it, and note its expiry date somewhere.
+**a2. Install the App on the template repository too.** The `template-sync`
+check fetches this template to verify an update, and a project's built-in CI
+token cannot reach another repository — so the workflow mints a read-only token
+from the GitHub App, scoped to this template alone. That works only if the App
+is installed here as well as on the project (App settings → Install App).
+There is deliberately no `TEMPLATE_TOKEN` PAT any more: a PAT expires, a year
+at most, and when it did, template updates failed in every project at once.
 
 **b. Enable the merge settings.** *Settings → General → Pull Requests*:
 
@@ -398,12 +405,12 @@ projects* below for how to create it, and note its expiry date somewhere.
 
   Two answers, and they compose:
 
-  - **Optional: set an `AUTO_MERGE_TOKEN` secret** — a fine-grained PAT scoped
-    to this repository with `pull-requests: write` and `contents: write`.
-    `auto-merge.yml` prefers it over `GITHUB_TOKEN`, so merges are attributed to
-    you, the close event fires, and cleanup happens immediately. It bypasses
-    nothing — branch protection and required checks still apply — but it acts as
-    you, so scope it narrowly and note its expiry.
+  - **The GitHub App** — `auto-merge.yml` prefers an App-minted token over
+    `GITHUB_TOKEN`, so merges are attributed to the App, the close event
+    fires, and cleanup happens immediately. (An `AUTO_MERGE_TOKEN` PAT used to
+    be the alternative and is gone deliberately: it acted as you and expired,
+    and the ruling is that the App is the only GitHub credential a project
+    configures.)
   - **Always on: the scheduled sweep** in `auto-merge.yml` deletes branches whose
     pull requests have merged, daily. Scheduled runs are not suppressed by the
     token rule, so this works with no secret configured. It skips any branch an
@@ -696,21 +703,19 @@ Two things to expect:
   own PR. That is the deadlock described above, working as intended — a change to
   your own gates is exactly what a human should look at. `template-sync` green is
   what makes that a read of the release notes rather than an audit of 40 files.
-- **Each project needs a `TEMPLATE_TOKEN` secret.** This template is private, and
-  a project's built-in CI token is scoped to that project — it cannot read
-  another repository. Without the secret, `template-sync` cannot fetch the
-  template and fails closed, so no update can merge.
+- **Each project needs the App installed on this template.** This template is
+  private, and a project's built-in CI token is scoped to that project — it
+  cannot read another repository. So `template-sync` mints a short-lived token
+  from the GitHub App (the `APP_ID` / `APP_PRIVATE_KEY` secrets every project
+  already carries), down-scoped to Contents: Read-only on this template alone.
+  That works only while the App is installed on `grimsverk-template` as well
+  as on the project — one click, once, on the App's Install App page.
 
-  Create it once at *Settings → Developer settings → Personal access tokens →
-  Fine-grained tokens*: **Repository access** limited to `grimsverk-template`,
-  **Permissions → Contents: Read-only**. Then add it as `TEMPLATE_TOKEN` under
-  *Settings → Secrets and variables → Actions* **in every generated repo** —
-  `GrimsVerk` is a personal account, not an organisation, so there is no
-  org-level secret to share one across projects.
-
-  Fine-grained tokens expire, a year at most. When this one does, template
-  updates start failing in every project simultaneously, and the error will not
-  say "expired token" in so many words. Note the date somewhere.
+  There is deliberately no `TEMPLATE_TOKEN` PAT any more. A fine-grained token
+  expires, a year at most, and when it did, template updates started failing
+  in every project simultaneously with an error that never said "expired
+  token". An App key does not expire, and a fallback that must be set up
+  defeats the point of having less to set up.
 
 > `--trust` is not needed for either command: this template renders files only
 > and runs no tasks or migrations. If a future version adds one, Copier will
