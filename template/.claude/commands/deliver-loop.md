@@ -46,11 +46,20 @@ by your credential:
   works and opens the pull request as the App:
   `gh workflow run open-pr.yml -f head=<branch> -f base=<this run's base>
   -f title=<title> -f body=<body>`. The dispatch returns before the pull
-  request exists: give it up to two minutes (`gh pr list --head <branch>
-  --base <base>`); if nothing appears, read that workflow run's log, report
-  it, and stop. Never open the pull request under the ambient login as a
-  fallback — an owner-authored pipeline pull request is the one artifact
-  this pipeline must never produce.
+  request exists: give it up to two minutes, checking with
+  `gh api "repos/<owner/repo>/pulls?state=open&base=<base>" --jq
+  '.[] | select(.head.ref=="<branch>") | .number'`; if nothing appears, read
+  that workflow run's log, report it, and stop. Never open the pull request
+  under the ambient login as a fallback — an owner-authored pipeline pull
+  request is the one artifact this pipeline must never produce.
+
+**REST only, on the hosted platform (ESC-51).** The same proxy that owns the
+credential refuses GraphQL except a pinned set of review operations — and
+`gh pr ...`, `gh repo ...` are GraphQL. The detector and the readiness check
+already speak REST; when you need an API answer yourself, use
+`gh api repos/<owner/repo>/...`, never a `gh pr`/`gh repo` porcelain
+command. A GraphQL refusal blames the credential in its error text; do not
+believe it — the credential is fine, the query shape is the problem.
 
 1. **Establish the base branch, first turn only, out loud.** The owner may
    name one in the scope arguments (`base: <branch>`); otherwise it is the

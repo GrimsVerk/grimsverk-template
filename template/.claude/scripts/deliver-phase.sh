@@ -96,15 +96,28 @@ if [[ -z "${RUN_BASE:-}" ]]; then
   [[ -n "$RUN_BASE" ]] || RUN_BASE="$(git branch --show-current)"
 fi
 
+# REST, never GraphQL, for every API read this script makes. A hosted web
+# session's egress proxy serves REST plus only a pinned set of review GraphQL
+# operations — `gh pr list` is GraphQL, so on that platform it dies with an
+# error that blames the credential, which is fine (ESC-51). REST answers the
+# same questions and works everywhere, so there is ONE code path, not a local
+# one and a hosted one. The repository name comes from the git remote for the
+# same reason: `gh repo view` is GraphQL too.
+if [[ -z "${REPO:-}" ]]; then
+  REPO="$(git remote get-url origin 2>/dev/null \
+    | sed -E 's#^(git@[^:/]+:|https?://[^/]+/|ssh://git@[^/]+/)##; s#\.git$##')"
+fi
+[[ -n "$REPO" ]] \
+  || { echo "deliver-phase: cannot resolve owner/repo from the origin remote" >&2; exit 2; }
+
 # ------------------------------------------------- 1. an open pipeline PR?
 # Any open pull request TARGETING THIS RUN'S BASE holds the loop: the one-PR
 # rule is about the tree the checks tested being the tree the merge lands on,
 # and that is violated by ANY concurrent merge into the same base, not just a
 # feature's. A pull request into a DIFFERENT base lands on a different tree —
 # it belongs to a different run and is deliberately not this loop's business.
-OPEN_PR="$("$GH" pr list --state open --base "$RUN_BASE" --limit 30 \
-  --json number,headRefName \
-  --jq '.[0] | "\(.number) \(.headRefName)"' 2>/dev/null || true)"
+OPEN_PR="$("$GH" api "repos/$REPO/pulls?state=open&base=$RUN_BASE&per_page=30" \
+  --jq '.[0] | "\(.number) \(.head.ref)"' 2>/dev/null || true)"
 if [[ -n "$OPEN_PR" && "$OPEN_PR" != "null null" ]]; then
   echo "PHASE=WAIT"
   echo "BASE=$RUN_BASE"
@@ -242,9 +255,10 @@ esac
 # it landed. The --base scope matters just as much: a twin run on another base
 # branch merges the same slugs, and counting ITS merges would mark this run's
 # plans built with the work simply absent here.
-MERGED_REFS="$("$GH" pr list --state merged --base "$RUN_BASE" --limit 200 \
-  --json headRefName \
-  --jq '.[].headRefName' 2>/dev/null || true)"
+# REST has no state=merged filter: closed pull requests include unmerged ones,
+# and merged is the merged_at field being set. --paginate replaces --limit 200.
+MERGED_REFS="$("$GH" api --paginate "repos/$REPO/pulls?state=closed&base=$RUN_BASE&per_page=100" \
+  --jq '.[] | select(.merged_at != null) | .head.ref' 2>/dev/null || true)"
 #
 # WHICH STRING IDENTIFIES A PLAN. The front-matter `slug:` field, not the
 # filename. plan-resolve.sh — the check that decides which plan a branch

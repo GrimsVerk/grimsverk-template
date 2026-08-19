@@ -36,6 +36,8 @@ ok "template renders"
 
 R="$WORK/note_app"
 init_repo "$R"
+# The detector resolves owner/repo from the origin remote (ESC-51).
+git -C "$R" remote add origin https://github.com/own/repo.git
 git -C "$R" add -A && git -C "$R" commit -qm "scaffold"
 SCAFFOLD="$(git -C "$R" rev-parse HEAD)"
 
