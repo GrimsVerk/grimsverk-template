@@ -271,17 +271,33 @@ fi
 if [[ "$RUNTIME" -eq 1 ]]; then
   note "CODEOWNERS validation: the full check's job"
   CO_ERRORS="skipped"
+  CO_REF=""
 else
-  CO_ERRORS="$("$GH" api "repos/$REPO/codeowners/errors" --jq '.errors | length' 2>/dev/null)"
+  # ESC-48, two defects in one line. The query carried no ?ref=, so it always
+  # validated the DEFAULT branch's CODEOWNERS — every other branch-sensitive
+  # check here is RUN_BASE-aware, and this one was missed, which turned a bare
+  # default branch into a refusal against a lane whose CODEOWNERS was clean.
+  # And the API's failure status was ignored: gh prints the error body on
+  # stdout, so a 404 flowed INTO the count and was printed as raw JSON inside
+  # a refusal, while the designed cannot-read note never fired. The ref
+  # follows the run's base branch; the count must be a number or it is not a
+  # count.
+  CO_REF="${RUN_BASE:-$DEFAULT_BRANCH}"
+  CO_PATH="repos/$REPO/codeowners/errors"
+  [[ -n "$CO_REF" ]] && CO_PATH="$CO_PATH?ref=$CO_REF"
+  if ! CO_ERRORS="$("$GH" api "$CO_PATH" --jq '.errors | length' 2>/dev/null)" \
+     || ! [[ "$CO_ERRORS" =~ ^[0-9]+$ ]]; then
+    CO_ERRORS=""
+  fi
 fi
 if [[ "$CO_ERRORS" == "skipped" ]]; then
   :
 elif [[ -z "$CO_ERRORS" ]]; then
   note "cannot read CODEOWNERS validation from the API"
 elif [[ "$CO_ERRORS" == "0" ]]; then
-  ok "CODEOWNERS resolves cleanly"
+  ok "CODEOWNERS resolves cleanly (at ${CO_REF:-the default branch})"
 else
-  refuse "$CODEOWNERS_FILE has $CO_ERRORS unresolvable line(s) — gated-path PRs can never satisfy their review requirement; see Settings → Code owners errors, or the file itself"
+  refuse "$CODEOWNERS_FILE (at ${CO_REF:-the default branch}) has $CO_ERRORS unresolvable line(s) — gated-path PRs can never satisfy their review requirement; see Settings → Code owners errors, or the file itself"
 fi
 
 # -------------------------------------------------------------------- vision
