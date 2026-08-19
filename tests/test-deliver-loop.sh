@@ -36,6 +36,7 @@ case "$args" in
     # that already has an open pull request must not get a second one.
     [[ -n "${STUB_HEAD_PR:-}" ]] && echo "$STUB_HEAD_PR" ;;
   "pr checks "*"--watch"*)
+    echo "$args" >> "${GH_CHECKS_LOG:-/dev/null}"
     exit "${STUB_CHECKS_RC:-0}" ;;
   "pr checks "*)
     printf 'lint\tfail\t1m\thttps://x\nreview\tpass\t2m\thttps://y\n' ;;
@@ -383,10 +384,21 @@ expect_contains "and reports the detected phase" "$out" "PHASE=WAIT"
 # first two rounds each dispatch one fix session, the third is a pattern and
 # stops the run (deliver.md step 5's rule, mechanised).
 : > "$WORK/cap/claude.log"
+: > "$WORK/cap/checks.log"
 out="$(run_loop STUB_OPEN_PR="9 feat/notes" STUB_CHECKS_RC=8 \
+        GH_CHECKS_LOG="$WORK/cap/checks.log" \
         WAIT_TIMEOUT=60 SESSION_TIMEOUT=60 --)"
 expect_rc "the same failure three times stops the run" 3 $?
 expect_contains "and says it is a pattern" "$out" "three times"
+
+# The watch must leave on the FIRST failed check, not wait for the rest to
+# settle. Without --fail-fast a required check that never reports at all holds
+# the watch to its full timeout while another required check already failed —
+# the driver sat 90 minutes on a decided pull request exactly this way
+# (ESC-39). A failed required check is terminal for that head; nothing a
+# still-pending check reports can change it.
+expect_contains "the checks watch leaves on the first failure" \
+  "$(cat "$WORK/cap/checks.log")" "--fail-fast"
 # Sessions are `-p` invocations. The budget probe no longer lands here: the
 # harness sets BUDGET_PROBE_ALLOW_SESSION=0, because a probe that costs a
 # session per iteration would both distort this count and, in a real run, spend
@@ -697,5 +709,31 @@ expect_contains "the driver opens the acceptance pull request itself" \
   "$(cat "$PRLOG")" "--head docs/acceptance-"
 expect_not_contains "as the App, never as the owner" "$(cat "$PRLOG")" "GH_TOKEN=<unset>"
 git -C "$R" switch -q main 2>/dev/null || true
+
+# ------------------------------ the dispatched prompt carries no frontmatter
+# The other half of ESC-37. The driver builds worker prompts from
+# .claude/commands/*.md, and every one of those opens with YAML frontmatter —
+# loader metadata, not instructions. Sent verbatim it begins with `---` (the
+# line that killed every first-run dispatch before spawn-worker gained its
+# `--` terminator) and tells the model to read its own catalogue entry as a
+# task. The driver must strip it: the prompt the engine receives starts at the
+# command file's body.
+reset_pr_run
+cat > "$R/docs/BACKLOG.md" <<'EOF'
+# Backlog
+
+## Uncertainties awaiting oracle ruling
+
+- **BL-9** — a question nobody ruled on — proposed: something — HIGH: changes
+  a schema.
+EOF
+git -C "$R" add -A >/dev/null 2>&1; git -C "$R" commit -qm "an unruled uncertainty" >/dev/null 2>&1
+out="$(run_loop CLAUDE_LOG="$ORCHLOG" SESSION_TIMEOUT=30 -- --max-iterations 1)"
+expect_contains "the fixture reaches ORACLE" "$out" "phase ORACLE"
+prompt_log="$(cat "$ORCHLOG" 2>/dev/null)"
+expect_contains "the oracle dispatch carries the command file's body" \
+  "$prompt_log" "You are the **oracle**"
+expect_not_contains "and not its YAML frontmatter" "$prompt_log" \
+  "description: Correct the design from logged evidence"
 
 summary
