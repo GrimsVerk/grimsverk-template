@@ -80,6 +80,23 @@
 #                          branch must be covered by the gates ruleset —
 #                          unattended-ready.sh refuses when it is not; add it
 #                          with scripts/setup-github.sh --gate-branch <branch>.
+#   --land-evidence        land a PREVIOUS run's leftover report buffer and its
+#                          collected evidence NOW, dispatching nothing, then
+#                          exit. For a run killed too hard for its EXIT landing
+#                          to fire (SIGKILL, a crashed machine, a pulled plug):
+#                          its report survives in the gitignored buffer, where
+#                          normally the NEXT run sets it aside and lands it —
+#                          but a one-shot run, a finished test lane, or a
+#                          machine being retired has no next run, and evidence
+#                          waiting on one is evidence dying by default. Pass
+#                          the same --base the dead run used, so the evidence
+#                          lands in that run's own lane. Skips the readiness,
+#                          identity, worktree and budget preflights on purpose:
+#                          a recovery that refuses because the repository is no
+#                          longer fit to RUN would be refusing to record that
+#                          very fact. Degrades without an App identity — the
+#                          branch still pushes; only the pull request is
+#                          skipped, and it says so.
 #   --budget-points <n>    percentage points of the WEEKLY limit this run may
 #                          spend. The window is weekly on the owner's ruling,
 #                          and because the 5-hour window resets mid-run and
@@ -128,10 +145,11 @@ MAX_ITER=0; BUDGET_POINTS=0; MAX_PRS=0; MAX_HOURS=0
 # than a spent allowance — and the driver says so when it fires.
 HARD_MAX_ITER="${DELIVER_HARD_MAX_ITER:-200}"
 BUDGET_POINTS_SET=""; MAX_ITER_SET=""
-WAIT_FOR_OWNER=0; DRY_RUN=0; PRINT_PHASE=""; BASE_FLAG=""
+WAIT_FOR_OWNER=0; DRY_RUN=0; PRINT_PHASE=""; BASE_FLAG=""; LAND_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --base)           BASE_FLAG="${2:-}"; shift 2 ;;
+    --land-evidence)  LAND_ONLY=1; shift ;;
     --max-iterations) MAX_ITER="${2:-}"; MAX_ITER_SET=1; shift 2 ;;
     --budget-points)  BUDGET_POINTS="${2:-}"; BUDGET_POINTS_SET=1; shift 2 ;;
     --max-prs)        MAX_PRS="${2:-}"; shift 2 ;;
@@ -274,7 +292,11 @@ command -v claude >/dev/null 2>&1 || die "the claude CLI is not on PATH"
 CURRENT_BRANCH="$(git branch --show-current)"
 [[ "$CURRENT_BRANCH" == "$RUN_BASE" ]] \
   || die "on branch '$CURRENT_BRANCH', but this run's base is '$RUN_BASE' — the driver dispatches from its base branch only. Switch to it, or name the intended base with --base <branch>"
-if [[ -d .worktrees ]] && [[ -n "$(ls -A .worktrees 2>/dev/null)" ]]; then
+# A dead run routinely leaves worktrees behind — that is part of what makes it
+# a dead run — so the recovery path must not refuse over the very debris it is
+# there to record.
+if [[ "$LAND_ONLY" -eq 0 ]] \
+   && [[ -d .worktrees ]] && [[ -n "$(ls -A .worktrees 2>/dev/null)" ]]; then
   die "leftover worktrees under .worktrees/ — a previous run did not finish assembling; inspect and remove them first"
 fi
 
@@ -297,7 +319,7 @@ if [[ -n "$LANE" ]]; then
 fi
 banner
 
-if [[ "${DELIVER_SKIP_READY:-0}" != "1" ]]; then
+if [[ "${DELIVER_SKIP_READY:-0}" != "1" && "$LAND_ONLY" -eq 0 ]]; then
   echo "deliver-loop: checking whether this repository can run unattended…"
   # The refusal, not a warning (docs/DECISIONS.md): a run that cannot succeed
   # is refused at dispatch time, while someone can still act on it. RUN_BASE
@@ -319,8 +341,15 @@ fi
 # opened — including one carrying an agent's edit to docs/DESIGN.md. Minting
 # here rather than at first use means the failure lands NOW, while the owner is
 # still watching, instead of three phases in.
+# The identity refusal guards a RUN — pull requests must not be opened as the
+# owner. Landing evidence opens at most one, and land_evidence() already
+# degrades honestly without a token (the branch pushes; the missing pull
+# request is said out loud). A recovery that refuses for want of an App would
+# hold a dead run's only record hostage to configuration.
 APP_TOKEN=""
-if ! APP_TOKEN="$("$APP_TOKEN_CMD" 2>&1)"; then
+if [[ "$LAND_ONLY" -eq 1 ]]; then
+  :
+elif ! APP_TOKEN="$("$APP_TOKEN_CMD" 2>&1)"; then
   banner
   echo "  STOP — no usable GitHub App identity, so this run cannot be safe."
   echo
@@ -337,10 +366,37 @@ if ! APP_TOKEN="$("$APP_TOKEN_CMD" 2>&1)"; then
   banner
   exit 2
 fi
-[[ -n "$APP_TOKEN" ]] || die "the App token command printed nothing"
+[[ "$LAND_ONLY" -eq 1 || -n "$APP_TOKEN" ]] || die "the App token command printed nothing"
 unset APP_TOKEN  # minted fresh per pull request; installation tokens last 1h
 
 mkdir -p "$STATE_DIR"
+if [[ "$LAND_ONLY" -eq 1 ]]; then
+  # LANDING A DEAD RUN'S BUFFER, NOT STARTING A RUN. The buffer is the run
+  # being landed: no rotation (that would file it as "unlanded" beside a run
+  # that does not exist), no new header (it carries its own), no touching the
+  # per-run state a post-mortem has no business resetting. The evidence lands
+  # under the dead run's OWN id, read from its header, so the report, the
+  # branch and the pull request are named for the run they record.
+  if [[ ! -s "$STATE_DIR/run.md" ]]; then
+    echo "deliver-loop: no leftover run buffer — nothing to land."
+    exit 0
+  fi
+  PREV_RUN="$(sed -n 's/^# Delivery run //p' "$STATE_DIR/run.md" | head -1)"
+  RUN_ID="${PREV_RUN:-$(date -u +%Y%m%dT%H%M%SZ)-recovered}"
+  while [[ -d "docs/runs/$RUN_ID" ]] \
+     || git rev-parse -q --verify "refs/heads/docs/run-$RUN_ID$LANE" >/dev/null 2>&1; do
+    RUN_ID="$RUN_ID-recovered"
+  done
+  RUN_DIR="docs/runs/$RUN_ID"
+  # collect-evidence needs a --since; the run id IS a UTC timestamp, so derive
+  # it, falling back to a day ago when the header did not parse.
+  RUN_STARTED_AT="$(date -u -d "${PREV_RUN:0:8} ${PREV_RUN:9:2}:${PREV_RUN:11:2}:${PREV_RUN:13:2}" \
+                    +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)"
+  [[ -n "$RUN_STARTED_AT" ]] \
+    || RUN_STARTED_AT="$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                         || date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "deliver-loop: landing the leftover buffer of run ${PREV_RUN:-<unknown>} — dispatching nothing."
+else
 # One identifier for this run, used for the evidence directory, its branch and
 # its pull request, so all three can be found from any one of them.
 #
@@ -373,7 +429,9 @@ rm -f "$STATE_DIR/acceptance-dispatched"
 # Wiping would destroy the dead run's only evidence — the exact defect this
 # whole arrangement repairs — so a leftover buffer is set aside under the run
 # id its own first line names, and land_evidence ships it beside THIS run's
-# report, labeled as what it is.
+# report, labeled as what it is. (When there is no next run to do this, the
+# dead run's owner runs --land-evidence instead, which lands the buffer under
+# its own id directly — see the branch above.)
 if [[ -s "$STATE_DIR/run.md" ]]; then
   PREV_RUN="$(sed -n 's/^# Delivery run //p' "$STATE_DIR/run.md" | head -1)"
   cat "$STATE_DIR/run.md" >> "$STATE_DIR/unlanded-${PREV_RUN:-unknown}.md" \
@@ -383,6 +441,7 @@ fi
   echo "Started $RUN_STARTED_AT."
   echo "Base branch: $RUN_BASE${LANE:+ (branch suffix '$LANE')}."; echo
 } >> "$STATE_DIR/run.md"
+fi
 
 # ------------------------------------------------- the evidence, at every stop
 #
@@ -409,10 +468,20 @@ land_evidence() {
   {
     cat "$STATE_DIR/run.md"
     echo
-    echo "Stopped $(date -u +%Y-%m-%dT%H:%M:%SZ) with exit code $rc."
-    echo
-    echo "See .claude/scripts/deliver-loop.sh's header for what each exit code"
-    echo "means. Every stop says why; none degrades silently."
+    if [[ "$LAND_ONLY" -eq 1 ]]; then
+      # No invented exit code: this run's stop was never recorded, and writing
+      # one here would be the report lying about the one thing it exists to
+      # tell the truth about.
+      echo "Landed post-mortem $(date -u +%Y-%m-%dT%H:%M:%SZ) by --land-evidence:"
+      echo "the run stopped without its exit landing firing, so its stop and"
+      echo "its exit code were never recorded. The last lines above are the"
+      echo "closest thing to a cause of death this report can offer."
+    else
+      echo "Stopped $(date -u +%Y-%m-%dT%H:%M:%SZ) with exit code $rc."
+      echo
+      echo "See .claude/scripts/deliver-loop.sh's header for what each exit code"
+      echo "means. Every stop says why; none degrades silently."
+    fi
   } > "$RUN_DIR/run.md"
 
   # A previous run's set-aside buffer (the run-start rotation above) travels
@@ -470,6 +539,14 @@ land_evidence() {
   return "$rc"
 }
 trap land_evidence EXIT
+
+# Landing is the EXIT trap's job, so a land-only invocation is done the moment
+# the trap is armed. Exiting here also keeps the budget interview, the steering
+# snapshot and the loop out of a code path whose whole point is that the run
+# they belong to is already dead.
+if [[ "$LAND_ONLY" -eq 1 ]]; then
+  exit 0
+fi
 
 design_sha() { git rev-parse -q --verify "HEAD:docs/DESIGN.md" 2>/dev/null || echo none; }
 vision_sha() { git rev-parse -q --verify "HEAD:docs/VISION.md" 2>/dev/null || echo none; }

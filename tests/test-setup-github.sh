@@ -118,6 +118,24 @@ expect_not_contains "the value appears in NO argument list" "$log" "tok-claude-1
 expect_not_contains "and is never echoed" "$out" "tok-claude-123"
 expect_contains "an empty line skips an optional secret" "$out" "AUTO_MERGE_TOKEN: skipped"
 
+# ------------------------------------------------ the transcript (evidence)
+# Setup friction is evidence with nowhere to live until now: the script
+# records its own transcript under docs/runs/setup/ (a path the plan check
+# exempts at any size, so it can always land) — and a transcript that captured
+# a secret VALUE would be worse than none.
+transcripts="$(find "$R/docs/runs/setup" -name 'setup-github-*.log' 2>/dev/null | sort)"
+if [[ -n "$transcripts" ]]; then
+  ok "a transcript is recorded under docs/runs/setup/"
+else
+  no "a transcript is recorded under docs/runs/setup/" "$(ls -R "$R/docs" 2>/dev/null | head -5)"
+fi
+expect_contains "the transcript carries what the script said" \
+  "$(cat $transcripts 2>/dev/null)" "merge settings"
+expect_not_contains "and never a secret value" \
+  "$(cat $transcripts 2>/dev/null)" "tok-claude-123"
+expect_contains "the run names its transcript so the owner can commit it" \
+  "$out" "transcript"
+
 # ------------------------------------- run 3b: --gate-branch adds lane targets
 # A delivery run based on a non-default branch (deliver-loop.sh --base) needs
 # the same gates binding on that branch, or its pull requests merge ungated.

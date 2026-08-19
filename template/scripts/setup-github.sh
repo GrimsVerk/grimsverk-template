@@ -21,7 +21,9 @@
 #      required with 0 approvals plus Code Owners review, and the required
 #      status checks for this project's language. Deliberately NOT "require
 #      linear history" — it blocks merge commits, which breaks the one-line
-#      `git revert -m 1` rollback the whole auto-merge design leans on.
+#      `git revert -m 1` rollback the whole auto-merge design leans on;
+#   5. records its own transcript under docs/runs/setup/ — setup friction is
+#      evidence, and the terminal scrollback was its only record until now.
 #
 # WHAT STAYS MANUAL, and each for a security reason rather than a missing
 # feature:
@@ -65,6 +67,10 @@ set -euo pipefail
 
 APP=0; SSH_HOST=""; VISIBILITY="--private"; VERIFY=0; SKIP_CREATE=0
 GATE_BRANCHES=()
+# The parse loop consumes $@, and the transcript wrapper below re-execs this
+# script — with the consumed argv, every flag would be silently dropped on the
+# inner run. Keep the original.
+ORIG_ARGS=("$@")
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --app)         APP=1; shift ;;
@@ -75,7 +81,7 @@ while [[ $# -gt 0 ]]; do
     --gate-branch) [[ -n "${2:-}" ]] || { echo "setup-github: --gate-branch needs a branch name" >&2; exit 2; }
                    GATE_BRANCHES+=("$2"); shift 2 ;;
     -h|--help)
-      sed -n '2,66p' "$0" | sed -n 's/^# \{0,1\}//p'
+      sed -n '2,68p' "$0" | sed -n 's/^# \{0,1\}//p'
       exit 0 ;;
     *) echo "setup-github: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -87,6 +93,28 @@ say() { echo "setup-github: $*"; }
 GH="${GH:-gh}"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"
 cd "$ROOT"
+
+# ------------------------------------------------------------- the transcript
+# Setup friction is evidence, and until now it had no record: what happened
+# before the pipeline existed lived only in a terminal scrollback. So this
+# script records its own transcript — everything it printed, prompts and
+# refusals included, never a secret VALUE (those are read silently and travel
+# to `gh secret set` over stdin, touching no output stream).
+#
+# Under docs/runs/ deliberately: that path is exempt from the plan check's
+# size cap at any size, so the transcript can always land — on main directly
+# before the gates exist, on a docs/ branch after. A re-exec through `tee`
+# rather than process substitution, because bash does not wait for a process
+# substitution on exit and a transcript that races the assertions reading it
+# is worse than none.
+if [[ -z "${SETUP_GITHUB_LOG_ACTIVE:-}" ]]; then
+  SETUP_LOG="docs/runs/setup/setup-github-$(date -u +%Y%m%dT%H%M%SZ).log"
+  mkdir -p "$(dirname "$SETUP_LOG")"
+  say "recording a transcript to $SETUP_LOG"
+  SETUP_GITHUB_LOG_ACTIVE=1 SETUP_LOG_PATH="$SETUP_LOG" \
+    bash "$0" ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"} 2>&1 | tee -a "$SETUP_LOG"
+  exit "${PIPESTATUS[0]}"
+fi
 
 command -v "$GH" >/dev/null 2>&1 || die "the GitHub CLI is not installed (https://cli.github.com)"
 "$GH" auth status >/dev/null 2>&1 || die "gh is not authenticated — run: gh auth login"
@@ -327,3 +355,7 @@ fi
 echo
 say "done. Read it back before trusting it:"
 say "  .github/scripts/unattended-ready.sh"
+say ""
+say "transcript: ${SETUP_LOG_PATH:-<not recorded>} — setup friction is evidence."
+say "Commit it: directly on main before the gates exist, or on a docs/ branch"
+say "after (docs/runs/ is exempt from the plan-check size cap at any size)."
