@@ -27,9 +27,9 @@
 # feature:
 #
 #   - typing the secret VALUES. This script never fetches or stores a
-#     credential; `claude setup-token` is an interactive OAuth flow, and the
-#     two PATs are minted by a human in the GitHub UI because token minting is
-#     a credential decision no script should make;
+#     credential; `claude setup-token` is an interactive OAuth flow. (There
+#     are deliberately no PATs to mint any more — the App is the only GitHub
+#     credential a project configures);
 #   - creating the GitHub App (--app prints the exact URL and permission list;
 #     the creation form itself is a click-through GitHub offers no API for);
 #   - `gh auth login`'s browser grant;
@@ -156,10 +156,13 @@ prompt_secret() { # prompt_secret <name> <how to get the value>
   say "secret $name: set."
 }
 
+# Deliberately the ONLY secret prompted for besides the App pair. There used
+# to be two PATs here (TEMPLATE_TOKEN for template-sync, AUTO_MERGE_TOKEN for
+# merge attribution) and both are gone by the owner's ruling: the App covers
+# both jobs, PATs expire and fail every project at once, and a fallback that
+# must be set up defeats the point of having less to set up.
 prompt_secret CLAUDE_CODE_OAUTH_TOKEN \
   "It drives the review gate, which FAILS CLOSED without it. Get it by running: claude setup-token"
-prompt_secret TEMPLATE_TOKEN \
-  "A fine-grained PAT with Contents: Read-only on the TEMPLATE repository; template-sync fails closed without it when the template is private."
 
 if [[ "$APP" -eq 1 ]]; then
   echo
@@ -179,11 +182,19 @@ if [[ "$APP" -eq 1 ]]; then
     - Repository permissions:
         Contents ......... Read and write
         Pull requests .... Read and write
+        Checks ........... Read-only   (a web-session driver reads CI results
+                                        through the App; harmless everywhere else)
     - Where installed .... Only on this account
+
+  Keep it at exactly those three permissions. The App is the identity the
+  UNATTENDED driver acts as — never give it Administration or Secrets, or the
+  driver could edit its own gates.
 
   Then, on the App's page: note the App ID (a number, NOT the Client ID),
   press "Generate a private key" (a .pem downloads), and press
-  "Install App" -> install it on this repository. Then continue here.
+  "Install App" -> install it on this repository AND on the template
+  repository (template-sync reads the template through a token minted from
+  this App — there is no PAT path). Then continue here.
 APPHOWTO
   if have_secret APP_ID && have_secret APP_PRIVATE_KEY; then
     say "App secrets already set, leaving them alone."
@@ -234,8 +245,9 @@ IDENTITY
     fi
   fi
 else
-  prompt_secret AUTO_MERGE_TOKEN \
-    "(optional) A fine-grained PAT scoped to THIS repository with pull-requests:write and contents:write; without any merge identity, branch cleanup waits for the nightly sweep. Prefer --app."
+  say "no --app: the App identity was not configured. There is no PAT"
+  say "alternative — unattended runs refuse without the App, and template"
+  say "updates cannot read a private template. Re-run with --app."
 fi
 
 # ---------------------------------------------------------------- 4. ruleset

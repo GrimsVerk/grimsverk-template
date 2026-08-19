@@ -409,10 +409,16 @@ PYCHK
     # And it must NOT fall back to GITHUB_TOKEN. A push made with it creates no
     # workflow runs, so the branch would come up to date with its required
     # checks permanently missing — strictly worse than BEHIND.
-    if grep -qF 'steps.app-token.outputs.token || secrets.AUTO_MERGE_TOKEN }}' "$am"
+    if grep -qF 'steps.app-token.outputs.token }}' "$am"
     then ok "$lang the update never degrades to GITHUB_TOKEN"
     else no "$lang the update never degrades to GITHUB_TOKEN" \
       "$(grep -n 'GH_TOKEN:' "$am")"; fi
+    # And no PAT anywhere: the owner's ruling is App-only — a PAT expires and
+    # acts as the owner, and a fallback that must be set up defeats the point
+    # of having less to set up.
+    if grep -q 'AUTO_MERGE_TOKEN' "$am"
+    then no "$lang carries no PAT rung" "$(grep -n 'AUTO_MERGE_TOKEN' "$am" | head -2)"
+    else ok "$lang carries no PAT rung"; fi
   else
     no "$lang renders the auto-merge workflow" "auto_merge defaults to true"
   fi
@@ -592,25 +598,20 @@ sys.exit(0 if 'closed' in d[True]['pull_request']['types'] else 1)
     # The close-event job is not enough on its own: GitHub creates no workflow
     # run at all for an event caused by GITHUB_TOKEN, so an auto-merge armed
     # with it dispatches nothing on close. Two answers have to be present — the
-    # optional PAT, which makes the event fire, and the scheduled sweep, which
+    # App token, which makes the event fire, and the scheduled sweep, which
     # works whether or not anyone configured one.
     # Matched on the GH_TOKEN assignment, not anywhere in the file: the comment
     # explaining WHY the token exists names it, and a bare grep would read that
     # explanation as the thing it describes. That exact mistake has now been
     # made twice in this file's history, so it is worth the extra precision.
-    if grep -E '^[[:space:]]*GH_TOKEN:' "$am" | grep -q 'AUTO_MERGE_TOKEN'
-    then ok "$lang auto-merge prefers a real token when one exists"
-    else no "$lang auto-merge prefers a real token when one exists" \
-      "GITHUB_TOKEN-driven merges dispatch no events"; fi
-
-    # The App outranks the PAT outranks the built-in token, on the SAME
-    # GH_TOKEN line — the App has its own rate budget and its merges are not
-    # authored as the owner (docs/DECISIONS.md). Order matters: a ladder that
-    # reaches the PAT first quietly keeps the shared-budget problem.
+    #
+    # The App outranks the built-in token, and there is deliberately NO PAT
+    # rung between them (the owner's App-only ruling — see the assertion on
+    # AUTO_MERGE_TOKEN's absence above).
     if grep -E '^[[:space:]]*GH_TOKEN:' "$am" \
-       | grep -qE 'app-token.*AUTO_MERGE_TOKEN.*GITHUB_TOKEN'
-    then ok "$lang auto-merge tries App, then PAT, then built-in token"
-    else no "$lang auto-merge tries App, then PAT, then built-in token"; fi
+       | grep -qE 'app-token.*GITHUB_TOKEN'
+    then ok "$lang auto-merge tries the App, then the built-in token"
+    else no "$lang auto-merge tries the App, then the built-in token"; fi
     if grep -q 'create-github-app-token' "$am"
     then ok "$lang auto-merge can mint an App token"
     else no "$lang auto-merge can mint an App token"; fi

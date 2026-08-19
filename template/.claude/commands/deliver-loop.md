@@ -21,6 +21,15 @@ sleep to wait for CI.
 
 ## Each turn (first, and on every wake)
 
+**Before anything else, every turn: mint gh's credential from the App.** A
+hosted container has no ambient gh login and deliberately no PAT — the App is
+the only GitHub credential this project carries. Run
+`export GH_TOKEN="$(.claude/scripts/app-token.sh)"` at the start of every
+turn: installation tokens last one hour, a turn is shorter, and a token
+carried across turns fails late looking like a GitHub outage. If the mint
+fails, the environment is missing its App id or key — report the exact error
+and stop; do not improvise a credential.
+
 1. **Establish the base branch, first turn only, out loud.** The owner may
    name one in the scope arguments (`base: <branch>`); otherwise it is the
    default branch. Say it before anything else, in these words: "THIS RUN'S
@@ -31,17 +40,22 @@ sleep to wait for CI.
    rules, all three mechanical:
    - run the detector as `RUN_BASE=<branch> .claude/scripts/deliver-phase.sh`,
      and the readiness check as `RUN_BASE=<branch>
-     .github/scripts/unattended-ready.sh` — it refuses when the gates ruleset
-     does not bind the base branch (fix:
+     .github/scripts/unattended-ready.sh --runtime` — `--runtime` because this
+     session's identity is the App, which cannot read repository
+     administration; the flag checks what this identity honestly can (the App
+     minting, the effective rules on the base branch, the documents), and the
+     full check remains the owner's, at setup. It still refuses when the gates
+     do not bind the base branch (fix:
      `scripts/setup-github.sh --gate-branch <branch>`);
    - open every pull request with an explicit `--base <branch>`;
    - on a non-default base, suffix every branch you push with
      `--<branch, non-alphanumerics as ->` (e.g. base `run/web` →
      `feat/<slug>--run-web`), exactly as the local driver does, so twin runs
      building the same slugs cannot collide on branch names.
-2. **Preflight, first turn only:** `gh auth status`;
-   `.github/scripts/unattended-ready.sh` (with `RUN_BASE`, above) — a refusal
-   ends the run, report it verbatim; `coverage.sh` rc 2 likewise (the design
+2. **Preflight, first turn only:** `gh auth status` (on the token minted
+   above);
+   `.github/scripts/unattended-ready.sh --runtime` (with `RUN_BASE`, above) —
+   a refusal ends the run, report it verbatim; `coverage.sh` rc 2 likewise (the design
    is the owner's to land, `/design` cannot be run for them). Note the
    run-start SHAs of `docs/DESIGN.md` and `docs/VISION.md`, the start time,
    and a PR counter in your working notes.

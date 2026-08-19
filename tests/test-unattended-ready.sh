@@ -113,6 +113,8 @@ ready_env
 out="$(run)"; expect_rc "a fully configured repository is ready" 0 $?
 expect_contains "and says so" "$out" "can run unattended"
 expect_contains "App identity is recognised" "$out" "GitHub App configured"
+expect_contains "and the template-repo install is noted (no PAT path exists)" \
+  "$out" "installed on the TEMPLATE repository"
 
 ready_env
 STUB_SETTINGS='{"allow_auto_merge": false, "delete_branch_on_merge": true}'
@@ -150,8 +152,8 @@ expect_contains "and says the driver would act as the owner" "$out" "as you"
 
 ready_env
 STUB_SECRETS=$'CLAUDE_CODE_OAUTH_TOKEN\nTEMPLATE_TOKEN\nAUTO_MERGE_TOKEN'
-out="$(run)"; expect_rc "a PAT merge identity refuses too — a PAT is also the owner" 1 $?
-expect_contains "and says the PAT acts as the owner" "$out" "acts as YOU"
+out="$(run)"; expect_rc "a leftover PAT is no merge identity — still refuses" 1 $?
+expect_contains "and says there is deliberately no PAT path" "$out" "no PAT alternative"
 
 ready_env
 STUB_SECRETS=$'CLAUDE_CODE_OAUTH_TOKEN\nTEMPLATE_TOKEN\nAPP_ID\nAPP_PRIVATE_KEY'
@@ -184,6 +186,51 @@ expect_contains "and names the check and the branch" "$out" \
 
 ready_env
 out="$(run_base main)"; expect_rc "RUN_BASE equal to the default branch adds no check" 0 $?
+
+# ------------------------------------------------------------- --runtime mode
+# A web-session driver's gh holds an App token, which cannot read secrets or
+# rulesets. --runtime checks what that identity honestly can: the App minting,
+# the effective rules on its base branch, and the documents — and does NOT
+# refuse over the admin reads it cannot perform.
+cat > "$WORK/bin/app-ok"  <<'APPSTUB'
+#!/usr/bin/env bash
+echo ghs_stubtoken
+APPSTUB
+cat > "$WORK/bin/app-bad" <<'APPSTUB'
+#!/usr/bin/env bash
+echo "no App identity (stub)" >&2; exit 3
+APPSTUB
+chmod +x "$WORK/bin/app-ok" "$WORK/bin/app-bad"
+run_rt() { # run_rt <app-stub> [NAME=value ...]
+  local stub="$1"; shift
+  (cd "$R" && env GH="$WORK/bin/gh" READY_APP_TOKEN_CMD="$WORK/bin/$stub" "$@" \
+    "$CHECK" --runtime 2>&1)
+}
+
+ready_env
+out="$(run_rt app-ok RUN_BASE=run/web)"
+expect_rc "--runtime with a minting App and gated base is ready" 0 $?
+expect_contains "the identity is proven by minting, not by a secret's name" \
+  "$out" "mints a token"
+expect_contains "and the base branch rules are read from the branch" "$out" \
+  "base branch 'run/web': pull-request rule binds"
+
+ready_env
+STUB_SECRETS=""
+STUB_RULESET_IDS=""
+out="$(run_rt app-ok RUN_BASE=run/web)"
+expect_rc "--runtime does not refuse over admin reads it cannot perform" 0 $?
+expect_contains "and says whose job the full check is" "$out" "the full check's job"
+
+ready_env
+out="$(run_rt app-bad RUN_BASE=run/web)"
+expect_rc "--runtime refuses when the App cannot mint" 1 $?
+expect_contains "and names the failure" "$out" "cannot mint a token"
+
+ready_env
+out="$(run_rt app-ok)"
+expect_rc "--runtime without RUN_BASE falls back to the default branch" 0 $?
+expect_contains "and still verifies its rules" "$out" "base branch 'main'"
 
 ready_env
 STUB_CO_ERRORS="2"
