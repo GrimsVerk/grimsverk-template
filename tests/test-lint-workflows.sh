@@ -60,6 +60,29 @@ if grep -q "not available in job-level" "$WF"
 then no "the wrong explanation is gone" "it claimed step-level if: can read secrets"
 else ok "the wrong explanation is gone"; fi
 
+# ESC-43: upload-artifact@v4 EXCLUDES HIDDEN FILES by default (since v4.4), so
+# an upload whose path is a dot-directory finds nothing, warns, and uploads no
+# artifact at all — while every other step reads the same files happily. That
+# is how all five reviews of the first unattended run were lost: the gate wrote
+# .review-out/, the upload skipped it as hidden, and collect-evidence.sh found
+# five runs with no artifact. Any upload step whose path targets a
+# dot-directory must say include-hidden-files: true.
+upload_sweep=0
+while IFS= read -r f; do
+  grep -q 'actions/upload-artifact' "$f" || continue
+  upload_sweep=$((upload_sweep + 1))
+  if grep -E '^[[:space:]]*path:' "$f" | grep -qE '/\.[^/[:space:]]+[[:space:]]*$'; then
+    if grep -qE '^[[:space:]]*include-hidden-files: true' "$f"; then
+      ok "a dot-directory upload keeps its hidden files in $(basename "$f")"
+    else
+      no "a dot-directory upload keeps its hidden files in $(basename "$f")" \
+        "path is dot-prefixed but include-hidden-files: true is absent"
+    fi
+  fi
+done < <(find "$ROOT/.github/workflows" "$ROOT/template/.github/workflows" -type f 2>/dev/null | sort)
+if [[ "$upload_sweep" -gt 0 ]]; then ok "swept $upload_sweep workflow file(s) for artifact uploads"
+else no "swept the workflow files for artifact uploads" "found none, which cannot be right"; fi
+
 # Every OTHER workflow, shipped or self-hosted, on the same rule.
 found=0
 while IFS= read -r f; do
