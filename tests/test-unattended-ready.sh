@@ -42,7 +42,14 @@ case "$args" in
     printf '%s' "${STUB_RULESET_DETAIL:-}" ;;
   "api repos/own/repo/rules/branches/"*)
     printf '%s' "${STUB_BRANCH_RULES:-}" ;;
-  "api repos/own/repo/codeowners/errors --jq .errors | length")
+  "api repos/own/repo/codeowners/errors"*)
+    # Records the query so the ref can be asserted; fails like the real API
+    # when told to — body on stdout, non-zero exit — which is exactly the
+    # shape ESC-48's defect mistook for a line count.
+    echo "$args" >> "${GH_CO_LOG:-/dev/null}"
+    if [[ "${STUB_CO_FAIL:-0}" == "1" ]]; then
+      printf '{"message":"Not Found","status":"404"}\n'; exit 1
+    fi
     printf '%s\n' "${STUB_CO_ERRORS:-0}" ;;
   "api repos/own/repo")
     printf '%s' "${STUB_SETTINGS:-}" ;;
@@ -236,6 +243,28 @@ ready_env
 STUB_CO_ERRORS="2"
 out="$(run)"; expect_rc "unresolvable CODEOWNERS refuses" 1 $?
 expect_contains "and says why it is fatal" "$out" "review requirement"
+
+# ESC-48: the CODEOWNERS probe follows the run's base branch, and an API
+# failure is the cannot-read note — never a raw error body inside a refusal.
+ready_env
+: > "$WORK/co.log"
+out="$( (cd "$R" && env GH="$WORK/bin/gh" GH_CO_LOG="$WORK/co.log" RUN_BASE=run/web "$CHECK" 2>&1) )"
+expect_rc "CODEOWNERS is judged at the run's base branch" 0 $?
+expect_contains "the query carries the ref" "$(cat "$WORK/co.log")" "?ref=run/web"
+expect_contains "and the verdict names where it looked" "$out" "at run/web"
+
+ready_env
+: > "$WORK/co.log"
+out="$( (cd "$R" && env GH="$WORK/bin/gh" GH_CO_LOG="$WORK/co.log" "$CHECK" 2>&1) )"
+expect_contains "without RUN_BASE the ref is the default branch" \
+  "$(cat "$WORK/co.log")" "?ref=main"
+
+ready_env
+STUB_CO_FAIL=1; export STUB_CO_FAIL
+out="$(run)"; expect_rc "a failing CODEOWNERS endpoint does not refuse" 0 $?
+expect_contains "it is the designed cannot-read note" "$out" "cannot read CODEOWNERS"
+expect_not_contains "and no raw API body leaks into the verdict" "$out" "Not Found"
+unset STUB_CO_FAIL
 
 ready_env
 printf '\n## What I would trade away\n\n' >> "$R/docs/VISION.md"

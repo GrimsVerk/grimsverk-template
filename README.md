@@ -161,10 +161,31 @@ anything and tells you so. `find_best_mobo` and `find-best-mobo` are both fine;
 
 `git init` comes **before** `pre-commit install`, because `pre-commit install`
 writes into `.git/hooks/` and fails with `FatalError: git failed` outside a
-repository.
+repository. **The first commit comes AFTER step 3**, not here — the CI `checks`
+job runs `uv sync --locked`, which demands a committed `uv.lock`, and `uv.lock`
+does not exist until step 3's `uv sync` creates it. A scaffold committed before
+the toolchain ran ships a project whose very first push is red (ESC-47).
 
 ```sh
 git init -b main
+```
+
+### 3. Bootstrap the toolchain, then make the first commit
+
+```sh
+uv sync              # python — this creates uv.lock, which MUST be committed
+pre-commit install
+```
+
+```sh
+brew install xcodegen swiftformat swiftlint   # swift-ios
+xcodegen generate
+pre-commit install
+```
+
+Now the scaffold commit, carrying `uv.lock` with it:
+
+```sh
 git add -A
 git commit -m "Initial scaffold from grimsverk-template"
 ```
@@ -188,19 +209,6 @@ git commit --amend --reset-author --no-edit
 ```
 
 One command now, or a `git filter-repo` run over a whole history later.
-
-### 3. Bootstrap the toolchain
-
-```sh
-uv sync              # python
-pre-commit install
-```
-
-```sh
-brew install xcodegen swiftformat swiftlint   # swift-ios
-xcodegen generate
-pre-commit install
-```
 
 ### 4–6, scripted: `scripts/setup-github.sh`
 
