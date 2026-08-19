@@ -72,6 +72,22 @@ for lang in python swift-ios; do
     else no "$lang ci.yml defines '$job'"; fi
   done
 
+  # ESC-49: the mypy hook must run in the PROJECT's environment, not the
+  # mirrors-mypy isolated one — the mirror holds none of the project's
+  # dependencies, so under strict typing the scaffold's own conftest.py failed
+  # the hook and a fresh render could not make its first commit. Pinned as
+  # "uses uv run" AND "never the mirror", because the second half is what
+  # fails if somebody restores the old repo entry beside the new hook.
+  if [[ "$lang" == "python" ]]; then
+    pc="$out/.pre-commit-config.yaml"
+    if grep -q 'uv run mypy' "$pc" 2>/dev/null
+    then ok "$lang mypy hook runs in the project's own environment"
+    else no "$lang mypy hook runs in the project's own environment"; fi
+    if grep -q 'mirrors-mypy' "$pc" 2>/dev/null
+    then no "$lang mypy hook is not the dependency-blind mirror" "$(grep -n mirrors-mypy "$pc")"
+    else ok "$lang mypy hook is not the dependency-blind mirror"; fi
+  fi
+
   # Every plan in the tree must be parsed, not only the one this pull request
   # resolves to. A plan is written on one pull request and resolved by a later
   # one, so without this step a malformed plan stays invisible until some
