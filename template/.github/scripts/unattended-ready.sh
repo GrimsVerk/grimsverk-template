@@ -79,9 +79,12 @@ cd "$ROOT" || exit 2
 command -v "$GH" >/dev/null 2>&1 \
   || { echo "unattended-ready: '$GH' is not on PATH — install the GitHub CLI" >&2; exit 2; }
 
-REPO="$("$GH" repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)"
+# The remote URL, not `gh repo view`: repo view is GraphQL, which a hosted
+# session's proxy refuses outright — only REST is served there (ESC-51).
+REPO="${REPO:-$(git remote get-url origin 2>/dev/null \
+  | sed -E 's#^(git@[^:/]+:|https?://[^/]+/|ssh://git@[^/]+/)##; s#\.git$##')}"
 [[ -n "$REPO" ]] \
-  || { echo "unattended-ready: cannot resolve this repository — run: gh auth login" >&2; exit 2; }
+  || { echo "unattended-ready: cannot resolve owner/repo from the origin remote" >&2; exit 2; }
 
 declare -a MISSING=()
 ok()      { echo "  ready    $1"; }

@@ -27,20 +27,22 @@ cat > "$WORK/bin/gh" <<'STUB'
 args="$*"
 case "$args" in
   "auth status") exit 0 ;;
-  "pr list --state open"*)
-    # An honest gh: a query WITH --base returns only pull requests targeting
-    # that base (STUB_OPEN_PR_BASE is the stub PR's base branch); a query
-    # without --base is repo-wide and returns the PR regardless — which is
-    # exactly the old detector's defect, so the scoping test is red against it.
+  "api repos/"*"/pulls?state=open&base="*)
+    # The detector's open-PR read, REST since ESC-51 (`gh pr list` is GraphQL
+    # and hosted sessions serve REST only). An honest gh: the stub PR is
+    # returned only for a query whose base parameter matches its base branch
+    # (STUB_OPEN_PR_BASE); with no stub base set it is returned regardless.
     echo "$args" >> "${GH_LIST_LOG:-/dev/null}"
     if [[ -n "${STUB_OPEN_PR:-}" ]]; then
-      if [[ -n "${STUB_OPEN_PR_BASE:-}" && "$args" == *"--base"* ]]; then
-        [[ "$args" == *"--base ${STUB_OPEN_PR_BASE} "* ]] && echo "$STUB_OPEN_PR"
+      if [[ -n "${STUB_OPEN_PR_BASE:-}" ]]; then
+        [[ "$args" == *"base=${STUB_OPEN_PR_BASE}&"* ]] && echo "$STUB_OPEN_PR"
       else
         echo "$STUB_OPEN_PR"
       fi
     fi ;;
-  "pr list --state merged"*)
+  "api --paginate repos/"*"/pulls?state=closed&base="*)
+    # The detector's merged-refs read: REST has no merged state, so it asks
+    # for closed and filters on merged_at — the stub answers the refs directly.
     echo "$args" >> "${GH_LIST_LOG:-/dev/null}"
     [[ -n "${STUB_MERGED_REFS:-}" ]] && printf '%s\n' "$STUB_MERGED_REFS" ;;
   "pr list --head "*)
@@ -158,6 +160,11 @@ printf '.claude/deliver-loop/\n.claude/orchestration-logs/\n.worktrees/\n' > "$R
 git -C "$R" add -A && git -C "$R" commit -qm scaffold
 git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse HEAD)"
 git -C "$R" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+# An origin URL, because the detector resolves owner/repo from it (ESC-51).
+# The push tests further down repoint origin at a local bare repo; the gh stub
+# matches its API paths on the "/pulls?" shape, not the repo name, so both
+# URLs work.
+git -C "$R" remote add origin https://github.com/own/repo.git
 
 LOOP=".claude/scripts/deliver-loop.sh"
 PHASE=".claude/scripts/deliver-phase.sh"
@@ -203,7 +210,7 @@ out="$(run_phase GH_LIST_LOG="$WORK/cap/ghlist.log" \
         STUB_OPEN_PR="7 feat/notes" STUB_OPEN_PR_BASE=main)"
 expect_contains "a PR into this run's own base still holds the loop" "$out" "PHASE=WAIT"
 expect_contains "the open-PR query is scoped to the base branch" \
-  "$(cat "$WORK/cap/ghlist.log")" "--base main"
+  "$(cat "$WORK/cap/ghlist.log")" "base=main"
 out="$(run_phase STUB_OPEN_PR="7 feat/notes" STUB_OPEN_PR_BASE=main RUN_BASE=run/web)"
 expect_not_contains "a PR into ANOTHER base does not hold this run" "$out" "PHASE=WAIT"
 expect_contains "the detector reports which base it scoped to" "$out" "BASE=run/web"
@@ -283,7 +290,7 @@ expect_contains "everything built means ACCEPTANCE" "$out" "PHASE=ACCEPTANCE"
 out="$(run_phase PROCESSED_FILE="$WORK/cap/processed" GH_LIST_LOG="$WORK/cap/ghlist.log" \
         STUB_MERGED_REFS=$'feat/notes\nfeat/sqlite-store')"
 expect_contains "the merged-PR query is scoped to the base branch" \
-  "$(grep 'state merged' "$WORK/cap/ghlist.log" || echo none)" "--base main"
+  "$(grep 'state=closed' "$WORK/cap/ghlist.log" || echo none)" "base=main"
 
 # ------------------------------------------------- which string names a plan
 # plan-resolve.sh identifies a plan by its front-matter `slug:`; this detector

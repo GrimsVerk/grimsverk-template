@@ -34,8 +34,6 @@ cat > "$WORK/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 args="$*"
 case "$args" in
-  "repo view --json nameWithOwner --jq .nameWithOwner")
-    echo "own/repo" ;;
   "api repos/own/repo/rulesets --jq .[].id")
     [[ -n "${STUB_RULESET_IDS:-}" ]] && printf '%s\n' "$STUB_RULESET_IDS" ;;
   "api repos/own/repo/rulesets/"*)
@@ -67,6 +65,9 @@ chmod +x "$WORK/bin/gh"
 # ------------------------------------------------------- a ready fixture repo
 R="$WORK/repo"
 init_repo "$R"
+# The check resolves owner/repo from the origin remote, not `gh repo view` —
+# repo view is GraphQL, which hosted sessions refuse (ESC-51).
+git -C "$R" remote add origin https://github.com/own/repo.git
 mkdir -p "$R/.github/workflows" "$R/docs"
 cat > "$R/.copier-answers.yml" <<'EOF'
 _src_path: gh:example/template
