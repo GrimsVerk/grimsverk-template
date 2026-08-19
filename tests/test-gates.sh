@@ -48,13 +48,22 @@ git -C "$R" add -A && git -C "$R" commit -qm "scaffold"
 # branch one gate passes and the other blocks — observed live: a run-evidence
 # pull request passed `plan` under the widened script and was then blocked by
 # review against the four-path prose. Update both, and this list, together.
+#
+# Scoped to the carve-out PARAGRAPH, not the whole file: most of these paths
+# appear backticked somewhere in AGENTS.md for other reasons, so a whole-file
+# grep passes on prose that never grants them the exemption — which is exactly
+# the state the reviewer blocked.
+carveout="$(awk '/exempt from that cap/ { f=1 }
+                 f { print; if (/exemption\.$/) exit }' "$R/AGENTS.md")"
+if [[ -n "$carveout" ]]; then ok "the carve-out paragraph is where it is looked for"
+else no "the carve-out paragraph is where it is looked for"; fi
 for p in docs/plans/ docs/DESIGN.md docs/DESIGN.oracle.md docs/oracle/ \
          docs/VISION.md docs/acceptance.md docs/architecture.md docs/runs/ \
          docs/BACKLOG.md; do
-  if grep -q "\`$p\`" "$R/AGENTS.md"; then
-    ok "AGENTS.md names $p in the size-cap carve-out"
+  if printf '%s\n' "$carveout" | grep -q "\`$p\`"; then
+    ok "the carve-out paragraph names $p"
   else
-    no "AGENTS.md names $p in the size-cap carve-out"
+    no "the carve-out paragraph names $p"
   fi
   if grep -q -- "${p%/}" "$R/.github/scripts/plan-resolve.sh"; then
     ok "plan-resolve.sh knows $p"
