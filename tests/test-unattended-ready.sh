@@ -40,6 +40,8 @@ case "$args" in
     [[ -n "${STUB_RULESET_IDS:-}" ]] && printf '%s\n' "$STUB_RULESET_IDS" ;;
   "api repos/own/repo/rulesets/"*)
     printf '%s' "${STUB_RULESET_DETAIL:-}" ;;
+  "api repos/own/repo/rules/branches/"*)
+    printf '%s' "${STUB_BRANCH_RULES:-}" ;;
   "api repos/own/repo/codeowners/errors --jq .errors | length")
     printf '%s\n' "${STUB_CO_ERRORS:-0}" ;;
   "api repos/own/repo")
@@ -79,7 +81,7 @@ EOF
 # quotes-as-literals describes exactly the behaviour wanted here.
 # shellcheck disable=SC2089,SC2090
 ready_env() {
-  STUB_SETTINGS='{"allow_auto_merge": true, "delete_branch_on_merge": true}'
+  STUB_SETTINGS='{"allow_auto_merge": true, "delete_branch_on_merge": true, "default_branch": "main"}'
   STUB_RULESET_IDS="1"
   STUB_RULESET_DETAIL='{"enforcement": "active", "rules": [
     {"type": "deletion"}, {"type": "non_fast_forward"},
@@ -91,7 +93,17 @@ ready_env() {
     ]}}]}'
   STUB_SECRETS=$'CLAUDE_CODE_OAUTH_TOKEN\nTEMPLATE_TOKEN\nAPP_ID\nAPP_PRIVATE_KEY'
   STUB_CO_ERRORS="0"
-  export STUB_SETTINGS STUB_RULESET_IDS STUB_RULESET_DETAIL STUB_SECRETS STUB_CO_ERRORS
+  # What the effective-rules endpoint answers for a lane base branch that the
+  # ruleset covers: the same pull_request rule and required checks, resolved.
+  # shellcheck disable=SC2089
+  STUB_BRANCH_RULES='[{"type": "pull_request", "parameters": {}},
+    {"type": "required_status_checks", "parameters": {"required_status_checks": [
+      {"context": "checks"}, {"context": "secrets"}, {"context": "plan"},
+      {"context": "template-sync"}, {"context": "test-the-tests"},
+      {"context": "acceptance-criteria"}, {"context": "review"}
+    ]}}]'
+  export STUB_SETTINGS STUB_RULESET_IDS STUB_RULESET_DETAIL STUB_SECRETS \
+         STUB_CO_ERRORS STUB_BRANCH_RULES
 }
 
 run() { (cd "$R" && GH="$WORK/bin/gh" "$CHECK" 2>&1); }
@@ -145,6 +157,33 @@ ready_env
 STUB_SECRETS=$'CLAUDE_CODE_OAUTH_TOKEN\nTEMPLATE_TOKEN\nAPP_ID\nAPP_PRIVATE_KEY'
 out="$(run)"; expect_rc "the App identity passes" 0 $?
 expect_contains "and says why it is the right one" "$out" "not the owner's"
+
+# ---------------------------------------------- the run's base branch (lanes)
+# A run based on a non-default branch (deliver-loop.sh --base) exports
+# RUN_BASE. The union check above cannot see whether the gates bind on THAT
+# branch, so the check reads the branch's effective rules — and refuses when
+# nothing binds there, because auto-merge on an unprotected base waits for
+# nothing.
+run_base() { (cd "$R" && GH="$WORK/bin/gh" RUN_BASE="$1" "$CHECK" 2>&1); }
+
+ready_env
+out="$(run_base run/web)"; expect_rc "a gated lane base branch is ready" 0 $?
+expect_contains "and both bindings are read from the branch itself" "$out" \
+  "base branch 'run/web': pull-request rule binds"
+
+ready_env
+STUB_BRANCH_RULES=""
+out="$(run_base run/web)"; expect_rc "an unruled lane base branch refuses" 1 $?
+expect_contains "and names the fix" "$out" "--gate-branch"
+
+ready_env
+STUB_BRANCH_RULES="${STUB_BRANCH_RULES/\{\"context\": \"review\"\}/\{\"context\": \"reviews\"\}}"
+out="$(run_base run/web)"; expect_rc "a lane missing one required check refuses" 1 $?
+expect_contains "and names the check and the branch" "$out" \
+  "check 'review' is not required on the run's base branch 'run/web'"
+
+ready_env
+out="$(run_base main)"; expect_rc "RUN_BASE equal to the default branch adds no check" 0 $?
 
 ready_env
 STUB_CO_ERRORS="2"

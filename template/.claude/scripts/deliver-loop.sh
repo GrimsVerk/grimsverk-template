@@ -65,6 +65,21 @@
 # session, and that is a fact rather than an inference.
 #
 # Options (all unset by default):
+#   --base <branch>        the base branch this run merges into (default: the
+#                          repository's default branch). SAID OUT LOUD at run
+#                          start, so with several drivers running you always
+#                          know which branch belongs to which. The checkout
+#                          must BE on this branch. Every pull-request query is
+#                          scoped to it (one pipeline PR in flight PER BASE —
+#                          two runs on two bases never wait on or fix each
+#                          other's pull requests), every worker branches off
+#                          it, and every pull request is opened --base onto it.
+#                          On a non-default base, every branch this run pushes
+#                          gets a `--<base>` suffix so twin runs building the
+#                          same slugs cannot collide on branch names. The base
+#                          branch must be covered by the gates ruleset —
+#                          unattended-ready.sh refuses when it is not; add it
+#                          with scripts/setup-github.sh --gate-branch <branch>.
 #   --budget-points <n>    percentage points of the WEEKLY limit this run may
 #                          spend. The window is weekly on the owner's ruling,
 #                          and because the 5-hour window resets mid-run and
@@ -113,9 +128,10 @@ MAX_ITER=0; BUDGET_POINTS=0; MAX_PRS=0; MAX_HOURS=0
 # than a spent allowance — and the driver says so when it fires.
 HARD_MAX_ITER="${DELIVER_HARD_MAX_ITER:-200}"
 BUDGET_POINTS_SET=""; MAX_ITER_SET=""
-WAIT_FOR_OWNER=0; DRY_RUN=0; PRINT_PHASE=""
+WAIT_FOR_OWNER=0; DRY_RUN=0; PRINT_PHASE=""; BASE_FLAG=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --base)           BASE_FLAG="${2:-}"; shift 2 ;;
     --max-iterations) MAX_ITER="${2:-}"; MAX_ITER_SET=1; shift 2 ;;
     --budget-points)  BUDGET_POINTS="${2:-}"; BUDGET_POINTS_SET=1; shift 2 ;;
     --max-prs)        MAX_PRS="${2:-}"; shift 2 ;;
@@ -143,6 +159,28 @@ PHASE_SH=".claude/scripts/deliver-phase.sh"
 STATE_DIR=".claude/deliver-loop"
 DEFAULT_BRANCH="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
 [[ -n "$DEFAULT_BRANCH" ]] || DEFAULT_BRANCH="$(git branch --show-current)"
+
+# THE RUN'S BASE BRANCH — established here, once, and announced before anything
+# is dispatched. Everything this run does is scoped to it: the phase detector
+# only sees pull requests targeting it (one pipeline PR in flight PER BASE),
+# workers branch off it, and every mechanical pull request is opened onto it.
+# That scoping is what lets two drivers share one repository on two separate
+# base branches without waiting on — or worse, pushing fixes into — each
+# other's pull requests. Two runs on ONE base is still illegal, and the
+# detector's WAIT phase is what enforces it.
+RUN_BASE="${BASE_FLAG:-$DEFAULT_BRANCH}"
+
+# On a non-default base, every branch this run pushes carries a `--<base>`
+# suffix. Twin runs building the same design produce the same plan slugs, so
+# without the suffix both would push `feat/<slug>` and `docs/oracle-plan-od-1`
+# and collide. The suffix keeps the `feat/`/`docs/` prefixes (which the plan
+# check reads) and keeps the slug a substring of the branch name (which
+# plan-resolve.sh matches); the default-base run stays unsuffixed, so a
+# single-run repository behaves exactly as before.
+LANE=""
+if [[ "$RUN_BASE" != "$DEFAULT_BRANCH" ]]; then
+  LANE="--$(printf '%s' "$RUN_BASE" | tr -c 'A-Za-z0-9._-' '-')"
+fi
 
 # The orchestrator session's reach. Explicit and on the command line: the
 # whitelist below is everything /orchestrate documents itself doing — spawn
@@ -209,11 +247,11 @@ orch_cmd() { # orch_cmd <prompt>
 print_command() {
   case "$1" in
     oracle)  "$SPAWN" --print-command --id oracle-N --role oracle \
-               --engine claude --base "$DEFAULT_BRANCH" --prompt "<oracle.md + scope>" ;;
+               --engine claude --base "$RUN_BASE" --prompt "<oracle.md + scope>" ;;
     steward) "$SPAWN" --print-command --id steward-ODN --role steward \
-               --engine claude --base "$DEFAULT_BRANCH" --prompt "<steward.md + OD id>" ;;
+               --engine claude --base "$RUN_BASE" --prompt "<steward.md + OD id>" ;;
     plan)    "$SPAWN" --print-command --id plan-N --role steward \
-               --engine claude --base "$DEFAULT_BRANCH" --prompt "<plan.md + UNATTENDED + milestone>" ;;
+               --engine claude --base "$RUN_BASE" --prompt "<plan.md + UNATTENDED + milestone>" ;;
     orchestrate) orch_cmd "/orchestrate <slug>" ;;
     acceptance)  orch_cmd "/deliver — acceptance pass only (step 6)" ;;
     *) echo "deliver-loop: unknown phase '$1' (oracle|steward|plan|orchestrate|acceptance)" >&2
@@ -234,8 +272,8 @@ command -v claude >/dev/null 2>&1 || die "the claude CLI is not on PATH"
 [[ -z "$(git status --porcelain)" ]] \
   || die "the working tree is dirty — a run recomputes state from the tree, and uncommitted changes make that state a lie"
 CURRENT_BRANCH="$(git branch --show-current)"
-[[ "$CURRENT_BRANCH" == "$DEFAULT_BRANCH" ]] \
-  || die "on branch '$CURRENT_BRANCH', not '$DEFAULT_BRANCH' — the driver dispatches from the default branch only"
+[[ "$CURRENT_BRANCH" == "$RUN_BASE" ]] \
+  || die "on branch '$CURRENT_BRANCH', but this run's base is '$RUN_BASE' — the driver dispatches from its base branch only. Switch to it, or name the intended base with --base <branch>"
 if [[ -d .worktrees ]] && [[ -n "$(ls -A .worktrees 2>/dev/null)" ]]; then
   die "leftover worktrees under .worktrees/ — a previous run did not finish assembling; inspect and remove them first"
 fi
@@ -247,11 +285,25 @@ fi
 # unmissable — the whole point is that the owner is about to walk away.
 banner() { printf '\n%s\n' "════════════════════════════════════════════════════════════════════"; }
 
+# WHICH BRANCH BELONGS TO WHICH RUN — said before anything else, every run.
+# The owner's ruling: with several drivers running at once, each session must
+# establish exactly which branch it considers its base, out loud, at start.
+banner
+echo "  THIS RUN'S BASE BRANCH: $RUN_BASE"
+echo "  Every pull request this run opens will merge into '$RUN_BASE',"
+echo "  and this run waits only on pull requests targeting '$RUN_BASE'."
+if [[ -n "$LANE" ]]; then
+  echo "  Non-default base: every branch this run pushes is suffixed '$LANE'."
+fi
+banner
+
 if [[ "${DELIVER_SKIP_READY:-0}" != "1" ]]; then
   echo "deliver-loop: checking whether this repository can run unattended…"
   # The refusal, not a warning (docs/DECISIONS.md): a run that cannot succeed
-  # is refused at dispatch time, while someone can still act on it.
-  if ! .github/scripts/unattended-ready.sh; then
+  # is refused at dispatch time, while someone can still act on it. RUN_BASE
+  # travels along so the readiness check verifies the gates bind on THIS run's
+  # base branch, not only on the default one.
+  if ! RUN_BASE="$RUN_BASE" .github/scripts/unattended-ready.sh; then
     banner
     echo "  STOP — this repository is NOT ready to run unattended."
     echo "  Nothing has been dispatched. Fix the items listed above and re-run."
@@ -298,7 +350,7 @@ mkdir -p "$STATE_DIR"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_N=1
 while [[ -d "docs/runs/$RUN_ID" ]] \
-   || git rev-parse -q --verify "refs/heads/docs/run-$RUN_ID" >/dev/null 2>&1; do
+   || git rev-parse -q --verify "refs/heads/docs/run-$RUN_ID$LANE" >/dev/null 2>&1; do
   RUN_N=$((RUN_N + 1))
   RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$RUN_N"
 done
@@ -327,7 +379,10 @@ if [[ -s "$STATE_DIR/run.md" ]]; then
   cat "$STATE_DIR/run.md" >> "$STATE_DIR/unlanded-${PREV_RUN:-unknown}.md" \
     && rm -f "$STATE_DIR/run.md"
 fi
-{ echo "# Delivery run $RUN_ID"; echo; echo "Started $RUN_STARTED_AT."; echo; } >> "$STATE_DIR/run.md"
+{ echo "# Delivery run $RUN_ID"; echo
+  echo "Started $RUN_STARTED_AT."
+  echo "Base branch: $RUN_BASE${LANE:+ (branch suffix '$LANE')}."; echo
+} >> "$STATE_DIR/run.md"
 
 # ------------------------------------------------- the evidence, at every stop
 #
@@ -381,8 +436,8 @@ land_evidence() {
   # ONE exit path, and it switches back. A stop that left the checkout sitting
   # on docs/run-<id> would make the next run refuse ("not on the default
   # branch") — the recorder breaking the thing it records.
-  local ref="docs/run-$RUN_ID" token
-  git switch -q "$DEFAULT_BRANCH" 2>/dev/null || true
+  local ref="docs/run-$RUN_ID$LANE" token
+  git switch -q "$RUN_BASE" 2>/dev/null || true
   if git switch -qc "$ref" 2>/dev/null || git switch -q "$ref" 2>/dev/null; then
     git add "$RUN_DIR" 2>/dev/null || true
     if git diff --cached --quiet 2>/dev/null; then
@@ -400,7 +455,7 @@ land_evidence() {
       if ! git push -q origin "$ref" 2>/dev/null; then
         echo "deliver-loop: could not push $ref — the evidence is committed locally."
       elif token="$("$APP_TOKEN_CMD" 2>/dev/null)" && [[ -n "$token" ]]; then
-        GH_TOKEN="$token" "$GH" pr create --head "$ref" \
+        GH_TOKEN="$token" "$GH" pr create --head "$ref" --base "$RUN_BASE" \
           --title "Run evidence for $RUN_ID" \
           --body "The run report and the review gate's payloads and replies, collected by .claude/scripts/collect-evidence.sh. Opened mechanically at the run's stop." \
           >/dev/null 2>&1 || echo "deliver-loop: could not open the pull request for $ref"
@@ -411,7 +466,7 @@ land_evidence() {
   else
     echo "deliver-loop: could not create $ref — the report is at $RUN_DIR/run.md."
   fi
-  git switch -q "$DEFAULT_BRANCH" 2>/dev/null || true
+  git switch -q "$RUN_BASE" 2>/dev/null || true
   return "$rc"
 }
 trap land_evidence EXIT
@@ -553,7 +608,10 @@ mechanical_pr() { # mechanical_pr <source-branch> <head-ref> <title>
     log "could not mint an App token for $2 — refusing to open this pull request as the owner"
     return 1
   fi
-  GH_TOKEN="$token" "$GH" pr create --head "${2}" \
+  # --base, always explicit. Without it gh targets the repository's default
+  # branch, which is right for exactly one run — the default-base one — and
+  # silently wrong for every other lane.
+  GH_TOKEN="$token" "$GH" pr create --head "${2}" --base "$RUN_BASE" \
     --title "$3" \
     --body "Opened mechanically by deliver-loop.sh, as the GitHub App. The content is the branch; the gates are the review." \
     >/dev/null || { log "gh pr create for $2 failed"; return 1; }
@@ -564,7 +622,7 @@ run_worker() { # run_worker <id> <role> <prompt> <docs-ref> <pr-title>
   local id="$1" role="$2" prompt="$3" ref="$4" title="$5"
   log "dispatch $role worker ($id)"
   if ! timeout "$SESSION_TIMEOUT" "$SPAWN" --id "$id" --role "$role" \
-       --engine "$ENGINE" --base "$DEFAULT_BRANCH" --prompt "$prompt" \
+       --engine "$ENGINE" --base "$RUN_BASE" --prompt "$prompt" \
        >> "$STATE_DIR/run.md" 2>&1; then
     log "$role worker failed — see .claude/orchestration-logs/$id.log"
     return 1
@@ -662,7 +720,7 @@ while :; do
   fi
 
   if [[ "${DELIVER_SKIP_PULL:-0}" != "1" ]] && git remote get-url origin >/dev/null 2>&1; then
-    git pull -q --ff-only origin "$DEFAULT_BRANCH" 2>/dev/null \
+    git pull -q --ff-only origin "$RUN_BASE" 2>/dev/null \
       || log "pull --ff-only failed; continuing on the local tree"
   fi
 
@@ -720,7 +778,7 @@ while :; do
       REQS) REQS="$v" ;; SLUG) SLUG="$v" ;; REASON) REASON="$v" ;;
       CRITERIA) CRITERIA="$v" ;;
     esac
-  done < <(GH="$GH" PROCESSED_FILE="$PROCESSED_FILE" "$PHASE_SH")
+  done < <(GH="$GH" PROCESSED_FILE="$PROCESSED_FILE" RUN_BASE="$RUN_BASE" "$PHASE_SH")
   [[ -n "$PHASE" ]] || die "phase detection failed"
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -746,7 +804,7 @@ while :; do
         "$(command_prompt .claude/commands/oracle.md)
 
 UNATTENDED RUN. The delivery driver commissioned this session. $scope" \
-        "docs/oracle-$(date -u +%Y%m%d%H%M%S)" \
+        "docs/oracle-$(date -u +%Y%m%d%H%M%S)$LANE" \
         "Oracle: rulings and handoff" || true
       record_dismissed_evidence ;;
     STEWARD)
@@ -755,7 +813,7 @@ UNATTENDED RUN. The delivery driver commissioned this session. $scope" \
         "$(command_prompt .claude/commands/steward.md)
 
 UNATTENDED RUN. The decision to plan: $od" \
-        "docs/oracle-plan-${od,,}" \
+        "docs/oracle-plan-${od,,}$LANE" \
         "Plan for $od" || true ;;
     PLAN)
       run_worker "plan-$(date -u +%Y%m%d%H%M%S)" steward \
@@ -765,7 +823,7 @@ UNATTENDED. The delivery driver commissioned this session; follow the
 unattended branches of the gate above. Requirements still unplanned: $REQS.
 Plan the next milestone of docs/DESIGN.md that delivers them (or file the
 uncertainties that block it)." \
-        "docs/plan-$(date -u +%Y%m%d%H%M%S)" \
+        "docs/plan-$(date -u +%Y%m%d%H%M%S)$LANE" \
         "Plan: next milestone ($REQS)" || true ;;
     ORCHESTRATE)
       # UNATTENDED RUN is the marker the worker prompts have always carried and
@@ -773,16 +831,19 @@ uncertainties that block it)." \
       # pull request as the owner through the whole of ESC-26's remediation. A
       # command file that cannot tell which mode it is in has to write prose
       # that is right for both, and "open the pull request" was right for one.
+      FEAT_REF="feat/$SLUG$LANE"
       if run_session "orchestrate" "/orchestrate $SLUG
 
-UNATTENDED RUN. The delivery driver commissioned this session. Build the
-feature, commit it, and PUSH feat/$SLUG — then stop. Do NOT open the pull
-request: you have no grant to, and the driver opens it as the GitHub App so it
-is not authored by the owner."; then
-        if git rev-parse -q --verify "refs/heads/feat/$SLUG" >/dev/null 2>&1; then
-          mechanical_pr "feat/$SLUG" "feat/$SLUG" "Build: $SLUG" || true
+UNATTENDED RUN. The delivery driver commissioned this session. This run's base
+branch is $RUN_BASE — create the feature branch off $RUN_BASE, never off any
+other branch, and name it EXACTLY $FEAT_REF. Build the feature, commit it, and
+PUSH $FEAT_REF — then stop. Do NOT open the pull request: you have no grant
+to, and the driver opens it as the GitHub App so it is not authored by the
+owner."; then
+        if git rev-parse -q --verify "refs/heads/$FEAT_REF" >/dev/null 2>&1; then
+          mechanical_pr "$FEAT_REF" "$FEAT_REF" "Build: $SLUG" || true
         else
-          log "orchestrate session finished but feat/$SLUG does not exist — nothing to open"
+          log "orchestrate session finished but $FEAT_REF does not exist — nothing to open"
         fi
       fi ;;
     ACCEPTANCE)
@@ -809,7 +870,7 @@ is not authored by the owner."; then
         exit 0
       fi
       ACC_BEFORE="$(git rev-parse -q --verify "HEAD:docs/acceptance.md" 2>/dev/null || echo none)"
-      ACC_REF="docs/acceptance-$RUN_ID"
+      ACC_REF="docs/acceptance-$RUN_ID$LANE"
       if run_session "acceptance" "UNATTENDED RUN. The delivery driver commissioned this session. /deliver — run ONLY step 6, the acceptance pass: check the built system against docs/DESIGN.md §13, record evidence per criterion in docs/acceptance.md, mark owner-only criteria pending with exactly what the owner should run. Every criterion §13 does NOT mark (owner) is a script at acceptance/S<n>.sh — write it, run it, and cite its real output; the required check .github/scripts/acceptance-criteria.sh runs them on every pull request from then on.${CRITERIA:+ Scripts failing right now: $CRITERIA.} A failing criterion is recorded as fail AND filed as a BL-<n> under 'Uncertainties awaiting oracle ruling' in docs/BACKLOG.md, so the oracle can rule on it — never reclassified as (owner) and never quietly passed. Commit it on the branch $ACC_REF and PUSH it — then stop. Do NOT open the pull request: you have no grant to, and the driver opens it as the GitHub App. That is not bookkeeping — docs/acceptance.md is CODEOWNERS-owned, and GitHub does not let an author approve their own pull request, so a pull request opened under the owner's identity is one THEY cannot approve. It is the single artifact of this run whose review is the point."; then
         ACC_AFTER="$(git rev-parse -q --verify "HEAD:docs/acceptance.md" 2>/dev/null || echo none)"
         if [[ "$ACC_AFTER" != "$ACC_BEFORE" ]] || [[ -n "$(git status --porcelain -- docs/acceptance.md)" ]]; then

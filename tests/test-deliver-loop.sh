@@ -27,9 +27,21 @@ cat > "$WORK/bin/gh" <<'STUB'
 args="$*"
 case "$args" in
   "auth status") exit 0 ;;
-  "pr list --state open --limit 30 --json number,headRefName --jq "*)
-    [[ -n "${STUB_OPEN_PR:-}" ]] && echo "$STUB_OPEN_PR" ;;
-  "pr list --state merged --limit 200 --json headRefName --jq "*)
+  "pr list --state open"*)
+    # An honest gh: a query WITH --base returns only pull requests targeting
+    # that base (STUB_OPEN_PR_BASE is the stub PR's base branch); a query
+    # without --base is repo-wide and returns the PR regardless — which is
+    # exactly the old detector's defect, so the scoping test is red against it.
+    echo "$args" >> "${GH_LIST_LOG:-/dev/null}"
+    if [[ -n "${STUB_OPEN_PR:-}" ]]; then
+      if [[ -n "${STUB_OPEN_PR_BASE:-}" && "$args" == *"--base"* ]]; then
+        [[ "$args" == *"--base ${STUB_OPEN_PR_BASE} "* ]] && echo "$STUB_OPEN_PR"
+      else
+        echo "$STUB_OPEN_PR"
+      fi
+    fi ;;
+  "pr list --state merged"*)
+    echo "$args" >> "${GH_LIST_LOG:-/dev/null}"
     [[ -n "${STUB_MERGED_REFS:-}" ]] && printf '%s\n' "$STUB_MERGED_REFS" ;;
   "pr list --head "*)
     # The idempotency probe mechanical_pr() makes before opening: a head ref
@@ -182,6 +194,20 @@ out="$(run_phase STUB_OPEN_PR="7 feat/notes")"
 expect_contains "an open PR wins every other phase" "$out" "PHASE=WAIT"
 expect_contains "and is named" "$out" "PR=7"
 
+# THE ONE-PR RULE IS PER BASE BRANCH. Repo-wide, two runs sharing one
+# repository on two base branches each wait on — and push fixes into — the
+# other's pull requests, and each marks its plans built by the other's merges.
+# A pull request into a different base belongs to a different run.
+: > "$WORK/cap/ghlist.log"
+out="$(run_phase GH_LIST_LOG="$WORK/cap/ghlist.log" \
+        STUB_OPEN_PR="7 feat/notes" STUB_OPEN_PR_BASE=main)"
+expect_contains "a PR into this run's own base still holds the loop" "$out" "PHASE=WAIT"
+expect_contains "the open-PR query is scoped to the base branch" \
+  "$(cat "$WORK/cap/ghlist.log")" "--base main"
+out="$(run_phase STUB_OPEN_PR="7 feat/notes" STUB_OPEN_PR_BASE=main RUN_BASE=run/web)"
+expect_not_contains "a PR into ANOTHER base does not hold this run" "$out" "PHASE=WAIT"
+expect_contains "the detector reports which base it scoped to" "$out" "BASE=run/web"
+
 out="$(run_phase)"
 expect_contains "unplanned owner requirements mean PLAN" "$out" "PHASE=PLAN"
 expect_contains "and the gap list is passed through" "$out" "REQS=R1 R2"
@@ -250,6 +276,14 @@ expect_contains "a merged plan with no merged feature means ORCHESTRATE" "$out" 
 out="$(run_phase PROCESSED_FILE="$WORK/cap/processed" \
         STUB_MERGED_REFS=$'feat/notes\nfeat/sqlite-store')"
 expect_contains "everything built means ACCEPTANCE" "$out" "PHASE=ACCEPTANCE"
+
+# The built-plan detection is base-scoped for the same reason the WAIT one is:
+# a twin run's merges into ITS base must not mark THIS run's plans built.
+: > "$WORK/cap/ghlist.log"
+out="$(run_phase PROCESSED_FILE="$WORK/cap/processed" GH_LIST_LOG="$WORK/cap/ghlist.log" \
+        STUB_MERGED_REFS=$'feat/notes\nfeat/sqlite-store')"
+expect_contains "the merged-PR query is scoped to the base branch" \
+  "$(grep 'state merged' "$WORK/cap/ghlist.log" || echo none)" "--base main"
 
 # ------------------------------------------------- which string names a plan
 # plan-resolve.sh identifies a plan by its front-matter `slug:`; this detector
@@ -373,6 +407,24 @@ git -C "$R" checkout -qb feat/wrong-place
 out="$(run_loop -- --dry-run)"
 expect_rc "running off the default branch is refused" 2 $?
 git -C "$R" checkout -q main && git -C "$R" branch -qD feat/wrong-place
+
+# --base names a non-default base branch. The checkout must BE on it, and the
+# run says which branch it belongs to before anything else — the owner's
+# several-drivers-at-once requirement.
+git -C "$R" checkout -qb run/web
+out="$(run_loop -- --base run/web --dry-run)"
+expect_rc "--base lets a run live on a non-default base branch" 0 $?
+expect_contains "and the base is announced out loud at start" "$out" \
+  "THIS RUN'S BASE BRANCH: run/web"
+expect_contains "and the lane branch suffix is announced with it" "$out" \
+  "suffixed '--run-web'"
+out="$(run_loop -- --dry-run)"
+expect_rc "the same checkout without --base is still refused" 2 $?
+expect_contains "and the refusal names the flag" "$out" "--base"
+git -C "$R" checkout -q main && git -C "$R" branch -qD run/web
+out="$(run_loop -- --dry-run)"
+expect_contains "the default run announces its base too" "$out" \
+  "THIS RUN'S BASE BRANCH: main"
 
 # ------------------------------------------------------- dry-run detection
 out="$(run_loop STUB_OPEN_PR="9 feat/notes" -- --dry-run)"
@@ -659,6 +711,8 @@ expect_contains "and says to push and stop" "$(cat "$ORCHLOG")" "Do NOT open the
 
 expect_contains "the driver opens the feature pull request itself" \
   "$(cat "$PRLOG")" "--head feat/sqlite-store"
+expect_contains "and targets the run's base branch explicitly" \
+  "$(cat "$PRLOG")" "--base main"
 # The head ref keeps its own name rather than being renamed under docs/, or
 # plan-resolve.sh could not match the slug against a plan. Scoped to the feature
 # pull request's own line: the driver also opens a docs/run-<id> evidence pull
@@ -667,6 +721,31 @@ expect_not_contains "and does not rename the branch out of plan-resolve's reach"
   "$(grep -F 'Build: sqlite-store' "$PRLOG" || true)" "--head docs/"
 expect_not_contains "and never under the owner's ambient credential" \
   "$(cat "$PRLOG")" "GH_TOKEN=<unset>"
+
+# ---- the same dispatch on a non-default base: lane suffix + explicit --base
+# Twin runs building one design produce the same slugs, so the lane's feature
+# branch must not be the default lane's `feat/<slug>` — it gets the `--<base>`
+# suffix, the dispatch prompt names it exactly, and the pull request targets
+# the lane's own base.
+reset_pr_run
+git -C "$R" branch -f run/web main
+git -C "$R" switch -q run/web
+git -C "$R" push -q origin run/web
+git -C "$R" branch -f "feat/sqlite-store--run-web" main
+out="$(run_loop STUB_MERGED_REFS=$'feat/notes' PR_CREATE_LOG="$PRLOG" \
+        CLAUDE_LOG="$ORCHLOG" -- --base run/web --max-iterations 1)"
+expect_contains "the lane run reaches ORCHESTRATE too" "$out" "phase ORCHESTRATE"
+expect_contains "the dispatch names the lane's exact feature branch" \
+  "$(cat "$ORCHLOG")" "feat/sqlite-store--run-web"
+expect_contains "and the lane's base branch" "$(cat "$ORCHLOG")" \
+  "off run/web"
+expect_contains "the driver opens the lane pull request from the suffixed head" \
+  "$(cat "$PRLOG")" "--head feat/sqlite-store--run-web"
+expect_contains "onto the lane's own base, never the default" \
+  "$(cat "$PRLOG")" "--base run/web"
+git -C "$R" switch -q main
+git -C "$R" branch -qD run/web 2>/dev/null || true
+git -C "$R" branch -qD "feat/sqlite-store--run-web" 2>/dev/null || true
 
 # ---- opening twice
 # An attended session that already opened one, or an iteration retried after a
