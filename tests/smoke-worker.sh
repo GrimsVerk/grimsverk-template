@@ -18,7 +18,9 @@
 # every one of them survived only because nothing ever exercised this path until
 # a human needed it. tests/test-spawn-worker.sh pins the script's own logic with
 # stub engines on every push; this is the half a stub cannot answer: does the
-# real CLI accept what we pass it, and can it actually write in the worktree.
+# real CLI accept what we pass it — including a `---`-leading prompt built from
+# a command file, the shape every real dispatch uses — and can it actually
+# write in the worktree.
 #
 # Run it after changing spawn-worker.sh, and after any engine CLI upgrade.
 #
@@ -55,9 +57,25 @@ git -C "$R" add -A && git -C "$R" commit -qm "scaffold"
 # Deliberately trivial: this is a test of the plumbing, not of the model. It
 # still has to write a file and commit, which is exactly what the broken
 # worktree location silently prevented.
-PROMPT="Create a file named smoke.txt in the repository root containing exactly
+#
+# THE PROMPT TRAVELS AS A COMMAND FILE, FRONTMATTER AND ALL. The first
+# unattended run died at its first dispatch because every real prompt is built
+# from .claude/commands/*.md and therefore begins with `---` — and this smoke
+# test passed its prompt inline, so the one input shape every real dispatch
+# uses was the one shape never sent to a real CLI (ESC-37). The frontmatter
+# below reproduces that shape deliberately: the run proves the real engine
+# accepts a `---`-leading prompt through spawn-worker's `--` terminator, and
+# that the model still acts on the body behind it.
+PROMPT_FILE="$WORK/smoke-command.md"
+cat > "$PROMPT_FILE" <<'EOF'
+---
+description: Smoke-test command file — loader metadata, not instructions
+---
+
+Create a file named smoke.txt in the repository root containing exactly
 the word ok. Then commit it with the message 'Add the smoke artifact'. Do not
-change anything else, do not run the test suite, and do not open a pull request."
+change anything else, do not run the test suite, and do not open a pull request.
+EOF
 
 for engine in "${ENGINES[@]}"; do
   echo
@@ -69,7 +87,7 @@ for engine in "${ENGINES[@]}"; do
 
   id="smoke-$engine"
   out="$( cd "$R" && .claude/scripts/spawn-worker.sh \
-    --id "$id" --engine "$engine" --base main --prompt "$PROMPT" 2>&1 )"
+    --id "$id" --engine "$engine" --base main --prompt-file "$PROMPT_FILE" 2>&1 )"
   rc=$?
 
   if [[ "$rc" -eq 2 && "$out" == *"is installed but not usable"* ]]; then
