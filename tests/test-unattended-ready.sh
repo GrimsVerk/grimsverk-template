@@ -55,6 +55,10 @@ case "$args" in
     printf '%s' "${STUB_SETTINGS:-}" ;;
   "secret list")
     [[ -n "${STUB_SECRETS:-}" ]] && printf '%s\n' "$STUB_SECRETS" ;;
+  "auth status")
+    # Off by default: a runtime session's gh works only when a platform
+    # injects a credential (ESC-50), and most scenarios model no platform.
+    [[ "${STUB_AUTH_OK:-0}" == "1" ]] ;;
   *) exit 1 ;;
 esac
 STUB
@@ -70,6 +74,9 @@ language: python
 auto_merge: true
 EOF
 touch "$R/.github/workflows/auto-merge.yml"
+# Rendered projects carry the server-side PR opener (ESC-50); one --runtime
+# scenario below removes it to pin the refusal for scaffolds that predate it.
+touch "$R/.github/workflows/open-pr.yml"
 cat > "$R/docs/VISION.md" <<'EOF'
 # Vision
 
@@ -231,8 +238,26 @@ expect_contains "and says whose job the full check is" "$out" "the full check's 
 
 ready_env
 out="$(run_rt app-bad RUN_BASE=run/web)"
-expect_rc "--runtime refuses when the App cannot mint" 1 $?
-expect_contains "and names the failure" "$out" "cannot mint a token"
+expect_rc "--runtime refuses when the App cannot mint and gh has no login" 1 $?
+expect_contains "and names both failures" "$out" "no GitHub identity works here"
+
+# ESC-50: a hosted platform's proxy owns the credential — the mint fails
+# there by design while gh works anyway. That is a supported identity, IF the
+# scaffold carries the server-side opener that keeps pull requests
+# App-authored; without the opener it is a refusal, not a shrug.
+ready_env
+out="$(run_rt app-bad RUN_BASE=run/web STUB_AUTH_OK=1)"
+expect_rc "--runtime accepts the ambient login when the opener exists (ESC-50)" 0 $?
+expect_contains "and says how pull requests stay App-authored" "$out" \
+  "open-pr workflow"
+
+ready_env
+rm "$R/.github/workflows/open-pr.yml"
+out="$(run_rt app-bad RUN_BASE=run/web STUB_AUTH_OK=1)"
+expect_rc "--runtime refuses the ambient login when the opener is missing" 1 $?
+expect_contains "and names the missing workflow" "$out" \
+  ".github/workflows/open-pr.yml"
+touch "$R/.github/workflows/open-pr.yml"
 
 ready_env
 out="$(run_rt app-ok)"
