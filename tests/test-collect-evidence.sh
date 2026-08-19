@@ -146,6 +146,33 @@ STUB_RUNS="$(printf '%s\n' "301	2026-08-18T14:00:00Z	3333333333333333	feat/live	
 out="$(run --run-dir docs/runs/T5)"
 expect_contains "an in-flight review is skipped, not half-collected" "$out" "0 review(s)"
 
+# ------------------------------------------------------------- worker logs
+# The per-session logs under .claude/orchestration-logs/ are the only record of
+# what a dispatched worker actually did, and they are gitignored where they are
+# written — the same evidence-dies-with-the-container defect the run report
+# had, fixed for the report and not for the logs feeding it (ESC-42). On the
+# first unattended run, every diagnosis came from these files.
+mkdir -p "$R/.claude/orchestration-logs"
+echo "an old worker's story" > "$R/.claude/orchestration-logs/old-worker.log"
+touch -t 202601010000 "$R/.claude/orchestration-logs/old-worker.log"
+echo "this run's worker story" > "$R/.claude/orchestration-logs/oracle-1.log"
+STUB_RUNS=""
+out="$(run --run-dir docs/runs/T6 --since 2026-08-18T09:00:00Z)"
+expect_rc "collecting worker logs succeeds" 0 $?
+if [[ -s "$R/docs/runs/T6/workers/oracle-1.log" ]]; then
+  ok "this run's worker log is collected"
+else no "this run's worker log is collected" \
+  "$(find "$R/docs/runs/T6" 2>/dev/null | head -5)"; fi
+if [[ ! -e "$R/docs/runs/T6/workers/old-worker.log" ]]; then
+  ok "and an older run's log is not swept in"
+else no "and an older run's log is not swept in"; fi
+
+# Without --since, everything is considered — same rule as the reviews.
+out="$(run --run-dir docs/runs/T7)"
+if [[ -s "$R/docs/runs/T7/workers/old-worker.log" ]]; then
+  ok "no --since collects every log"
+else no "no --since collects every log"; fi
+
 # ------------------------------------------------------------- the contract
 out="$(run 2>&1)"
 expect_rc "no --run-dir is a setup error" 2 $?
