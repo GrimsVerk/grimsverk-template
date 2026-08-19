@@ -447,8 +447,9 @@ would otherwise fail an empty commit that has no plan. Let every check run.
   and **Require review from Code Owners** on.
 - **Require branches to be up to date before merging** — recommended on. The
   merge queue that normally absorbs its friction is not available on Pro for
-  private repos (the rule simply does not appear), but at one-PR-at-a-time — which
-  the orchestration design already enforces — the friction is negligible.
+  private repos (the rule simply does not appear), but at one-PR-at-a-time per
+  base branch — which the orchestration design already enforces — the friction
+  is negligible.
 - **Require status checks to pass** → add `checks` (or `test` for swift-ios),
   `secrets`, `plan`, `template-sync`, `test-the-tests`, `acceptance-criteria`,
   and `review`.

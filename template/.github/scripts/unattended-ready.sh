@@ -32,6 +32,14 @@
 #   ANSWERS          default: .copier-answers.yml
 #   VISION           default: docs/VISION.md
 #   CODEOWNERS_FILE  default: .github/CODEOWNERS
+#   RUN_BASE         the base branch the asking run merges into (the driver
+#                    exports it). When it is set and is NOT the repository's
+#                    default branch, this check also reads the EFFECTIVE rules
+#                    on that branch: a ruleset that binds only the default
+#                    branch leaves a lane run's pull requests entirely ungated
+#                    — auto-merge on an unprotected base waits for nothing —
+#                    and that is a refusal, not a note. Fix:
+#                    scripts/setup-github.sh --gate-branch <branch>.
 
 set -uo pipefail
 
@@ -133,6 +141,39 @@ else
     ok "a pull-request rule is active (merges only via PR)"
   else
     refuse "no active pull_request rule — pushes could land on the default branch directly; fix: scripts/setup-github.sh"
+  fi
+fi
+
+# ------------------------------------------------- the run's base branch
+# The union check above says the checks exist SOMEWHERE. A run on a non-default
+# base branch needs them to bind on THAT branch, and a ruleset targeting only
+# the default branch does not — its pull requests would merge with no gate at
+# all. So when the driver names its base, read the branch's EFFECTIVE rules
+# (the API resolves every active ruleset against the one branch) and refuse
+# unless a pull_request rule and every required check bind there.
+if [[ -n "${RUN_BASE:-}" && -n "${SETTINGS:-}" ]]; then
+  DEFAULT_BRANCH="$(grep -oE '"default_branch"[[:space:]]*:[[:space:]]*"[^"]+"' <<<"$SETTINGS" \
+                    | sed 's/.*:[[:space:]]*"//; s/"$//' | head -1)"
+  if [[ -n "$DEFAULT_BRANCH" && "$RUN_BASE" != "$DEFAULT_BRANCH" ]]; then
+    BR_RULES="$("$GH" api "repos/$REPO/rules/branches/$RUN_BASE" 2>/dev/null)"
+    if [[ -z "$BR_RULES" || "$BR_RULES" == "[]" ]]; then
+      refuse "no rules bind the run's base branch '$RUN_BASE' — every pull request this run opens would merge ungated; add the branch to the gates ruleset: scripts/setup-github.sh --gate-branch '$RUN_BASE'"
+    else
+      if grep -q '"type"[[:space:]]*:[[:space:]]*"pull_request"' <<<"$BR_RULES"; then
+        ok "base branch '$RUN_BASE': pull-request rule binds"
+      else
+        refuse "base branch '$RUN_BASE' has no pull_request rule — pushes could land on it directly; fix: scripts/setup-github.sh --gate-branch '$RUN_BASE'"
+      fi
+      BR_CONTEXTS="$(grep -oE '"context"[[:space:]]*:[[:space:]]*"[^"]+"' <<<"$BR_RULES" \
+                     | sed 's/.*:[[:space:]]*"//; s/"$//')"
+      for want in "${EXPECTED[@]}"; do
+        if grep -qxF "$want" <<<"$BR_CONTEXTS"; then
+          ok "base branch '$RUN_BASE': required check '$want' binds"
+        else
+          refuse "check '$want' is not required on the run's base branch '$RUN_BASE' — a PR into it merges without that gate; fix: scripts/setup-github.sh --gate-branch '$RUN_BASE'"
+        fi
+      done
+    fi
   fi
 fi
 

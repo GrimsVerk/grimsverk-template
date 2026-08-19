@@ -54,9 +54,12 @@ smuggle work past that rule — `.github/scripts/oracle-decisions.sh` enforces i
 mechanically on the unattended path. The owner steers an unattended run by
 editing `docs/VISION.md` and `docs/DESIGN.md` (which remain owner-landed), and
 reviews the built system at the end; nothing mid-run waits on them. **One
-pipeline pull request in flight at a time**: nothing is dispatched while one is
-open, which keeps every merge tested against the tree it will actually land on
-and keeps the review gate's budget for the pull request that needs it.
+pipeline pull request in flight at a time, per base branch**: nothing is
+dispatched while one targeting the run's base branch is open, which keeps every
+merge tested against the tree it will actually land on and keeps the review
+gate's budget for the pull request that needs it. Two pull requests into one
+base branch is illegal; pull requests into two separate base branches are two
+independent runs, and neither waits on — or touches — the other's.
 
 **`docs/VISION.md` must be finished before a plan lands, and not before that.**
 The vision does not have to be written before the design — writing it after is

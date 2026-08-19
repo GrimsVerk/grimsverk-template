@@ -118,6 +118,26 @@ expect_not_contains "the value appears in NO argument list" "$log" "tok-claude-1
 expect_not_contains "and is never echoed" "$out" "tok-claude-123"
 expect_contains "an empty line skips an optional secret" "$out" "AUTO_MERGE_TOKEN: skipped"
 
+# ------------------------------------- run 3b: --gate-branch adds lane targets
+# A delivery run based on a non-default branch (deliver-loop.sh --base) needs
+# the same gates binding on that branch, or its pull requests merge ungated.
+: > "$WORK/cap/gh.log"
+rm -f "$WORK/cap/ruleset-post.json"
+printf 'CLAUDE_CODE_OAUTH_TOKEN\nTEMPLATE_TOKEN\nAUTO_MERGE_TOKEN\n' > "$STUB_SECRET_LIST"
+out="$(run_setup /dev/null --gate-branch run/local --gate-branch run/web)"
+expect_rc "--gate-branch runs clean" 0 $?
+rs="$(cat "$WORK/cap/ruleset-post.json" 2>/dev/null)"
+expect_contains "the default branch stays targeted by pointer" "$rs" "~DEFAULT_BRANCH"
+expect_contains "the first lane branch is targeted" "$rs" '"refs/heads/run/local"'
+expect_contains "and the second" "$rs" '"refs/heads/run/web"'
+expect_contains "and the run says which branches are gated" "$out" \
+  "gated branches: the default branch, plus run/local run/web"
+rm -f "$WORK/cap/ruleset-post.json"
+run_setup /dev/null >/dev/null
+rs="$(cat "$WORK/cap/ruleset-post.json" 2>/dev/null)"
+expect_not_contains "a run without --gate-branch installs no lane targets" \
+  "$rs" "refs/heads/run/"
+
 # --------------------------------------------------- run 4: swift-ios context
 sed -i 's/^language: python/language: swift-ios/' "$R/.copier-answers.yml"
 rm -f "$WORK/cap/ruleset-post.json"

@@ -55,10 +55,16 @@
 #   --verify           open (and then close) a throwaway pull request so every
 #                      PR-only check reports once and is registered in the UI
 #   --skip-create      never create or push; only configure the existing repo
+#   --gate-branch <b>  ALSO apply the gates ruleset to this branch (repeatable).
+#                      For a delivery run whose base is not the default branch
+#                      (deliver-loop.sh --base): without this the run's pull
+#                      requests merge ungated, and unattended-ready.sh refuses
+#                      the run. The default branch stays targeted either way.
 
 set -euo pipefail
 
 APP=0; SSH_HOST=""; VISIBILITY="--private"; VERIFY=0; SKIP_CREATE=0
+GATE_BRANCHES=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --app)         APP=1; shift ;;
@@ -66,8 +72,10 @@ while [[ $# -gt 0 ]]; do
     --public)      VISIBILITY="--public"; shift ;;
     --verify)      VERIFY=1; shift ;;
     --skip-create) SKIP_CREATE=1; shift ;;
+    --gate-branch) [[ -n "${2:-}" ]] || { echo "setup-github: --gate-branch needs a branch name" >&2; exit 2; }
+                   GATE_BRANCHES+=("$2"); shift 2 ;;
     -h|--help)
-      sed -n '2,60p' "$0" | sed -n 's/^# \{0,1\}//p'
+      sed -n '2,66p' "$0" | sed -n 's/^# \{0,1\}//p'
       exit 0 ;;
     *) echo "setup-github: unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -232,17 +240,28 @@ fi
 
 # ---------------------------------------------------------------- 4. ruleset
 # One ruleset, targeting the default branch by pointer (~DEFAULT_BRANCH) so it
-# survives a rename. The REST API accepts contexts that have not reported yet
-# (see the header's UNVERIFIED note). Update-in-place if it already exists:
+# survives a rename — plus any --gate-branch, so a delivery run based on a
+# non-default branch gets the same gates there. The REST API accepts contexts
+# that have not reported yet (see the header's UNVERIFIED note).
+# Update-in-place if it already exists:
 # POSTing a duplicate name creates a second ruleset, and two rulesets' rules
 # UNION, which is how a stale one quietly keeps an old check required forever.
+#
+# NOTE the update-in-place consequence for --gate-branch: the include list is
+# REPLACED, not merged. Re-running with a different --gate-branch set installs
+# exactly that set, and running with none returns the ruleset to the default
+# branch only — which is also how a finished lane's protection is removed.
 RULESET_NAME="grimsverk-gates"
+INCLUDE_REFS='"~DEFAULT_BRANCH"'
+for b in ${GATE_BRANCHES[@]+"${GATE_BRANCHES[@]}"}; do
+  INCLUDE_REFS+=", \"refs/heads/$b\""
+done
 RULESET_JSON="$(cat <<JSON
 {
   "name": "$RULESET_NAME",
   "target": "branch",
   "enforcement": "active",
-  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "conditions": { "ref_name": { "include": [$INCLUDE_REFS], "exclude": [] } },
   "rules": [
     { "type": "deletion" },
     { "type": "non_fast_forward" },
@@ -282,6 +301,9 @@ else
   say "ruleset '$RULESET_NAME': created."
 fi
 say "required checks: $BUILD_CHECK secrets plan template-sync test-the-tests acceptance-criteria review"
+if [[ ${#GATE_BRANCHES[@]} -gt 0 ]]; then
+  say "gated branches: the default branch, plus ${GATE_BRANCHES[*]}"
+fi
 
 # ----------------------------------------------------------------- 5. verify
 if [[ "$VERIFY" -eq 1 ]]; then
