@@ -1,0 +1,99 @@
+name: Open PR
+
+# Opens a pull request AS THE APP, on behalf of a driver that cannot be the
+# App itself. This exists because of ESC-50:
+#
+# A hosted web session's egress proxy REPLACES every Authorization header with
+# the platform's own credential — the owner's — and blocks the /app endpoints
+# outright. Observed directly: a request authenticated with a garbage token
+# answered as the owner's login, and the JWT mint endpoint returned "Access to
+# this GitHub API path is not permitted through this proxy." So a driver in
+# such a session can never hold App identity, with a perfectly good key: every
+# pull request it opened directly would be authored by the OWNER. That hollows
+# owner-authored.sh (the owner's login compared to the owner's login passes
+# for every pull request the run ever opens, so DESIGN.md and VISION.md lose
+# their protection exactly when it matters), and it makes the acceptance pull
+# request unapprovable (GitHub does not let an author approve their own pull
+# request, and the owner is the only CODEOWNER).
+#
+# Actions does not sit behind that proxy, so the mint works HERE. The driver
+# pushes its branch (pushes are identity-neutral) and dispatches this
+# workflow; the pull request arrives authored by the App, exactly as a local
+# driver would have opened it.
+#
+# App-only, deliberately, and it REFUSES rather than degrading: a pull
+# request created with GITHUB_TOKEN dispatches no workflow runs (the same
+# guard the auto-merge header documents), so its required checks would be
+# permanently missing and it could never merge. A loud failure here beats a
+# pull request born unmergeable.
+
+on:
+  workflow_dispatch:
+    inputs:
+      head:
+        description: "Head branch (must already be pushed to this repository)"
+        required: true
+        type: string
+      base:
+        description: "Base branch the pull request merges into"
+        required: true
+        type: string
+      title:
+        description: "Pull request title"
+        required: true
+        type: string
+      body:
+        description: "Pull request body"
+        required: false
+        type: string
+        default: ""
+
+# These scope GITHUB_TOKEN only; the App token's reach comes from the App's
+# own permissions. Nothing here needs the built-in token at all.
+permissions: {}
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Hoisted because the secrets context is not available in any `if:` —
+    # referencing it there fails the whole file (ESC-36).
+    env:
+      APP_ID: ${{ secrets.APP_ID }}
+    steps:
+      - name: Refuse without the App
+        if: env.APP_ID == ''
+        run: |
+          echo "open-pr: APP_ID/APP_PRIVATE_KEY secrets are not set. This" >&2
+          echo "workflow exists to author pull requests as the App; without" >&2
+          echo "one there is nothing correct it can do. Configure the App:" >&2
+          echo "scripts/setup-github.sh --app" >&2
+          exit 1
+      - name: Mint the App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      - name: Open the pull request as the App
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          HEAD: ${{ inputs.head }}
+          BASE: ${{ inputs.base }}
+          TITLE: ${{ inputs.title }}
+          BODY: ${{ inputs.body }}
+          REPO: ${{ github.repository }}
+        # Idempotent on retry: a pull request already open for this head+base
+        # is the desired end state, not a failure — a dispatch the driver
+        # retried after a lost wake must not fail the second time.
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --repo "$REPO" --state open \
+            --base "$BASE" --head "$HEAD" \
+            --json number --jq '.[0].number' 2>/dev/null || true)"
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            echo "open-pr: #$existing is already open for $HEAD -> $BASE."
+            exit 0
+          fi
+          gh pr create --repo "$REPO" --head "$HEAD" --base "$BASE" \
+            --title "$TITLE" --body "$BODY"

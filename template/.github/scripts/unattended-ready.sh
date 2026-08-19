@@ -229,10 +229,25 @@ if [[ "$RUNTIME" -eq 1 ]]; then
   # Listing secrets is an admin read a runtime identity does not have. What it
   # CAN prove is stronger than a secret's name existing anyway: that the App
   # identity actually mints an installation token, here, now.
+  #
+  # EXCEPT on a hosted platform (ESC-50): its egress proxy replaces every
+  # Authorization header with the platform's own credential and blocks the
+  # /app endpoints outright, so the mint fails there BY DESIGN, with a
+  # perfectly good key. The signature of that platform is a gh login that
+  # works anyway (the proxy injects it). Such a session drives with the
+  # ambient login and opens pull requests through the open-pr workflow, which
+  # mints server-side where minting works — so what THIS check must prove
+  # shifts: not "the mint works here" but "the opener exists here".
   if "$READY_APP_TOKEN_CMD" >/dev/null 2>&1; then
     ok "App identity mints a token (the merge identity is live, not just named)"
+  elif "$GH" auth status >/dev/null 2>&1; then
+    if [[ -f ".github/workflows/open-pr.yml" ]]; then
+      note "App mint impossible here (a hosted platform's proxy owns the credential — ESC-50); the ambient login drives, and pull requests open as the App via the open-pr workflow"
+    else
+      refuse "App mint impossible here (ESC-50) and this scaffold carries no .github/workflows/open-pr.yml — every pull request this run opened would be owner-authored; update to a template release that ships the open-pr workflow"
+    fi
   else
-    refuse "the App identity cannot mint a token here ($READY_APP_TOKEN_CMD failed) — every pull request this run opened would be authored by nobody-safe; fix the App id and key this environment carries"
+    refuse "no GitHub identity works here: the App cannot mint ($READY_APP_TOKEN_CMD failed) and gh holds no login at all — fix the App id and key this environment carries, or run where the platform injects a credential"
   fi
   note "secret names (CLAUDE_CODE_OAUTH_TOKEN): the full check's job — a runtime identity cannot list secrets"
   SECRETS=""

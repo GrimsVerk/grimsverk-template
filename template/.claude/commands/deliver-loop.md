@@ -21,14 +21,36 @@ sleep to wait for CI.
 
 ## Each turn (first, and on every wake)
 
-**Before anything else, every turn: mint gh's credential from the App.** A
-hosted container has no ambient gh login and deliberately no PAT — the App is
-the only GitHub credential this project carries. Run
-`export GH_TOKEN="$(.claude/scripts/app-token.sh)"` at the start of every
-turn: installation tokens last one hour, a turn is shorter, and a token
-carried across turns fails late looking like a GitHub outage. If the mint
-fails, the environment is missing its App id or key — report the exact error
-and stop; do not improvise a credential.
+**Before anything else, every turn: establish gh's credential — and know
+which identity it is.** Try the App first:
+`export GH_TOKEN="$(.claude/scripts/app-token.sh)"` — installation tokens
+last one hour, a turn is shorter, and a token carried across turns fails late
+looking like a GitHub outage. If the mint fails but `gh auth status`
+succeeds anyway, you are on a hosted platform whose egress proxy replaces
+every Authorization header with the OWNER's credential and blocks the /app
+endpoints outright (ESC-50): minting is impossible there by design, with a
+perfectly good key. On such a platform the ambient login is your identity
+for reads, pushes, and workflow dispatches — but never for opening pull
+requests (next paragraph). If neither the mint nor the ambient login works,
+report the exact error and stop; do not improvise a credential.
+
+**Opening pull requests — always as the App, whichever identity you hold.**
+Every pipeline pull request must be authored by the App, never the owner:
+`owner-authored.sh`'s protection of the steering documents and the
+acceptance pull request's approvability both stand on it. Two ways, chosen
+by your credential:
+
+- your `GH_TOKEN` is a minted App token → `gh pr create` directly;
+- ambient login (hosted platform, mint impossible) → push the branch, then
+  dispatch the server-side opener, which mints the App token where minting
+  works and opens the pull request as the App:
+  `gh workflow run open-pr.yml -f head=<branch> -f base=<this run's base>
+  -f title=<title> -f body=<body>`. The dispatch returns before the pull
+  request exists: give it up to two minutes (`gh pr list --head <branch>
+  --base <base>`); if nothing appears, read that workflow run's log, report
+  it, and stop. Never open the pull request under the ambient login as a
+  fallback — an owner-authored pipeline pull request is the one artifact
+  this pipeline must never produce.
 
 1. **Establish the base branch, first turn only, out loud.** The owner may
    name one in the scope arguments (`base: <branch>`); otherwise it is the
@@ -41,10 +63,11 @@ and stop; do not improvise a credential.
    - run the detector as `RUN_BASE=<branch> .claude/scripts/deliver-phase.sh`,
      and the readiness check as `RUN_BASE=<branch>
      .github/scripts/unattended-ready.sh --runtime` — `--runtime` because this
-     session's identity is the App, which cannot read repository
-     administration; the flag checks what this identity honestly can (the App
-     minting, the effective rules on the base branch, the documents), and the
-     full check remains the owner's, at setup. It still refuses when the gates
+     session's identity — the App, or the ambient login where minting is
+     impossible (ESC-50) — cannot read repository administration; the flag
+     checks what this identity honestly can (a working credential, the
+     effective rules on the base branch, the documents), and the full check
+     remains the owner's, at setup. It still refuses when the gates
      do not bind the base branch (fix:
      `scripts/setup-github.sh --gate-branch <branch>`);
    - open every pull request with an explicit `--base <branch>`;
@@ -52,8 +75,8 @@ and stop; do not improvise a credential.
      `--<branch, non-alphanumerics as ->` (e.g. base `run/web` →
      `feat/<slug>--run-web`), exactly as the local driver does, so twin runs
      building the same slugs cannot collide on branch names.
-2. **Preflight, first turn only:** `gh auth status` (on the token minted
-   above);
+2. **Preflight, first turn only:** `gh auth status` (on the credential
+   established above);
    `.github/scripts/unattended-ready.sh --runtime` (with `RUN_BASE`, above) —
    a refusal ends the run, report it verbatim; `coverage.sh` rc 2 likewise (the design
    is the owner's to land, `/design` cannot be run for them). Note the
@@ -101,16 +124,15 @@ and stop; do not improvise a credential.
      <this run's base>` with the matching command file as its prompt plus the
      UNATTENDED addendum and the detector's scope; then push the worker
      branch under a `docs/`-prefixed name (with the lane suffix on a
-     non-default base) and open the pull request
-     mechanically (`git push origin worker/<id>:docs/<ref>` — the worker
-     branch is neither docs-exempt nor slug-resolvable). Then you are in
-     WAIT.
+     non-default base) via `git push origin worker/<id>:docs/<ref>` — the
+     worker branch is neither docs-exempt nor slug-resolvable — and open the
+     pull request as the App (the rule above). Then you are in WAIT.
    - **ORCHESTRATE** — run `/orchestrate <slug>` in this session, telling it
      `UNATTENDED RUN`, the run's base branch, and the exact feature-branch
      name (`feat/<slug>`, plus the lane suffix on a non-default base) so it
      branches off the base, pushes that branch, and stops. **You** then open
-     the pull request, as the App, the same way you do for a worker branch —
-     never under the owner's own credentials, or
+     the pull request as the App (the rule above), the same way you do for a
+     worker branch — never under the owner's own credentials, or
      `.github/scripts/owner-authored.sh` compares the owner's login to the
      owner's login and passes for every pull request this run ever opened. Then
      you are in WAIT.
@@ -159,7 +181,8 @@ reached, a pattern of failures, a setup refusal:
    replies — what the reviewer was shown and what it said — beside the report.
    The review gate is the only load-bearing gate with no fixtures, and it was
    also the only one leaving no trace to build fixtures from.
-3. Commit both on a `docs/run-<timestamp>` branch and open the pull request.
+3. Commit both on a `docs/run-<timestamp>` branch and open the pull request —
+   as the App, per the credential rule above.
 
 **Do this even when the run failed.** A run that ended badly is the one whose
 evidence is worth most, and it is the one a stop-and-report instinct skips.

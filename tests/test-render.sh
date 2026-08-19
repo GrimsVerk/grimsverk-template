@@ -400,6 +400,29 @@ PYCHK
   then ok "$lang deliver-loop.md opens the acceptance pull request itself"
   else no "$lang deliver-loop.md opens the acceptance pull request itself"; fi
 
+  # ESC-50. A hosted web session can never be the App — the platform's proxy
+  # replaces the Authorization header with the owner's credential and blocks
+  # the /app endpoints — so pull requests stay App-authored through a
+  # server-side opener the driver dispatches instead of minting.
+  op="$out/.github/workflows/open-pr.yml"
+  if [[ -f "$op" ]]; then
+    ok "$lang ships the open-pr workflow"
+    if grep -q 'workflow_dispatch' "$op"
+    then ok "$lang open-pr.yml is dispatchable"
+    else no "$lang open-pr.yml is dispatchable"; fi
+    if grep -qE "^[[:space:]]*if: env\.APP_ID == ''" "$op"
+    then ok "$lang open-pr.yml refuses without the App, testing the hoisted env copy"
+    else no "$lang open-pr.yml refuses without the App, testing the hoisted env copy"; fi
+    if grep -qE '^[[:space:]]*if:.*secrets\.' "$op"
+    then no "$lang open-pr.yml reads no secret in an if:" "$(grep -nE '^[[:space:]]*if:.*secrets\.' "$op")"
+    else ok "$lang open-pr.yml reads no secret in an if:"; fi
+  else
+    no "$lang ships the open-pr workflow"
+  fi
+  if says "$out/.claude/commands/deliver-loop.md" "open-pr.yml"
+  then ok "$lang deliver-loop.md routes ambient-identity pull requests through the opener"
+  else no "$lang deliver-loop.md routes ambient-identity pull requests through the opener"; fi
+
   # ESC-36. The auto-merge workflow referenced the secrets context in a step
   # `if:`, which fails FILE validation — the run is created with zero jobs and
   # all three jobs die together. These assertions are on the RENDERED file
