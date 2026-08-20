@@ -26,7 +26,7 @@ echo lane > "$R/lane.txt"; git -C "$R" add -A; git -C "$R" commit -qm lane
 git -C "$R" push -q -u origin run/local
 
 git -C "$R" switch -qc feat/done run/local
-echo done > "$R/done.txt"; git -C "$R" add -A; git -C "$R" commit -qm done
+echo merged > "$R/done.txt"; git -C "$R" add -A; git -C "$R" commit -qm merged
 git -C "$R" push -q -u origin feat/done
 
 git -C "$R" switch -qc docs/run-20260820T000000Z--run-local run/local
