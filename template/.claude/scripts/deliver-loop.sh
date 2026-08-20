@@ -617,9 +617,15 @@ PR_COUNT=0
 BUDGET_START=""; BUDGET_START_MODEL=""; BUDGET_RESET=""
 if BUDGET_LINE="$(.claude/scripts/budget-probe.sh 2>/dev/null)"; then
   read_field() { sed -n "s/.*\\b$1=\\([^ ]*\\).*/\\1/p" <<<"$BUDGET_LINE" | head -1; }
+  # reset= is the probe's LAST field by contract and its value contains
+  # spaces ("Aug 20, 11am (Europe/Amsterdam)"), so it is captured to end of
+  # line — the word-parse truncated it to a bare month (anvil mobo F13), and
+  # since BOTH sides of the rollover comparison truncated identically, the
+  # mid-run re-baseline could never fire.
+  read_reset() { sed -n "s/.*\\breset=\\(.*\\)$/\\1/p" <<<"$BUDGET_LINE" | head -1; }
   BUDGET_START="$(read_field week)"
   BUDGET_START_MODEL="$(read_field week_model)"
-  BUDGET_RESET="$(read_field reset)"
+  BUDGET_RESET="$(read_reset)"
 fi
 
 ask() { # ask <prompt> — one line from the owner, or empty when not a terminal
@@ -864,7 +870,8 @@ while :; do
   fi
   if [[ -n "$BUDGET_START" ]] && out="$(.claude/scripts/budget-probe.sh 2>/dev/null)"; then
     f() { sed -n "s/.*\\b$1=\\([^ ]*\\).*/\\1/p" <<<"$out" | head -1; }
-    now_reset="$(f reset)"
+    # Same end-of-line capture as the start-of-run parse (mobo F13).
+    now_reset="$(sed -n "s/.*\\breset=\\(.*\\)$/\\1/p" <<<"$out" | head -1)"
     if [[ -n "$BUDGET_RESET" && "$BUDGET_RESET" != "unknown" && "$now_reset" != "$BUDGET_RESET" ]]; then
       # The weekly window rolled over mid-run. Every delta against the old
       # baseline is now meaningless — and negative — so re-baseline rather than

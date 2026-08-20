@@ -41,6 +41,20 @@ expect_contains "the weekly number survives" "$out" "week=29"
 expect_contains "the per-model weekly number survives" "$out" "week_model=25"
 expect_contains "the reset survives, so a rollover can be detected" "$out" "reset=2026-08-20T10:59:00Z"
 
+# mobo F13: a human-readable reset carries SPACES. Truncating at the first one
+# left a bare month in the driver's banner — and since both sides of the
+# rollover comparison truncated identically, the mid-run re-baseline could
+# never fire either.
+cat > "$WORK/bin/kv-spaces" <<'STUB'
+#!/usr/bin/env bash
+echo "session=41 week=78 week_model=88 reset=Aug 20, 11am (Europe/Amsterdam)"
+STUB
+chmod +x "$WORK/bin/kv-spaces"
+out="$(run BUDGET_PROBE_CMD="$WORK/bin/kv-spaces")"
+expect_rc "a reset value containing spaces is accepted" 0 $?
+expect_contains "and survives whole, not truncated at the first space" \
+  "$out" "reset=Aug 20, 11am (Europe/Amsterdam)"
+
 # The older two-field form still works — an owner's existing command must not
 # break because this script learned to read more.
 cat > "$WORK/bin/kv2" <<'STUB'
