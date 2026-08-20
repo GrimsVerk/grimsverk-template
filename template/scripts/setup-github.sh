@@ -102,8 +102,10 @@ cd "$ROOT"
 # to `gh secret set` over stdin, touching no output stream).
 #
 # Under docs/runs/ deliberately: that path is exempt from the plan check's
-# size cap at any size, so the transcript can always land — on main directly
-# before the gates exist, on a docs/ branch after. A re-exec through `tee`
+# size cap at any size, so the transcript can always land — on whatever
+# branch you are setting up from: the default branch before the gates exist,
+# a docs/ branch after, the working branch itself where the default branch is
+# off-limits (a lane-based test bed). A re-exec through `tee`
 # rather than process substitution, because bash does not wait for a process
 # substitution on exit and a transcript that races the assertions reading it
 # is worse than none.
@@ -296,11 +298,26 @@ INCLUDE_REFS='"~DEFAULT_BRANCH"'
 for b in ${GATE_BRANCHES[@]+"${GATE_BRANCHES[@]}"}; do
   INCLUDE_REFS+=", \"refs/heads/$b\""
 done
+# bypass_actors is EXPLICIT, and saying so is the fix for a live finding
+# (anvil F5/F16): a PUT that omits the field PRESERVES whatever bypass the
+# ruleset already carries, so the script's own header described gates the
+# live ruleset was quietly waiving. Repository admins hold an always-on
+# bypass, deliberately — without it the owner cannot maintain the default
+# branch or recover a wedged repository without editing the ruleset first.
+# THE CONSEQUENCE, stated where it can be read: these gates bind the App and
+# every non-admin credential; they do NOT bind an admin's direct push (GitHub
+# prints "Bypassed rule violations" and accepts it), and any session holding
+# an owner-grade injected credential is such an admin. The unattended
+# pipeline stays fully gated because the driver acts as the App, which holds
+# no repository role.
 RULESET_JSON="$(cat <<JSON
 {
   "name": "$RULESET_NAME",
   "target": "branch",
   "enforcement": "active",
+  "bypass_actors": [
+    { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" }
+  ],
   "conditions": { "ref_name": { "include": [$INCLUDE_REFS], "exclude": [] } },
   "rules": [
     { "type": "deletion" },
@@ -336,9 +353,11 @@ EXISTING_ID="$("$GH" api "repos/$REPO/rulesets" \
 if [[ -n "$EXISTING_ID" ]]; then
   printf '%s' "$RULESET_JSON" | "$GH" api -X PUT "repos/$REPO/rulesets/$EXISTING_ID" --input - >/dev/null
   say "ruleset '$RULESET_NAME': updated in place (id $EXISTING_ID)."
+  say "ruleset bypass: repository admins, always — direct admin pushes are WAIVED, not blocked; the App and every non-admin stay fully gated."
 else
   printf '%s' "$RULESET_JSON" | "$GH" api -X POST "repos/$REPO/rulesets" --input - >/dev/null
   say "ruleset '$RULESET_NAME': created."
+  say "ruleset bypass: repository admins, always — direct admin pushes are WAIVED, not blocked; the App and every non-admin stay fully gated."
 fi
 say "required checks: $BUILD_CHECK secrets plan template-sync test-the-tests acceptance-criteria review"
 if [[ ${#GATE_BRANCHES[@]} -gt 0 ]]; then

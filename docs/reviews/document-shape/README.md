@@ -1100,7 +1100,7 @@ Contrast with the plan-level gate, which the same document mandates two sections
 plan           plan-resolve: branch 'docs/design' adds 218 lines, all of them in docs/plans/,
                docs/DESIGN.md, docs/VISION.md, ... Exempt from the size cap
                plan-lint: 0 plan(s) parse.
-               owner-authored: 2 owned document(s), opened by 'thomgrims'.
+               owner-authored: 2 owned document(s), opened by '<owner-login>'.
                vision-complete: this pull request touches no plan — nothing to check.
 review         REVIEW_VERDICT: PASS
 ```
