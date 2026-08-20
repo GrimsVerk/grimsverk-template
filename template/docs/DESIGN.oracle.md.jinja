@@ -49,6 +49,16 @@ wrong, write a **new** decision that names the old id and says what replaced it
 This is the rule that stops an oracle quietly revising yesterday's ruling, where
 the diff would read as an edit rather than as a reversal.
 
+**A superseded id leaves the requirement universe.** `coverage.sh` subtracts
+every id named by a `**Requirements superseded:**` line and reports it as design
+history rather than as a gap — because this page is append-only, so the id stays
+here forever while the behaviour it describes is deliberately not built. Two
+things follow. No plan may name a superseded id in its `covers:`: that field
+reads as "this plan delivers this id", so the claim is false the day it is
+written, and the report names any plan that makes it. And every superseding
+requirement's text should name the id it retires ("Supersedes R1001"), so a
+reader can pair a retirement with its replacement from the text alone.
+
 ## The schema
 
 Every decision is a `##` heading with the id, then these eight fields:

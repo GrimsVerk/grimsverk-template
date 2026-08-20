@@ -33,6 +33,14 @@
 # `*(non-functional)*` in the design's section 5 is reported as an EXPECTED
 # absence rather than a gap, which is what keeps the signal readable.
 #
+# THE UNIVERSE IS THE SURVIVING REQUIREMENTS. The oracle ledger is append-only,
+# so a decision that turns out wrong is superseded rather than edited away and
+# the id it retires stays on its page forever. Those ids are subtracted here and
+# reported as design history, never as a gap: a retired requirement's behaviour
+# is deliberately not being built, so a permanent "NOT PLANNED" is a script
+# limitation reported as unscheduled work — and the delivery loop, which
+# dispatches a planner for every gap, livelocks on one (ESC-200).
+#
 # Usage:  coverage.sh
 #
 # Exit codes are distinct because /deliver branches on them, and "there is work
@@ -217,12 +225,81 @@ if [[ ${#REQS[@]} -eq 0 ]]; then
   exit 2
 fi
 
+# ------------------------------------------- superseded ids are design history
+# The oracle ledger is APPEND-ONLY by design — a decision that turns out wrong is
+# superseded by a new one, never edited away — so an id a later decision retires
+# stays on the page forever. Reading `**Requirements added:**` and nothing else
+# therefore kept every retired id in the universe permanently: `NOT PLANNED` on
+# every run, exit 1 on every run, for a behaviour deliberately not being built.
+#
+# That is not a cosmetic wrong number. The delivery driver maps each gap back to
+# the decision that ADDED it and dispatches a planner for it, so a permanent gap
+# dispatched a planner every cycle and the loop could never walk past it — a
+# livelock costing a full unattended session per turn, observed live. And the
+# cheapest way to green the report was for some plan to claim the retired id,
+# which is a false claim the day it is written.
+#
+# So the retired ids are subtracted here, and reported below as their own
+# excused class. Subtracting them SILENTLY is the one shape to avoid: absence
+# has to read as a decision, not as work that quietly vanished.
+#
+# Column-anchored, exactly like the `**Requirements added:**` rule one screen up
+# and for the identical reason — the shipped ledger skeleton documents its own
+# schema in an INDENTED code block, superseded example id and all, so a rule
+# matching the label anywhere would read that example as a real retirement and
+# delete a live requirement from every generated project on day one.
+declare -A SUPERSEDED=()     # retired id -> the decision that retired it
+declare -A REPLACED_BY=()    # retired id -> the ids that took its place, if any
+if [[ -f "$ROOT/docs/DESIGN.oracle.md" ]]; then
+  while IFS=$'\t' read -r id od reps; do
+    [[ -n "$id" ]] || continue
+    SUPERSEDED["$id"]="$od"
+    REPLACED_BY["$id"]="$reps"
+  done < <(awk '
+    # A decision block ends at the next heading, and the two fields can be
+    # written in either order, so ids are held until the block closes.
+    function flush(   i, j, reps) {
+      if (nsup > 0) {
+        reps = ""
+        for (j = 1; j <= nadd; j++) reps = reps (j > 1 ? ", " : "") add[j]
+        for (i = 1; i <= nsup; i++) print sup[i] "\t" od "\t" reps
+      }
+      nadd = 0; nsup = 0
+    }
+    # A heading that is not a decision still closes the block, and is named
+    # honestly rather than being dropped: a ledger whose headings this cannot
+    # read must not silently stop subtracting.
+    /^## / { flush(); od = ($2 ~ /^OD-/) ? $2 : "the oracle ledger" }
+    /^[-*] \*\*Requirements (added|superseded):\*\*/ {
+      line = $0
+      retires = (line ~ /^[-*] \*\*Requirements superseded:\*\*/)
+      sub(/^.*\*\*Requirements (added|superseded):\*\*/, "", line)
+      # Split on non-alphanumerics rather than a word-boundary escape, for the
+      # reason the collection pass gives: \b is a backspace to awk. This also
+      # strips the `**` of a bolded id, so both spellings are read.
+      n = split(line, parts, /[^A-Za-z0-9]+/)
+      for (i = 1; i <= n; i++) {
+        if (parts[i] !~ /^R[0-9]+$/) continue
+        if (retires) sup[++nsup] = parts[i]; else add[++nadd] = parts[i]
+      }
+    }
+    END { flush() }
+  ' "$ROOT/docs/DESIGN.oracle.md")
+fi
+
+if [[ ${#SUPERSEDED[@]} -gt 0 ]]; then
+  mapfile -t REQS < <(
+    for id in "${REQS[@]}"; do [[ -z "${SUPERSEDED[$id]:-}" ]] && echo "$id"; done
+  )
+fi
+
 # id -> space-separated list of plan slugs claiming it
 declare -A CLAIMED=()
 declare -a UNKNOWN=()
 declare -a MALFORMED=()
 declare -a UNSLICED=()
 declare -a EXPECTED_ABSENCES=()
+declare -a SUPERSEDED_CLAIMS=()
 if [[ -d "$PLANS_DIR" ]]; then
   while IFS= read -r file; do
     [[ "$(basename "$file")" == _* ]] && continue
@@ -250,6 +327,14 @@ if [[ -d "$PLANS_DIR" ]]; then
       # counted for nothing while looking like it counted for something.
       if [[ ! "$id" =~ ^R[0-9]+$ ]]; then
         MALFORMED+=("$id (in $plan)")
+        continue
+      fi
+      # A retired id is not in the universe any more, so without this it would
+      # fall into "ids the design doesn't define" — which reads as a typo and is
+      # not one. Naming it as a retirement is the whole point: this is the
+      # over-claim the false gap used to pressure authors into writing.
+      if [[ -n "${SUPERSEDED[$id]:-}" ]]; then
+        SUPERSEDED_CLAIMS+=("$id (in $plan) — retired by ${SUPERSEDED[$id]}")
         continue
       fi
       if printf '%s\n' "${REQS[@]}" | grep -qx "$id"; then
@@ -330,6 +415,32 @@ if [[ ${#EXPECTED_ABSENCES[@]} -gt 0 ]]; then
   printf '  %s\n' "${EXPECTED_ABSENCES[@]}"
   echo "  A platform, offline, privacy or cost requirement is owned by no single"
   echo "  slice by nature. Listed so the absence reads as a decision."
+fi
+
+if [[ ${#SUPERSEDED[@]} -gt 0 ]]; then
+  echo
+  echo "Superseded (design history), subtracted from the universe:"
+  for id in $(printf '%s\n' "${!SUPERSEDED[@]}" | sort -V); do
+    if [[ -n "${REPLACED_BY[$id]:-}" ]]; then
+      printf '  %s — retired by %s, replaced by %s\n' \
+        "$id" "${SUPERSEDED[$id]}" "${REPLACED_BY[$id]}"
+    else
+      printf '  %s — retired by %s, with no replacement\n' "$id" "${SUPERSEDED[$id]}"
+    fi
+  done
+  echo "  The ledger is append-only, so a retired id stays on its page forever"
+  echo "  while the behaviour it describes is deliberately not built. Listed so"
+  echo "  the retirement reads as a decision rather than a disappearance."
+fi
+
+if [[ ${#SUPERSEDED_CLAIMS[@]} -gt 0 ]]; then
+  echo
+  echo "Claimed by a plan, and retired by the ledger:"
+  printf '  %s\n' "${SUPERSEDED_CLAIMS[@]}"
+  echo "  'covers:' reads as 'this plan delivers this id', and a retired id's"
+  echo "  behaviour is deliberately not being built — so the claim is false the"
+  echo "  day it is written. Drop it from the covers: list, or name the"
+  echo "  requirement that replaced it."
 fi
 
 if [[ ${#GAPS[@]} -gt 0 ]]; then
