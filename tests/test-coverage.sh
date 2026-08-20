@@ -355,4 +355,121 @@ out="$(run)"
 expect_contains "a plan whose slices name every claim is reported clean" "$out" \
   "Every claimed requirement is mentioned by a slice"
 
+# ------------- ESC-200: a superseded id is design history, not an eternal gap
+# The livelock this repairs, observed live on a real project. The oracle ledger
+# is append-only, so an id a later decision RETIRES stays on the page forever —
+# and nothing here read `**Requirements superseded:**`. So the retired id sat in
+# the requirement universe permanently, `NOT PLANNED` on every run, exit 1 on
+# every run; the delivery driver maps each gap back to the decision that added
+# it and dispatches a steward for it, so it dispatched one for the retired
+# decision every single cycle and could never reach orchestration, milestone
+# planning or acceptance again. One full unattended session spent per cycle, to
+# re-derive the supersession from the ledger and stop.
+#
+# The other half is the pressure the false gap creates: the cheapest way to
+# green the report is for some plan to name the retired id in its `covers:`,
+# which is a claim that is false the day it is written — the behaviour is
+# deliberately not being built. So a plan that claims one is reported, by name,
+# rather than being credited with it.
+rm -f "$R/docs/plans/everything.md" "$R/docs/plans/oracle/nested.md"
+design <<'EOF'
+# Design
+## 5. Requirements
+- **R1** — the first thing
+EOF
+cat > "$R/docs/DESIGN.oracle.md" <<'EOF'
+# Design decisions from evidence
+
+## OD-1 — send whole transcripts rather than excerpts
+
+- **Date:** 2026-08-15
+- **Evidence:** ESC-1
+- **Requirements added:** R1000, R1001
+- **Requirements superseded:** (none)
+
+## OD-2 — the whole-transcript path is uncapped
+
+- **Date:** 2026-08-16
+- **Evidence:** BL-14
+- **Requirements added:** R1008
+- **Requirements superseded:** R1001
+- **Rationale:** the cap R1001 set is reversed. R1008 supersedes R1001.
+EOF
+plan everything "R1, R1000, R1008"
+out="$(run)"
+expect_rc "a design whose only gap is a superseded id is not a gap" 0 $?
+expect_contains "the surviving requirements are the universe" "$out" "Covered: 3/3"
+expect_not_contains "the retired id is not reported as unplanned" "$out" "R1001 NOT PLANNED"
+expect_not_contains "and is not counted as a gap" "$out" "requirement(s) with no plan"
+
+# Subtracted, never silently: absence has to read as a decision, so the
+# retirement is reported as its own class and names the decision that made it
+# and the requirement that replaced it.
+expect_contains "the retirement is reported as its own class" "$out" \
+  "Superseded (design history)"
+expect_contains "and names the decision and the replacement" "$out" \
+  "R1001 — retired by OD-2, replaced by R1008"
+
+# A retirement that replaces the behaviour with nothing is still reported, and
+# says so rather than printing a dangling "replaced by".
+cat > "$R/docs/DESIGN.oracle.md" <<'EOF'
+# Design decisions from evidence
+
+## OD-1 — send whole transcripts rather than excerpts
+
+- **Date:** 2026-08-15
+- **Evidence:** ESC-1
+- **Requirements added:** R1000, R1001
+- **Requirements superseded:** (none)
+
+## OD-2 — the cap is dropped and nothing takes its place
+
+- **Date:** 2026-08-16
+- **Evidence:** BL-14
+- **Requirements added:** (none)
+- **Requirements superseded:** R1001
+EOF
+plan everything "R1, R1000"
+out="$(run)"
+expect_rc "a retirement with no replacement still leaves no gap" 0 $?
+expect_contains "and is reported without a dangling replacement" "$out" \
+  "R1001 — retired by OD-2, with no replacement"
+
+# A plan claiming a retired id is NOT credited with it — that is the over-claim
+# the false gap was pressuring authors into — and it is reported by name rather
+# than falling into "ids the design doesn't define", which reads as a typo.
+plan everything "R1, R1000, R1001"
+out="$(run)"
+expect_rc "a plan claiming a retired id does not fail the report" 0 $?
+expect_contains "the claim is reported by name" "$out" \
+  "R1001 (in everything) — retired by OD-2"
+expect_not_contains "and is not mistaken for a typo" "$out" "doesn't define"
+expect_contains "the retired id is not credited as covered" "$out" "Covered: 2/2"
+
+# Column-anchored, exactly like the `**Requirements added:**` rule and for the
+# identical reason: the shipped ledger skeleton documents its own schema in an
+# INDENTED code block, superseded example id and all. A rule matching the label
+# anywhere would read that example as a real retirement and silently delete a
+# live requirement from the universe in every generated project on day one.
+cat > "$R/docs/DESIGN.oracle.md" <<'EOF'
+# Design decisions from evidence
+
+## The schema
+
+    - **Requirements added:** R1000, R1001   (or "(none)")
+    - **Requirements superseded:** R1001     (or "(none)")
+
+## OD-1 — send whole transcripts rather than excerpts
+
+- **Date:** 2026-08-15
+- **Evidence:** ESC-1
+- **Requirements added:** R1000, R1001
+- **Requirements superseded:** (none)
+EOF
+plan everything "R1, R1000"
+out="$(run)"
+expect_rc "the schema's own indented example retires nothing" 1 $?
+expect_contains "so a real requirement stays a real gap" "$out" "R1001 NOT PLANNED"
+rm -f "$R/docs/DESIGN.oracle.md"
+
 summary
