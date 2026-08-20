@@ -760,7 +760,27 @@ land_evidence() {
     && base_point="FETCH_HEAD"
   git switch -q "$RUN_BASE" 2>/dev/null || true
   if git switch -qc "$ref" "$base_point" 2>/dev/null || git switch -q "$ref" 2>/dev/null; then
+    # WHAT SHIPPED, RECORDED WHERE THE NEXT PLANNER WILL FIND IT (ESC-203).
+    # A planner had no way to tell which requirements were already built:
+    # coverage.sh reports what a plan CLAIMS, and a plan's `status:` is set by
+    # hand, so every plan on a real project still read `draft` long after its
+    # work had merged. This reads merged pull requests instead, which cannot go
+    # stale, and it rides out on the evidence branch because that is the one
+    # commit path this driver already owns and the one the gates already exempt.
+    #
+    # Never fatal. A stop that cannot reach the API still lands its evidence —
+    # the recorder is idempotent, so the next stop picks up whatever this one
+    # missed.
+    .claude/scripts/record-delivered.sh --base "$RUN_BASE" 2>&1 \
+      | sed 's/^/deliver-loop: /' || true
+    # STAGED SEPARATELY, AND THAT IS NOT A STYLE CHOICE. `git add A B` stages
+    # NOTHING when B does not match a path — so folding the delivered record in
+    # beside the run directory meant that a project without that file staged no
+    # evidence at all, committed nothing, and left the tree dirty. The next run
+    # then refuses to start on the debris, which is ESC-64 exactly: a step that
+    # silently blocks the step after it.
     git add "$RUN_DIR" 2>/dev/null || true
+    git add docs/DESIGN.oracle.done.md 2>/dev/null || true
     if git diff --cached --quiet 2>/dev/null; then
       echo "deliver-loop: nothing to land."
     elif ! git commit -q -m "Run evidence for $RUN_ID" 2>/dev/null; then

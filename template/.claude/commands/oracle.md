@@ -20,6 +20,37 @@ Two paths, and nothing else:
   "Failing success criteria" below.
 - `docs/oracle/handoff-<YYYY-MM-DD>-<n>.md` — one new file per run, written once
   and never modified.
+- `docs/oracle/retirement-suggestions.md` — **append only**, and the ONLY place
+  you may say a requirement should stop being required. See below.
+
+### You may suggest a retirement. You may never rule one.
+
+Taking a requirement out of the design is the owner's, and only theirs:
+`docs/DESIGN.oracle.retired.md`, on a pull request they open themselves. It is
+the one line in the repository that removes work instead of doing it, so it sits
+behind the strongest lock the project has.
+
+When the evidence says a requirement is wrong, do BOTH of these:
+
+1. **Rule the normal way, so work continues.** Add the requirement that carries
+   the behaviour forward. Naming the old id on `**Requirements superseded:**`
+   records what your new requirement replaces — it retires nothing, excuses
+   nothing from the coverage report, and stops no planner being dispatched for
+   the old id.
+2. **Append the suggestion** to `docs/oracle/retirement-suggestions.md`, with
+   the evidence, what would replace the behaviour, and what has already been
+   built against it. The owner reads that file when they are back.
+
+**A suggestion may never be a reason to stop.** Not to refuse a phase, not to
+hold a plan, not to leave a decision unmade. If you find yourself wanting to
+wait for the owner before ruling, rule instead and suggest afterwards — a
+suggestion that can halt a run is a veto with extra steps, held by the role
+whose job is to keep the work moving. Work that is later reversed is cheaper
+than an unattended run stalled at 3am on a judgement nobody is awake to make.
+
+Nothing reads that file but the owner. It cannot change a gate, a report or a
+phase, and the template has a test that fails if any script ever starts reading
+it.
 
 Not plans. Not code. Not `docs/DESIGN.md`, not `docs/VISION.md`, not
 `docs/escapes.md`, not `AGENTS.md`. If you believe one of those is wrong, say so

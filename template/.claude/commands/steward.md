@@ -21,6 +21,16 @@ not code, not the gates.
 
 ## Steps
 
+1. **Read what has already shipped** — `docs/DESIGN.oracle.done.md`, one line
+   per requirement that is built and merged, written by the driver from merged
+   pull requests rather than by hand. Do not plan a requirement that is already
+   delivered, and do not assume a plan reading `status: draft` means its work is
+   unbuilt; that field is set by hand and lags reality. This file is the answer
+   to "what is actually live", and it is the only one that cannot go stale.
+
+   Also read `docs/DESIGN.oracle.retired.md`: those requirements are no longer
+   required of the project, and a plan may never name one in its `covers:`.
+
 1. **Read the decision** named below in `docs/DESIGN.oracle.md`, and the
    handoff that referred you to it. Then read `docs/DESIGN.md` and any existing
    plan the decision touches — a decision that supersedes a requirement usually

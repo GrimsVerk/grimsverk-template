@@ -1,0 +1,56 @@
+# Design — retired requirements — {{ project_name }}
+
+One line per requirement the **owner** has taken out of the design, with the
+reason. Append only; nothing here is ever edited.
+
+**Only the owner may land a change to this file.** Not by approval — by
+AUTHORSHIP of the pull request, enforced by `.github/scripts/owner-authored.sh`,
+the same check that guards [`DESIGN.md`](DESIGN.md) and
+[`VISION.md`](VISION.md). An agent may write the line and push the branch. It
+may not open the pull request.
+
+## Why it works this way
+
+Both design documents are append-only, so a requirement that turns out to be
+wrong cannot be edited away: it stays on its page and goes on reading like a
+live requirement of the design forever. `coverage.sh` counted it as one — it
+reported the id unplanned on every run, and the delivery driver, which
+commissions planning for exactly those gaps, dispatched a planner for the dead
+requirement every cycle and could never walk past it. A full unattended session
+per turn, observed live.
+
+Deleting the decision was considered and rejected: plans cite requirement ids,
+later decisions cite earlier ones, and the backlog and the escapes ledger cite
+both — so removing one leaves every citation pointing at nothing. Recording the
+retirement here removes the requirement from the design's shape while leaving
+the whole record standing.
+
+## Why only the owner
+
+This file is the one place in the repository where a line REMOVES a requirement
+from what the project has to satisfy.
+
+That makes it the one operation that can turn a red pipeline green by dropping
+the requirement instead of meeting it. Every other route to green costs work;
+this one costs a sentence. So it sits behind the strongest lock the project
+has — and behind the only party whose judgement the whole arrangement is built
+to serve.
+
+An agent may **suggest** a retirement. It writes suggestions to
+[`oracle/retirement-suggestions.md`](oracle/retirement-suggestions.md), which no
+script and no other agent reads. A suggestion changes nothing, gates nothing,
+and stops nothing; the owner reads it when they are back and decides.
+
+## Format
+
+One line each, and the id in backticks exactly as the design spells it:
+
+    - `R<n>` — retired — YYYY-MM-DD — why it is no longer required
+
+Say why in the owner's own words. This file is the only place that reason is
+written down, and a later reader asking "why doesn't this do X any more?" has
+nowhere else to look.
+
+---
+
+_(nothing yet)_
