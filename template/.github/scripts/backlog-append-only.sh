@@ -42,6 +42,10 @@
 # Required env:
 #   BASE_SHA   the PR's base commit — the ledgers there are the protected state
 # Optional env:
+#   ID_PATTERN an ERE for the id these ledgers carry; default BL-[0-9]+. Only
+#              lines matching it are protected, so surrounding prose stays free
+#              to be reflowed. docs/DESIGN.oracle.done.md is held by this same
+#              script with R[0-9]+.
 #   LEDGERS    space-separated; default: the three backlog ledgers —
 #              docs/BACKLOG.md (what was asked for), docs/BACKLOG.done.md (what
 #              came of it), docs/BACKLOG.approved.md (who said yes, and whether
@@ -53,12 +57,17 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 : "${BASE_SHA:?BASE_SHA is required (the PR base commit)}"
 LEDGERS="${LEDGERS:-docs/BACKLOG.md docs/BACKLOG.done.md docs/BACKLOG.approved.md}"
+# The id shape this run protects. Configurable because the same rule — a landed
+# line carrying an id never changes and never moves — is what the oracle
+# ledger's done-log needs too, and its ids are requirements rather than backlog
+# items. Copying the script to change one regex is how two checks drift apart.
+ID_PATTERN="${ID_PATTERN:-BL-[0-9]+}"
 
 declare -a PROBLEMS=()
 CHECKED=0
 PROTECTED=0
 
-items_of() { grep -E 'BL-[0-9]+' <<<"$1" || true; }
+items_of() { grep -E "$ID_PATTERN" <<<"$1" || true; }
 
 for LEDGER in $LEDGERS; do
   BASE_CONTENT="$(git -C "$ROOT" show "${BASE_SHA}:${LEDGER}" 2>/dev/null || true)"
