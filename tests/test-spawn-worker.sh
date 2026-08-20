@@ -237,7 +237,10 @@ else no "the worker branch exists"; fi
 # worker was refused every write there and could not be told — it produced an
 # empty branch and exited 0. This assertion is the whole reason that regression
 # cannot come back quietly.
-expect_contains "the worktree lives under .worktrees/" "$out" "/.worktrees/ok-1"
+# The reported path is repository-RELATIVE since ESC-201, so this anchors on the
+# start of the field rather than on a leading slash. The location itself is
+# proved on disk two lines down, which is the stronger of the two checks anyway.
+expect_contains "the worktree lives under .worktrees/" "$out" "worktree=.worktrees/ok-1"
 expect_not_contains "the worktree is not under .claude/" "$out" ".claude/worktrees"
 if [[ -d "$R/.worktrees/ok-1" ]]; then ok "the worktree directory was created"
 else no "the worktree directory was created"; fi
@@ -327,5 +330,42 @@ START="$(git -C "$R" rev-parse HEAD)"
 out="$(STUB_MODE=noop spawn --id moved-1 --prompt "nothing" --engine codex --base "$START")"
 expect_rc "a moved base cannot disguise an empty worker" 3 $?
 git -C "$R" switch -q main
+
+# ------------- ESC-201: nothing this script prints carries a machine path
+# The result line is not a debug print. `deliver-loop.sh` appends it verbatim to
+# the run report, which is committed, pushed and merged — so `worktree=` wrote
+# the operator's absolute path, and with it their home directory and the root
+# they keep repositories under, into a permanent public-shaped record. Observed
+# live: four such lines in one merged run report on a real project. The template
+# wrote them, so no amount of operator discipline prevents it.
+#
+# The repository-relative half is the only part that carries meaning to a later
+# reader anyway — every reader of that report is standing in the repository.
+#
+# Asserted against EVERY line the script prints rather than against the one
+# field that was wrong, because the leak is a class, not an instance: the same
+# absolute root reaches stderr through the log path and the empty-worker
+# diagnosis, and those are copied into the run's committed worker evidence too.
+git -C "$R" switch -q main
+out="$(spawn --id pathy-1 --prompt "do the thing" --engine codex)"
+expect_rc "a committing worker still succeeds" 0 $?
+expect_not_contains "no line carries the absolute repository root" "$out" "$R"
+expect_contains "the worktree is reported relative to the repository" "$out" \
+  "worktree=.worktrees/pathy-1"
+
+# The same on the two failure paths, which are the ones a person actually reads
+# — and the ones whose text is copied into the run's committed evidence.
+out="$(STUB_MODE=noop spawn --id pathy-2 --prompt "nothing" --engine codex)"
+expect_rc "an empty worker still fails" 3 $?
+expect_not_contains "the empty-worker diagnosis carries no machine path" "$out" "$R"
+expect_contains "and still says where the worktree is" "$out" ".worktrees/pathy-2"
+expect_contains "and still says where the log is" "$out" \
+  ".claude/orchestration-logs/pathy-2.log"
+
+out="$(STUB_MODE=fail spawn --id pathy-3 --prompt "blow up" --engine codex)"
+expect_rc "a failing engine still fails" 7 $?
+expect_not_contains "the engine-failure line carries no machine path" "$out" "$R"
+expect_contains "and still points at the log" "$out" \
+  ".claude/orchestration-logs/pathy-3.log"
 
 summary

@@ -67,7 +67,7 @@
 # empty branch fails loudly at the primitive instead of quietly at the top.
 #
 # On success it leaves the worktree and branch in place and prints:
-#   WORKER_RESULT id=<id> branch=<branch> worktree=<path> engine=<engine>
+#   WORKER_RESULT id=<id> branch=<branch> worktree=<repo-relative path> engine=<engine>
 #                 exit=<engine exit code> commits=<n>
 #
 # Exit codes:
@@ -425,6 +425,20 @@ BRANCH="worker/${SAFE_ID}"
 WORKTREE="${REPO_ROOT}/.worktrees/${SAFE_ID}"
 LOG_DIR="${REPO_ROOT}/.claude/orchestration-logs"
 LOG_FILE="${LOG_DIR}/${SAFE_ID}.log"
+
+# THE SAME TWO PATHS, RELATIVE TO THE REPOSITORY, FOR EVERYTHING THIS SCRIPT
+# PRINTS (ESC-201). The absolute forms above are for the filesystem; they must
+# never be the ones written down. The result line is not a debug print —
+# `deliver-loop.sh` appends it verbatim to the run report, which is committed,
+# pushed and merged — so printing the absolute worktree wrote the operator's
+# home directory and the root they keep repositories under into a permanent
+# record. Observed live: four such lines in one merged run report.
+#
+# Relative is also simply the better line. Every reader of that report is
+# standing in the repository, so `.worktrees/<id>` is the part that carries
+# meaning and the prefix is the part that carries only the operator.
+WORKTREE_REL=".worktrees/${SAFE_ID}"
+LOG_FILE_REL=".claude/orchestration-logs/${SAFE_ID}.log"
 BASE="${BASE:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)}"
 
 # Pin the base to a commit now. The branch it names can move while the worker
@@ -492,10 +506,10 @@ if [[ "$ACTUAL_BRANCH" != "$BRANCH" ]]; then
   echo "spawn-worker[$ID]: the worker moved its work to '$ACTUAL_BRANCH' (this script created '$BRANCH'); reporting the branch that carries the commits" >&2
 fi
 
-echo "WORKER_RESULT id=${ID} branch=${ACTUAL_BRANCH} worktree=${WORKTREE} engine=${ENGINE} exit=${RC} commits=${COMMITS}"
+echo "WORKER_RESULT id=${ID} branch=${ACTUAL_BRANCH} worktree=${WORKTREE_REL} engine=${ENGINE} exit=${RC} commits=${COMMITS}"
 
 if [[ "$RC" -ne 0 ]]; then
-  echo "spawn-worker[$ID]: engine exited $RC (see $LOG_FILE)" >&2
+  echo "spawn-worker[$ID]: engine exited $RC (see $LOG_FILE_REL)" >&2
   exit "$RC"
 fi
 
@@ -504,8 +518,8 @@ if [[ "$COMMITS" -eq 0 ]]; then
     echo "spawn-worker[$ID]: the engine exited 0 but committed nothing."
     echo
     echo "  branch:   $BRANCH (no commits since ${BASE_SHA:0:12})"
-    echo "  worktree: $WORKTREE"
-    echo "  log:      $LOG_FILE"
+    echo "  worktree: $WORKTREE_REL"
+    echo "  log:      $LOG_FILE_REL"
     if [[ "$DIRTY" -gt 0 ]]; then
       echo
       echo "There are $DIRTY uncommitted path(s) in the worktree, so the worker did"
