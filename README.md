@@ -173,8 +173,8 @@ git init -b main
 ### 3. Bootstrap the toolchain, then make the first commit
 
 ```sh
-uv sync              # python — this creates uv.lock, which MUST be committed
-pre-commit install
+uv sync                     # python — this creates uv.lock, which MUST be committed
+uv run pre-commit install   # pre-commit is a dev dependency, installed by uv sync (ESC-55)
 ```
 
 ```sh

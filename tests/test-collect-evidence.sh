@@ -64,6 +64,7 @@ mk_artifact() { # mk_artifact <run-id> <verdict>
 }
 
 run() { ( cd "$R" && GH="$WORK/bin/gh" STUB_RUNS="$STUB_RUNS" \
+  RUN_BASE="${RUN_BASE:-}" \
   STUB_ARTIFACTS="$WORK/artifacts" bash "$SCRIPT" "$@" 2>&1 ); }
 
 # ------------------------------------------------------- nothing to collect
@@ -172,6 +173,36 @@ out="$(run --run-dir docs/runs/T7)"
 if [[ -s "$R/docs/runs/T7/workers/old-worker.log" ]]; then
   ok "no --since collects every log"
 else no "no --since collects every log"; fi
+
+# ---------------------------------------------- lane scoping (ESC-54)
+# Review runs are listed repo-wide; on a twin-run repository, a lane must
+# collect ONLY its own. Observed live: the web lane's run directory held the
+# local lane's review payload.
+mk_artifact 501 PASS
+mk_artifact 502 PASS
+STUB_RUNS="$(printf '%s\n' \
+  "501	2026-08-18T15:00:00Z	dddddddddddddddd	feat/notes--run-web	success	completed" \
+  "502	2026-08-18T15:30:00Z	eeeeeeeeeeeeeeee	feat/notes	success	completed")"
+out="$(RUN_BASE=run/web run --run-dir docs/runs/T8)"
+expect_rc "a lane collects with RUN_BASE set" 0 $?
+if [[ -d "$R/docs/runs/T8/reviews/feat-notes--run-web-dddddddddddd" ]]; then
+  ok "the lane's own suffixed branch is collected"
+else no "the lane's own suffixed branch is collected" \
+  "$(find "$R/docs/runs/T8" 2>/dev/null | head -8)"; fi
+if [[ ! -d "$R/docs/runs/T8/reviews/feat-notes-eeeeeeeeeeee" ]]; then
+  ok "the OTHER lane's branch is not swept in"
+else no "the OTHER lane's branch is not swept in"; fi
+
+# ...and the default lane skips any branch carrying a lane suffix.
+out="$(run --run-dir docs/runs/T9)"
+expect_rc "the default lane collects without RUN_BASE" 0 $?
+if [[ -d "$R/docs/runs/T9/reviews/feat-notes-eeeeeeeeeeee" ]]; then
+  ok "the default lane keeps its own unsuffixed branch"
+else no "the default lane keeps its own unsuffixed branch" \
+  "$(find "$R/docs/runs/T9" 2>/dev/null | head -8)"; fi
+if [[ ! -d "$R/docs/runs/T9/reviews/feat-notes--run-web-dddddddddddd" ]]; then
+  ok "and skips the suffixed lane branch"
+else no "and skips the suffixed lane branch"; fi
 
 # ------------------------------------------------------------- the contract
 out="$(run 2>&1)"

@@ -407,10 +407,16 @@ PYCHK
   op="$out/.github/workflows/open-pr.yml"
   if [[ -f "$op" ]]; then
     ok "$lang ships the open-pr workflow"
+    # Push-triggered, NOT workflow_dispatch (ESC-53): the hosted credential
+    # cannot call the dispatch API, and a dispatch-only workflow does not
+    # register off the default branch.
     if grep -q 'workflow_dispatch' "$op"
-    then ok "$lang open-pr.yml is dispatchable"
-    else no "$lang open-pr.yml is dispatchable"; fi
-    if grep -qE "^[[:space:]]*if: env\.APP_ID == ''" "$op"
+    then no "$lang open-pr.yml is push-triggered, never dispatch (ESC-53)"
+    else ok "$lang open-pr.yml is push-triggered, never dispatch (ESC-53)"; fi
+    if grep -q '\.pr-request\.json' "$op"
+    then ok "$lang open-pr.yml reads the committed request marker"
+    else no "$lang open-pr.yml reads the committed request marker"; fi
+    if grep -qE "^[[:space:]]*if: .*env\.APP_ID == ''" "$op"
     then ok "$lang open-pr.yml refuses without the App, testing the hoisted env copy"
     else no "$lang open-pr.yml refuses without the App, testing the hoisted env copy"; fi
     if grep -qE '^[[:space:]]*if:.*secrets\.' "$op"
@@ -422,6 +428,18 @@ PYCHK
   if says "$out/.claude/commands/deliver-loop.md" "open-pr.yml"
   then ok "$lang deliver-loop.md routes ambient-identity pull requests through the opener"
   else no "$lang deliver-loop.md routes ambient-identity pull requests through the opener"; fi
+  # ESC-52: the ambient-credential probe must ask the network (gh api user),
+  # never the local config (gh auth status, which lies on the hosted platform).
+  if says "$out/.claude/commands/deliver-loop.md" "gh api user"
+  then ok "$lang deliver-loop.md probes the credential with gh api user"
+  else no "$lang deliver-loop.md probes the credential with gh api user"; fi
+  # ESC-55: pre-commit is a dev dependency, not an assumed global — a fresh
+  # machine or hosted container must get it from `uv sync` alone.
+  if [[ "$lang" == python ]]; then
+    if grep -q '"pre-commit' "$out/pyproject.toml"
+    then ok "python pre-commit is a dev dependency"
+    else no "python pre-commit is a dev dependency"; fi
+  fi
 
   # ESC-36. The auto-merge workflow referenced the secrets context in a step
   # `if:`, which fails FILE validation — the run is created with zero jobs and

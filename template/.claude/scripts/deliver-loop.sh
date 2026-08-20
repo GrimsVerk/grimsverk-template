@@ -492,7 +492,7 @@ land_evidence() {
     cp "$STATE_DIR"/unlanded-*.md "$RUN_DIR/unlanded/" 2>/dev/null || true
   fi
 
-  .claude/scripts/collect-evidence.sh --run-dir "$RUN_DIR" \
+  RUN_BASE="$RUN_BASE" .claude/scripts/collect-evidence.sh --run-dir "$RUN_DIR" \
     --since "$RUN_STARTED_AT" 2>&1 | sed 's/^/deliver-loop: /' || true
 
   # On a branch and a pull request, never straight onto the default branch:

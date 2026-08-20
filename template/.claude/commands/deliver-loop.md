@@ -25,14 +25,17 @@ sleep to wait for CI.
 which identity it is.** Try the App first:
 `export GH_TOKEN="$(.claude/scripts/app-token.sh)"` — installation tokens
 last one hour, a turn is shorter, and a token carried across turns fails late
-looking like a GitHub outage. If the mint fails but `gh auth status`
-succeeds anyway, you are on a hosted platform whose egress proxy replaces
-every Authorization header with the OWNER's credential and blocks the /app
+looking like a GitHub outage. If the mint fails but `gh api user` succeeds
+anyway, you are on a hosted platform whose egress proxy replaces every
+Authorization header with the platform's own credential and blocks the /app
 endpoints outright (ESC-50): minting is impossible there by design, with a
-perfectly good key. On such a platform the ambient login is your identity
-for reads, pushes, and workflow dispatches — but never for opening pull
-requests (next paragraph). If neither the mint nor the ambient login works,
-report the exact error and stop; do not improvise a credential.
+perfectly good key. Probe with `gh api user`, NEVER `gh auth status` — auth
+status inspects local configuration and reports failure on exactly this
+platform, while real requests succeed at the proxy (ESC-52). On such a
+platform the ambient credential is your identity for reads and pushes — but
+never for opening pull requests (next paragraph). If neither the mint nor
+`gh api user` works, report the exact error and stop; do not improvise a
+credential.
 
 **Opening pull requests — always as the App, whichever identity you hold.**
 Every pipeline pull request must be authored by the App, never the owner:
@@ -41,25 +44,39 @@ acceptance pull request's approvability both stand on it. Two ways, chosen
 by your credential:
 
 - your `GH_TOKEN` is a minted App token → `gh pr create` directly;
-- ambient login (hosted platform, mint impossible) → push the branch, then
-  dispatch the server-side opener, which mints the App token where minting
-  works and opens the pull request as the App:
-  `gh workflow run open-pr.yml -f head=<branch> -f base=<this run's base>
-  -f title=<title> -f body=<body>`. The dispatch returns before the pull
-  request exists: give it up to two minutes, checking with
+- ambient credential (hosted platform, mint impossible) → ask the
+  server-side opener by committing a request onto the branch itself, as its
+  final commit before the push:
+
+  ```sh
+  printf '%s' '{"base": "<this run's base>", "title": "<title>", "body": "<body>"}' > .pr-request.json
+  git add .pr-request.json && git commit -m "Request the pull request"
+  git push origin <branch>
+  ```
+
+  The push fires `.github/workflows/open-pr.yml` at the pushed commit; it
+  mints the App token where minting works (Actions is not behind the proxy)
+  and opens the pull request as the App. No dispatch API is involved — the
+  session's credential cannot call it, and a dispatch-only workflow does not
+  even register off the default branch (ESC-53). The marker rides in the
+  pull request's diff deliberately: it is the audit record of who asked, and
+  it lives at the repository root because `.github/` is CODEOWNERS-owned.
+  The pull request appears within a minute or two — confirm with
   `gh api "repos/<owner/repo>/pulls?state=open&base=<base>" --jq
   '.[] | select(.head.ref=="<branch>") | .number'`; if nothing appears, read
-  that workflow run's log, report it, and stop. Never open the pull request
-  under the ambient login as a fallback — an owner-authored pipeline pull
-  request is the one artifact this pipeline must never produce.
+  the Open PR workflow run's log over REST
+  (`gh api repos/<owner/repo>/actions/runs?event=push`), report it, and
+  stop. Never open the pull request under the ambient credential as a
+  fallback — an owner-authored pipeline pull request is the one artifact
+  this pipeline must never produce.
 
 **REST only, on the hosted platform (ESC-51).** The same proxy that owns the
 credential refuses GraphQL except a pinned set of review operations — and
-`gh pr ...`, `gh repo ...` are GraphQL. The detector and the readiness check
-already speak REST; when you need an API answer yourself, use
-`gh api repos/<owner/repo>/...`, never a `gh pr`/`gh repo` porcelain
-command. A GraphQL refusal blames the credential in its error text; do not
-believe it — the credential is fine, the query shape is the problem.
+`gh pr ...`, `gh repo ...`, `gh run ...`, `gh workflow ...` are porcelain
+that speaks GraphQL, sometimes only in a preamble. When you need an API
+answer yourself, use `gh api repos/<owner/repo>/...`, never porcelain. A
+GraphQL refusal blames the credential in its error text; do not believe it —
+the credential is fine, the query shape is the problem.
 
 1. **Establish the base branch, first turn only, out loud.** The owner may
    name one in the scope arguments (`base: <branch>`); otherwise it is the
