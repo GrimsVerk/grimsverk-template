@@ -131,7 +131,9 @@ only they: a branch whose entire diff sits inside `docs/plans/`,
 `docs/DESIGN.md`, `docs/DESIGN.oracle.md`, `docs/oracle/`, `docs/VISION.md`,
 `docs/acceptance.md`, `docs/architecture.md`, `docs/runs/`, `docs/BACKLOG.md`
 or the opener's `.pr-request.json` marker (the one non-document member — the
-pull-request machinery a driver without App identity must commit, ESC-53/56)
+pull-request machinery a driver without App identity must commit; its story
+is in the TEMPLATE repository's escape ledger, cited by id only there,
+because this project's `ESC-<n>` namespace is its own)
 passes at any size. This list is exactly the one
 `.github/scripts/plan-resolve.sh` enforces — the prose and the script must name
 the same paths, because the review gate judges by this text while the `plan`
