@@ -150,6 +150,40 @@ sync_out="$( cd "$PROJ2" && BASE_SHA="$BASE2" HEAD_SHA="$(git rev-parse HEAD)" \
 expect_rc "what the updater produces passes template-sync" 0 $?
 expect_contains "and says so" "$sync_out" "the diff is exactly"
 
+# ESC-63: a driver that cannot author as the App commits the opener's request
+# marker as the branch's last commit. The marker is machinery, not a hand
+# edit — template-sync exempts exactly that one path and nothing else.
+( cd "$PROJ2" && printf '{"base": "%s", "title": "t", "body": "b"}\n' "$DEFAULT2" > .pr-request.json \
+  && git add .pr-request.json && git commit -qm "Request the pull request" )
+sync_out="$( cd "$PROJ2" && BASE_SHA="$BASE2" HEAD_SHA="$(git rev-parse HEAD)" \
+  HEAD_REF=template/v2.0.0 bash "$SCRIPT" 2>&1 )"
+expect_rc "the opener's request marker does not break template-sync (ESC-63)" 0 $?
+( cd "$PROJ2" && git rm -q .pr-request.json && git commit -qm "drop marker" )
+
+# ...but any OTHER stowaway still fails: the exemption is one exact path.
+( cd "$PROJ2" && echo x > stowaway.txt && git add stowaway.txt && git commit -qm "stowaway" )
+sync_out="$( cd "$PROJ2" && BASE_SHA="$BASE2" HEAD_SHA="$(git rev-parse HEAD)" \
+  HEAD_REF=template/v2.0.0 bash "$SCRIPT" 2>&1 )"
+expect_rc "any other stowaway still fails" 1 $?
+( cd "$PROJ2" && git reset -q --hard HEAD~1 )
+
+# ESC-62: the updater takes --base, so a run's lane branch can be updated at
+# all — every step used to hard-wire the default branch, and a lane could be
+# driven but never updated (anvil mobo F1).
+( cd "$PROJ2" && git switch -qc run/web "$BASE2" )
+out="$( cd "$PROJ2" && bash "$UPDATER" --no-pr --ref v2.0.0 --base run/web 2>&1 )"
+if git -C "$PROJ2" rev-parse --verify --quiet "template/v2.0.0--run-web" >/dev/null 2>&1; then
+  ok "--base updates a lane branch, with the lane suffix on the update branch"
+else
+  no "--base updates a lane branch, with the lane suffix on the update branch" "$out"
+fi
+( cd "$PROJ2" && git switch -q run/web )
+out="$( cd "$PROJ2" && bash "$UPDATER" --no-pr --ref v2.0.0 2>&1 )" && rc=0 || rc=$?
+expect_rc "without --base, a lane checkout still refuses" 1 $rc
+expect_contains "and the refusal names the flag" "$out" -- "--base"
+# Back to the state the scenarios below expect.
+( cd "$PROJ2" && git switch -q template/v2.0.0 )
+
 # A dirty tree must stop it before copier does, with a reason worth reading.
 git -C "$PROJ2" switch -q "$DEFAULT2"
 echo "uncommitted" >> "$PROJ2/shared.txt"
