@@ -372,9 +372,12 @@ PYCHK
     if [[ -x "$out/.claude/scripts/$f.sh" ]]; then ok "$lang $f.sh is executable"
     else no "$lang $f.sh is executable"; fi
   done
-  if grep -q '^\.claude/deliver-loop/' "$out/.gitignore"
-  then ok "$lang gitignores the driver's run state"
-  else no "$lang gitignores the driver's run state"; fi
+  # The glob, not the bare directory: a run on a non-default base keeps its
+  # state in `.claude/deliver-loop--<base>/`, and a pattern that misses it
+  # leaves the driver's own scratch as untracked dirt (ESC-81).
+  if grep -q '^\.claude/deliver-loop\*/' "$out/.gitignore"
+  then ok "$lang gitignores the driver's run state, per-base included"
+  else no "$lang gitignores the driver's run state, per-base included"; fi
 
   # WHO OPENS THE PULL REQUEST. The driver's orchestrate and acceptance
   # sessions used to open their own, under the owner's ambient `gh` auth,
