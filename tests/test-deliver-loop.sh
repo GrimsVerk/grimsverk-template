@@ -701,7 +701,15 @@ git -C "$R" push -q origin main
 
 PRLOG="$WORK/cap/prcreate.log"
 ORCHLOG="$WORK/cap/claude.pr.log"
-reset_pr_run() { rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"; : > "$PRLOG"; : > "$ORCHLOG"; }
+reset_pr_run() {
+  rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"; : > "$PRLOG"; : > "$ORCHLOG"
+  # Worker branch names carry a per-SECOND timestamp, so two scenarios running
+  # inside the same second reuse one — and a leftover branch pointing at a
+  # commit a later scenario reset away is neither empty nor pushable, which
+  # made this file flaky rather than wrong.
+  git -C "$R" for-each-ref --format='%(refname:short)' 'refs/heads/worker/*' \
+    | while read -r b; do git -C "$R" branch -qD "$b" 2>/dev/null || true; done
+}
 
 # A branch with WORK on it, which is what an orchestrate or worker session
 # leaves behind. Pointing a branch at the base models "the branch exists" and
@@ -794,6 +802,60 @@ if grep -q -- "--head feat/sqlite-store" "$PRLOG"; then
   no "and no second one is opened" "$(cat "$PRLOG")"
 else ok "and no second one is opened"; fi
 
+# ---- ESC-68/69: the worker's own branch, and the unattended contract
+# A worker may create and switch to a branch of its own inside its worktree;
+# spawn-worker reports whichever branch carries the commits, and the driver
+# must push THAT, not the name it assumed — pushing the assumed name sends an
+# empty ref, which becomes a pull request with no content recorded as a
+# successful iteration. And every unattended prompt must forbid the worker
+# addressing a human: one ended a headless run with a numbered menu asking a
+# person to approve its push.
+reset_pr_run
+PRE_SEED="$(git -C "$R" rev-parse main)"
+printf '| ESC-98 | 2026-08-20 | a seeded escape | none | none |\n' >> "$R/docs/escapes.md"
+git -C "$R" add -A && git -C "$R" commit -qm "seed for the moved-branch case"
+git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse main)"
+cat > "$WORK/bin/spawn-worker-moved" <<'STUB'
+#!/usr/bin/env bash
+id=""; while [[ $# -gt 0 ]]; do
+  [[ "$1" == "--id" ]] && id="$2"
+  [[ "$1" == "--prompt" ]] && printf '%s\n' "$2" >> "${SPAWN_PROMPT_LOG:-/dev/null}"
+  shift
+done
+# The work lands on a branch of the worker's OWN choosing, not worker/<id>.
+git switch -q -c "docs/its-own-choice" 2>/dev/null || git switch -q "docs/its-own-choice"
+echo "real work" > worker-output.txt
+git add -A && git commit -qm "work on the worker's own branch" >/dev/null
+git switch -q main
+git branch -f "worker/$id" main
+echo "WORKER_RESULT id=$id branch=docs/its-own-choice worktree=. engine=claude exit=0 commits=1"
+exit 0
+STUB
+chmod +x "$WORK/bin/spawn-worker-moved"
+: > "$PRLOG"
+PROMPTLOG="$WORK/cap/spawn-prompt.log"; : > "$PROMPTLOG"
+out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-moved" \
+        SPAWN_PROMPT_LOG="$PROMPTLOG" \
+        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 1)"
+expect_contains "the driver notices the work moved branch (ESC-68)" "$out" \
+  "not 'worker/"
+if grep -q -- "--head docs/oracle" "$PRLOG"; then
+  ok "and still opens the pull request from the docs/ ref it named"
+else
+  no "and still opens the pull request from the docs/ ref it named" "$(cat "$PRLOG")"
+fi
+expect_contains "the dispatch carries the unattended contract (ESC-69)" \
+  "$(cat "$PROMPTLOG")" "WORK_ON_BRANCH"
+expect_contains "which forbids addressing a human" "$(cat "$PROMPTLOG")" \
+  "never offer a menu"
+expect_contains "and forbids pushing" "$(cat "$PROMPTLOG")" "DO NOT PUSH"
+git -C "$R" branch -qD docs/its-own-choice 2>/dev/null || true
+# Reset to the recorded SHA, not HEAD~1: the driver's evidence landing may
+# have committed in between, and HEAD~1 would then drop the wrong commit.
+git -C "$R" switch -q main
+git -C "$R" reset -q --hard "$PRE_SEED"
+git -C "$R" update-ref refs/remotes/origin/main "$PRE_SEED"
+
 # ---- ESC-66: the empty-diff livelock
 # A worker can exit 0, commit on ITS branch, and leave the LANE unchanged —
 # an oracle re-deriving rulings that already merged is the ordinary case. The
@@ -808,6 +870,7 @@ reset_pr_run
 git -C "$R" branch -qD feat/sqlite-store 2>/dev/null || true
 # Uncited evidence puts the detector in ORACLE — the phase the live run
 # looped in. Reverted right after, so later scenarios see the tree they expect.
+PRE_SEED99="$(git -C "$R" rev-parse main)"
 printf '| ESC-99 | 2026-08-20 | a seeded escape | none | none |\n' >> "$R/docs/escapes.md"
 git -C "$R" add -A && git -C "$R" commit -qm "seed an uncited escape"
 # The driver pulls its base each iteration, so origin/<base> tracks it live —
@@ -846,7 +909,12 @@ else
   no "the dispatched scope is recorded as processed" \
     "$(cat "$R/.claude/deliver-loop/processed-evidence" 2>/dev/null)"
 fi
-git -C "$R" reset -q --hard HEAD~1
+# Reset to the recorded SHA, not HEAD~1: the driver's evidence landing may
+# have committed in between.
+git -C "$R" switch -q main
+git -C "$R" reset -q --hard "$PRE_SEED99"
+git -C "$R" update-ref refs/remotes/origin/main "$PRE_SEED99"
+
 # ---- a session that pushed nothing
 # Removing the grant means the orchestrator cannot open a pull request at all,
 # so a session that ends without a branch leaves nothing behind. That has to
@@ -989,6 +1057,11 @@ git -C "$R" switch -q main 2>/dev/null || true
 # next report, never inside it — and a successfully landed buffer is cleared,
 # or the rotation would land the same report twice.
 rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"
+# This scenario identifies its landing branch as the last docs/run-* by sort,
+# so earlier scenarios' landings must not be lying around to out-sort it — a
+# same-second collision suffix (-2, -recovered) sorts after its own parent.
+git -C "$R" for-each-ref --format='%(refname:short)' 'refs/heads/docs/run-*' \
+  | while read -r b; do git -C "$R" branch -qD "$b" 2>/dev/null || true; done
 mkdir -p "$R/.claude/deliver-loop"
 printf '# Delivery run OLDRUN\n\n- 00:00:00Z the run that never landed\n' \
   > "$R/.claude/deliver-loop/run.md"
