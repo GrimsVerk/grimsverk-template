@@ -475,6 +475,12 @@ PYCHK
     if grep -q '^  update-open-prs:' "$am"
     then ok "$lang ships the update-open-prs job"
     else no "$lang ships the update-open-prs job"; fi
+    # ESC-71: base-scoped. "Up to date" is a fact about ONE base branch, and a
+    # repo-wide sweep rewrites another lane's heads on every merge.
+    if grep -q 'gh pr list .*--base "\$BASE_REF"' "$am"
+    then ok "$lang update-open-prs is scoped to the merged pull request's base"
+    else no "$lang update-open-prs is scoped to the merged pull request's base" \
+      "$(grep -n 'gh pr list' "$am" | head -3)"; fi
     # And it must NOT fall back to GITHUB_TOKEN. A push made with it creates no
     # workflow runs, so the branch would come up to date with its required
     # checks permanently missing — strictly worse than BEHIND.

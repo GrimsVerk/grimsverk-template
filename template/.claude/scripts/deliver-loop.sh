@@ -550,9 +550,24 @@ land_evidence() {
   # ONE exit path, and it switches back. A stop that left the checkout sitting
   # on docs/run-<id> would make the next run refuse ("not on the default
   # branch") — the recorder breaking the thing it records.
-  local ref="docs/run-$RUN_ID$LANE" token
+  # CUT FROM THE REMOTE TIP, NOT THE LOCAL ONE (ESC-70). The gates ruleset sets
+  # strict_required_status_checks_policy, so a pull request must be up to date
+  # with its base to merge. The evidence branch is cut at the STOP, from a
+  # checkout that is two or three merges old by then, so it was born BEHIND —
+  # and the only job that brings stale branches up to date, update-open-prs,
+  # fires on a merge. The evidence pull request is by construction the LAST
+  # pull request of a run, so no further merge happens on that base and nothing
+  # ever updates it: eleven green checks, auto-merge armed by the App, waiting
+  # for ever on a condition that cannot change. Observed live, and it is the
+  # answer to ESC-40 — the evidence pull request never merged because it could
+  # not. Fetching first costs one network call at a stop that is already
+  # talking to the remote.
+  local ref="docs/run-$RUN_ID$LANE" token base_point="$RUN_BASE"
+  git fetch -q origin "$RUN_BASE" 2>/dev/null \
+    && git rev-parse -q --verify FETCH_HEAD >/dev/null 2>&1 \
+    && base_point="FETCH_HEAD"
   git switch -q "$RUN_BASE" 2>/dev/null || true
-  if git switch -qc "$ref" 2>/dev/null || git switch -q "$ref" 2>/dev/null; then
+  if git switch -qc "$ref" "$base_point" 2>/dev/null || git switch -q "$ref" 2>/dev/null; then
     git add "$RUN_DIR" 2>/dev/null || true
     if git diff --cached --quiet 2>/dev/null; then
       echo "deliver-loop: nothing to land."
