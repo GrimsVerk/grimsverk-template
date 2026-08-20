@@ -433,6 +433,18 @@ PYCHK
   if says "$out/.claude/commands/deliver-loop.md" "gh api user"
   then ok "$lang deliver-loop.md probes the credential with gh api user"
   else no "$lang deliver-loop.md probes the credential with gh api user"; fi
+  # ESC-61: a fresh render's escape ledger is empty, so a rendered GATED
+  # document citing any ESC-<n> id cites an entry the project cannot have —
+  # escape-refs.sh fails the very first pull request. Template-repo escape
+  # ids must never leak into rendered gated documents; their namespace is the
+  # template's own.
+  for gd in AGENTS.md docs/DESIGN.md docs/DESIGN.oracle.md; do
+    [[ -f "$out/$gd" ]] || continue
+    if grep -qE 'ESC-[0-9]+' "$out/$gd"
+    then no "$lang rendered $gd cites no escape ids" "$(grep -nE 'ESC-[0-9]+' "$out/$gd" | head -3)"
+    else ok "$lang rendered $gd cites no escape ids"; fi
+  done
+
   # ESC-55: pre-commit is a dev dependency, not an assumed global — a fresh
   # machine or hosted container must get it from `uv sync` alone.
   if [[ "$lang" == python ]]; then
