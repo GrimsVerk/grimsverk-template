@@ -703,9 +703,29 @@ PRLOG="$WORK/cap/prcreate.log"
 ORCHLOG="$WORK/cap/claude.pr.log"
 reset_pr_run() { rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"; : > "$PRLOG"; : > "$ORCHLOG"; }
 
+# A branch with WORK on it, which is what an orchestrate or worker session
+# leaves behind. Pointing a branch at the base models "the branch exists" and
+# not "the branch carries a change" — and the driver now tells those apart,
+# because a head with no commits ahead of its base is one GitHub refuses a
+# pull request for (ESC-66). A fixture that skipped the commit was asserting
+# the driver should open a pull request that could never exist.
+branch_with_work() { # branch_with_work <ref> [file]
+  local ref="$1" f="${2:-work-$RANDOM.txt}"
+  # An earlier scenario may have pushed this ref already; recreating it here
+  # gives it a new SHA, and a non-fast-forward push would fail before the
+  # behaviour under test is reached. Harmless no-op when there is no remote
+  # ref (or no reachable remote).
+  git -C "$R" push -q origin --delete "$ref" 2>/dev/null || true
+  git -C "$R" branch -f "$ref" main
+  git -C "$R" switch -q "$ref"
+  echo "work on $ref" > "$R/$f"
+  git -C "$R" add -A && git -C "$R" commit -qm "work on $ref"
+  git -C "$R" switch -q main
+}
+
 # ---- the feature pull request
 reset_pr_run
-git -C "$R" branch -f feat/sqlite-store main
+branch_with_work feat/sqlite-store
 out="$(run_loop STUB_MERGED_REFS=$'feat/notes' PR_CREATE_LOG="$PRLOG" \
         CLAUDE_LOG="$ORCHLOG" -- --max-iterations 1)"
 expect_contains "the fixture reaches ORCHESTRATE" "$out" "phase ORCHESTRATE"
@@ -738,7 +758,13 @@ reset_pr_run
 git -C "$R" branch -f run/web main
 git -C "$R" switch -q run/web
 git -C "$R" push -q origin run/web
-git -C "$R" branch -f "feat/sqlite-store--run-web" main
+# Work on the lane's feature branch, off the LANE base (ESC-66: a head with
+# no commits ahead of its base gets no pull request, correctly).
+git -C "$R" branch -f "feat/sqlite-store--run-web" run/web
+git -C "$R" switch -q "feat/sqlite-store--run-web"
+echo "lane work" > "$R/lane-work.txt"
+git -C "$R" add -A && git -C "$R" commit -qm "work on the lane feature branch"
+git -C "$R" switch -q run/web
 out="$(run_loop STUB_MERGED_REFS=$'feat/notes' PR_CREATE_LOG="$PRLOG" \
         CLAUDE_LOG="$ORCHLOG" -- --base run/web --max-iterations 1)"
 expect_contains "the lane run reaches ORCHESTRATE too" "$out" "phase ORCHESTRATE"
@@ -759,7 +785,7 @@ git -C "$R" branch -qD "feat/sqlite-store--run-web" 2>/dev/null || true
 # timeout, is a harmless race. A driver that hard-failed there would turn it
 # into a stopped run, so it reports and continues.
 reset_pr_run
-git -C "$R" branch -f feat/sqlite-store main
+branch_with_work feat/sqlite-store
 out="$(run_loop STUB_MERGED_REFS=$'feat/notes' STUB_HEAD_PR="42" \
         PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 1)"
 expect_contains "an existing pull request for the head ref is reported" "$out" \
@@ -768,6 +794,59 @@ if grep -q -- "--head feat/sqlite-store" "$PRLOG"; then
   no "and no second one is opened" "$(cat "$PRLOG")"
 else ok "and no second one is opened"; fi
 
+# ---- ESC-66: the empty-diff livelock
+# A worker can exit 0, commit on ITS branch, and leave the LANE unchanged —
+# an oracle re-deriving rulings that already merged is the ordinary case. The
+# pull request GitHub would refuse ("No commits between") is never attempted,
+# the scope is recorded as processed so the detector stops re-summoning the
+# same worker over the same evidence, and two such dispatches in a row stop
+# the run. Round 3.2 spent five oracle workers and ~27 minutes on this loop
+# with no stop rule able to see it: the three-strike rule keys on the same
+# CHECKS failing on one branch, and here no checks ever run and every branch
+# has a fresh name.
+reset_pr_run
+git -C "$R" branch -qD feat/sqlite-store 2>/dev/null || true
+# Uncited evidence puts the detector in ORACLE — the phase the live run
+# looped in. Reverted right after, so later scenarios see the tree they expect.
+printf '| ESC-99 | 2026-08-20 | a seeded escape | none | none |\n' >> "$R/docs/escapes.md"
+git -C "$R" add -A && git -C "$R" commit -qm "seed an uncited escape"
+# The driver pulls its base each iteration, so origin/<base> tracks it live —
+# and origin/<base> is the comparison that matches GitHub's own "No commits
+# between" verdict. A fixture leaving it behind makes an empty worker branch
+# look one commit ahead.
+git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse main)"
+# A worker stub that commits NOTHING: its branch stays level with the base.
+cat > "$WORK/bin/spawn-worker-empty" <<'STUB'
+#!/usr/bin/env bash
+id=""; while [[ $# -gt 0 ]]; do [[ "$1" == "--id" ]] && id="$2"; shift; done
+git switch -q -c "worker/$id" 2>/dev/null || git switch -q "worker/$id"
+git switch -q - 2>/dev/null || true
+echo "WORKER_RESULT id=$id branch=worker/$id engine=claude exit=0 commits=1"
+exit 0
+STUB
+chmod +x "$WORK/bin/spawn-worker-empty"
+out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-empty" \
+        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
+expect_rc "an empty-diff dispatch stops the run instead of looping (ESC-66)" 5 $?
+expect_contains "and says the lane did not move" "$out" "adds nothing to"
+expect_contains "and names the pattern rather than a check failure" "$out" \
+  "produced no pull request"
+if grep -q -- "--head docs/oracle" "$PRLOG"; then
+  no "no pull request is attempted for an empty branch" "$(cat "$PRLOG")"
+else ok "no pull request is attempted for an empty branch"; fi
+# Two dispatches, not nine: the counter stops it at the second.
+disp="$(grep -c "dispatch oracle worker" <<<"$out")"
+if [[ "$disp" -le 2 ]]; then ok "it stops after 2 empty dispatches, not at the iteration limit"
+else no "it stops after 2 empty dispatches, not at the iteration limit" "$disp dispatches"; fi
+# The scope it was commissioned to work is recorded as processed, so a fresh
+# detector does not re-summon the same worker over the same evidence.
+if grep -q "ESC-99" "$R/.claude/deliver-loop/processed-evidence" 2>/dev/null; then
+  ok "the dispatched scope is recorded as processed"
+else
+  no "the dispatched scope is recorded as processed" \
+    "$(cat "$R/.claude/deliver-loop/processed-evidence" 2>/dev/null)"
+fi
+git -C "$R" reset -q --hard HEAD~1
 # ---- a session that pushed nothing
 # Removing the grant means the orchestrator cannot open a pull request at all,
 # so a session that ends without a branch leaves nothing behind. That has to

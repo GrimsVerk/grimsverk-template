@@ -142,6 +142,19 @@ expect_not_contains "and never a secret value" \
 expect_contains "the run names its transcript so the owner can commit it" \
   "$out" "transcript"
 
+# mobo F10: the transcript COMMITS ITSELF. Left untracked, the next documented
+# step — starting the driver — refuses over the dirty tree this script created.
+if [[ -z "$(git -C "$R" status --porcelain -- docs/runs/setup 2>/dev/null)" ]]; then
+  ok "the transcript is committed, not left dirtying the tree"
+else
+  no "the transcript is committed, not left dirtying the tree" \
+    "$(git -C "$R" status --porcelain -- docs/runs/setup)"
+fi
+if git -C "$R" log --oneline -1 -- docs/runs/setup | grep -q .; then
+  ok "and it is in the history as its own commit"
+else
+  no "and it is in the history as its own commit"; fi
+
 # ------------------------------------- run 3b: --gate-branch adds lane targets
 # A delivery run based on a non-default branch (deliver-loop.sh --base) needs
 # the same gates binding on that branch, or its pull requests merge ungated.
