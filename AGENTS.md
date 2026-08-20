@@ -129,7 +129,9 @@ change is less checked than a planned one, not more trusted.
 **The documents this process itself demands are exempt from that cap**, and
 only they: a branch whose entire diff sits inside `docs/plans/`,
 `docs/DESIGN.md`, `docs/DESIGN.oracle.md`, `docs/oracle/`, `docs/VISION.md`,
-`docs/acceptance.md`, `docs/architecture.md`, `docs/runs/` or `docs/BACKLOG.md`
+`docs/acceptance.md`, `docs/architecture.md`, `docs/runs/`, `docs/BACKLOG.md`
+or the opener's `.pr-request.json` marker (the one non-document member — the
+pull-request machinery a driver without App identity must commit, ESC-53/56)
 passes at any size. This list is exactly the one
 `.github/scripts/plan-resolve.sh` enforces — the prose and the script must name
 the same paths, because the review gate judges by this text while the `plan`
@@ -238,7 +240,9 @@ A lockfile that moves on its own is not covered by that detection —
 `plan-metrics.sh` reads the manifests, not the lock. Say so in the pull request
 when you refresh one.
 
-**Licensing.** This project is intentionally unlicensed: there is no
+**Licensing.** This project is intentionally unlicensed unless the OWNER has
+placed a `LICENSE` file at the repository root themselves — never remove or
+second-guess one that exists. Absent that: there is no
 `LICENSE` file and no `license` field in package metadata, and their absence
 is a decision, not an omission. Licensing is assessed per project by the
 owner, at the point it actually matters — publication, distribution, or

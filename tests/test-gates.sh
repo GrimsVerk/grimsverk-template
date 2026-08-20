@@ -59,7 +59,7 @@ if [[ -n "$carveout" ]]; then ok "the carve-out paragraph is where it is looked 
 else no "the carve-out paragraph is where it is looked for"; fi
 for p in docs/plans/ docs/DESIGN.md docs/DESIGN.oracle.md docs/oracle/ \
          docs/VISION.md docs/acceptance.md docs/architecture.md docs/runs/ \
-         docs/BACKLOG.md; do
+         docs/BACKLOG.md .pr-request.json; do
   if printf '%s\n' "$carveout" | grep -q "\`$p\`"; then
     ok "the carve-out paragraph names $p"
   else

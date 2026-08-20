@@ -180,18 +180,26 @@ jobs:
         # It fails only on a definite answer. An unreadable API is a note, not a
         # block: a check that goes red when GitHub is having a bad morning is a
         # check people learn to re-run without reading.
+        # ?ref= and the numeric guard are ESC-48, propagated (ESC-57): without
+        # the ref this validates the DEFAULT branch — which may not carry a
+        # .github/ at all (a lane-based repository), so the endpoint 404s —
+        # and gh prints the error body on STDOUT, so `2>/dev/null` does not
+        # stop the JSON flowing into $errs and the step fails on garbage.
+        # The head commit is the CODEOWNERS this pull request actually ships.
         env:
           GH_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+          CO_REF: {% raw %}${{ github.event.pull_request.head.sha || github.sha }}{% endraw %}
         run: |
-          errs="$(gh api "repos/${GITHUB_REPOSITORY}/codeowners/errors" \
+          errs="$(gh api "repos/${GITHUB_REPOSITORY}/codeowners/errors?ref=${CO_REF}" \
                     --jq '.errors | length' 2>/dev/null || true)"
+          case "$errs" in *[!0-9]*|"") errs="";; esac
           if [ -z "$errs" ]; then
             echo "codeowners: cannot read the validation API here — not treating that as a failure."
           elif [ "$errs" = "0" ]; then
             echo "codeowners: resolves cleanly, so the ownership rules actually bind."
           else
             echo "codeowners: $errs unresolvable line(s) in .github/CODEOWNERS." >&2
-            gh api "repos/${GITHUB_REPOSITORY}/codeowners/errors" \
+            gh api "repos/${GITHUB_REPOSITORY}/codeowners/errors?ref=${CO_REF}" \
               --jq '.errors[] | "  line \(.line): \(.message)"' >&2 || true
             {
               echo ""

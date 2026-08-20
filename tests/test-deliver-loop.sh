@@ -865,6 +865,31 @@ out="$(land_only)"
 expect_rc "a second landing finds nothing and exits clean" 0 $?
 expect_contains "and says so" "$out" "nothing to land"
 
+# ESC-60: the failure this mode exists for — an evidence commit that died
+# half way — ALWAYS leaves the tree dirty with the evidence itself, so
+# landing tolerates dirt confined to the evidence paths...
+printf '# Delivery run 20260819T030405Z\n\n- 03:04:05Z died mid-commit\n' \
+  > "$R/.claude/deliver-loop/run.md"
+mkdir -p "$R/docs/runs/20260819T030405Z/reviews"
+echo "stranded payload from the died commit" \
+  > "$R/docs/runs/20260819T030405Z/reviews/payload.txt"
+git -C "$R" add docs/runs/20260819T030405Z 2>/dev/null
+out="$(land_only)"
+expect_rc "evidence-path dirt does not block a landing (ESC-60)" 0 $?
+landed="$(git -C "$R" show "docs/run-20260819T030405Z:docs/runs/20260819T030405Z/reviews/payload.txt" 2>/dev/null)"
+expect_contains "and the stranded staged evidence rides into the landing" \
+  "$landed" "stranded payload"
+
+# ...and still refuses dirt in project space, which is not its to sweep.
+git -C "$R" switch -q main 2>/dev/null || true
+printf '# Delivery run 20260819T040506Z\n\n- 04:05:06Z another dead run\n' \
+  > "$R/.claude/deliver-loop/run.md"
+echo "uncommitted project work" > "$R/somefile.py"
+out="$(land_only)"
+expect_rc "project-space dirt still refuses a landing" 2 $?
+expect_contains "and names the boundary" "$out" "OUTSIDE the evidence paths"
+rm -f "$R/somefile.py"
+
 # Without an App identity a RUN refuses; a RECOVERY degrades — the branch still
 # pushes and the missing pull request is said out loud.
 printf '# Delivery run 20260819T020304Z\n\n- 02:03:04Z another dead run\n' \
