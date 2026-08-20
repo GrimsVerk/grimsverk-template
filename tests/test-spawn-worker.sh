@@ -164,13 +164,19 @@ fi
 # a grant that quietly widened to every path would remove the cheap half.
 out="$(role_cmd oracle)"
 expect_contains "the oracle runs on fable" "$out" "claude-fable-5"
-expect_contains "the oracle may write its ledger" "$out" "Write(docs/DESIGN.oracle.md)"
-expect_contains "the oracle may write a handoff" "$out" "Write(docs/oracle/**)"
+# Edit(), not Write(): the engine matches file grants against Edit() rules and
+# answers a Write(path) rule with "is not matched by file permission checks",
+# so a Write() grant is inert — and two of them printed that rejection on
+# every worker start, immediately above the engine's own errors (ESC-77).
+expect_contains "the oracle may write its ledger" "$out" "Edit(docs/DESIGN.oracle.md)"
+expect_contains "the oracle may write a handoff" "$out" "Edit(docs/oracle/**)"
+expect_not_contains "and carries no inert Write() grant (ESC-77)" "$out" "Write(docs/"
 expect_not_contains "the oracle does not get blanket edit acceptance" "$out" "acceptEdits"
 expect_not_contains "the oracle cannot write plans" "$out" "docs/plans"
 
 out="$(role_cmd steward)"
-expect_contains "the steward may write oracle plans" "$out" "Write(docs/plans/oracle/**)"
+expect_contains "the steward may write oracle plans" "$out" "Edit(docs/plans/oracle/**)"
+expect_not_contains "with no inert Write() grant either (ESC-77)" "$out" "Write(docs/"
 expect_not_contains "the steward cannot write the ledger" "$out" "DESIGN.oracle.md"
 expect_not_contains "the steward cannot write a handoff" "$out" "docs/oracle/**"
 

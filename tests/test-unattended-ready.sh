@@ -331,4 +331,20 @@ out="$(run)"; expect_rc "auto_merge: false in the answers refuses" 1 $?
 expect_contains "and says nothing merges" "$out" "nothing merges unattended"
 sed -i 's/^auto_merge: false/auto_merge: true/' "$R/.copier-answers.yml"
 
+# ESC-76: readiness covers what the driver refuses on. This script runs in the
+# step immediately before "start your driver", so a startup refusal it cannot
+# see arrives minutes later, after the owner has walked away. Observed live on
+# a real project: readiness said ready, the driver then refused on leftover
+# worktrees from a run that had died mid-dispatch.
+ready_env
+mkdir -p "$R/.worktrees/oracle-20260820102317"
+out="$(run)"; expect_rc "leftover worktrees refuse at readiness (ESC-76)" 1 $?
+expect_contains "and the debris is named" "$out" "oracle-20260820102317"
+expect_contains "and it says to read them before removing them" "$out" "READ THEM FIRST"
+rm -rf "$R/.worktrees"
+
+ready_env
+out="$(run)"; expect_rc "a clean tree still passes" 0 $?
+expect_contains "and says the debris check ran" "$out" "no leftover worktrees"
+
 summary
