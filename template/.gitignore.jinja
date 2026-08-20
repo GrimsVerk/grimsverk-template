@@ -7,7 +7,10 @@
 # copies it to docs/runs/<timestamp>/run.md and opens a pull request carrying
 # it. docs/runs/ is deliberately NOT ignored: a gitignored run log, in a web
 # container that gets reclaimed, is exactly the defect that arrangement repairs.
-.claude/deliver-loop/
+# The glob covers the per-base directories too: a run on a non-default base
+# keeps its own state, so two drivers in one clone cannot append into one
+# another's report (ESC-81).
+.claude/deliver-loop*/
 # The review gate's evidence, as the runner leaves it. The workflow uploads this
 # as an artifact and collect-evidence.sh lands it under docs/runs/; the local
 # copy is scratch.

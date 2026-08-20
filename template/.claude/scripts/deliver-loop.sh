@@ -154,6 +154,9 @@ MAX_ITER=0; BUDGET_POINTS=0; MAX_PRS=0; MAX_HOURS=0
 HARD_MAX_ITER="${DELIVER_HARD_MAX_ITER:-200}"
 BUDGET_POINTS_SET=""; MAX_ITER_SET=""
 WAIT_FOR_OWNER=0; DRY_RUN=0; PRINT_PHASE=""; BASE_FLAG=""; LAND_ONLY=0
+RUN_TAG=""
+# The parse consumes $@, and the re-exec below needs the flags back verbatim.
+ORIG_ARGV=("$@")
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --base)           BASE_FLAG="${2:-}"; shift 2 ;;
@@ -165,6 +168,12 @@ while [[ $# -gt 0 ]]; do
     --wait-for-owner) WAIT_FOR_OWNER=1; shift ;;
     --dry-run)        DRY_RUN=1; shift ;;
     --print-command)  PRINT_PHASE="${2:-}"; shift 2 ;;
+    # Does nothing. It exists so that this run can be TOLD APART FROM ANOTHER
+    # ONE in `ps` (ESC-81): two drivers in two different repositories had
+    # byte-identical command lines, because the script path is relative and
+    # nothing else in the argv names the repository. The driver re-execs itself
+    # once with this flag filled in.
+    --run-tag)        RUN_TAG="${2:-}"; shift 2 ;;
     -h|--help)
       sed -n '2,/^[^#]/p' "$0" | sed -n 's/^# \{0,1\}//p'; exit 0 ;;
     *) echo "deliver-loop: unknown argument: $1" >&2; exit 2 ;;
@@ -184,7 +193,6 @@ cd "$ROOT" || exit 2
 # tracked file (which the dirty-tree preflight would then refuse).
 SPAWN="${DELIVER_SPAWN:-.claude/scripts/spawn-worker.sh}"
 PHASE_SH=".claude/scripts/deliver-phase.sh"
-STATE_DIR=".claude/deliver-loop"
 DEFAULT_BRANCH="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
 [[ -n "$DEFAULT_BRANCH" ]] || DEFAULT_BRANCH="$(git branch --show-current)"
 
@@ -209,6 +217,110 @@ LANE=""
 if [[ "$RUN_BASE" != "$DEFAULT_BRANCH" ]]; then
   LANE="--$(printf '%s' "$RUN_BASE" | tr -c 'A-Za-z0-9._-' '-')"
 fi
+
+# PER-BASE WORKING STATE (ESC-81). The run report buffer, the processed-evidence
+# list, the failure signatures and the acceptance marker all live here, and this
+# script's own header promised that two drivers could share one repository on
+# two separate bases. They could not: the state directory was one flat path, so
+# the second run appended into the first one's report, inherited its dismissed
+# evidence, and could trip its acceptance marker. The default base keeps the
+# original path, so an existing repository and any leftover buffer are unmoved.
+STATE_DIR=".claude/deliver-loop$LANE"
+
+# ONE DRIVER PER REPOSITORY-AND-BASE, AND IT CAN BE NAMED (ESC-81).
+#
+# Two runs on one machine, in two different repositories, had command lines that
+# matched character for character:
+#
+#   bash .claude/scripts/deliver-loop.sh --base run/local --budget-points 20 ...
+#
+# Same owner, same default lane name, same limits, and a RELATIVE script path —
+# so nothing visible said which repository the process belonged to. The
+# consequences were all observed live, in one afternoon: an operator's
+# `pkill -f` reached across into the other project and killed a twelve-hour
+# unattended run (SIGKILL, so no trap fired and the evidence died with it), and
+# every `pgrep -f` liveness check either operator ran had been answering about
+# whichever driver matched first.
+#
+# Two halves to the fix. This block is the identity: a pidfile holding nothing
+# but the pid, so "stop my run" is `kill $(cat <path>)` and can never reach
+# another repository. The re-exec below is the visibility: the run's repository,
+# base and id go into its own argv, so `ps` tells them apart too.
+PIDFILE="$STATE_DIR/driver.pid"
+
+driver_pid_alive() { # driver_pid_alive <pid> — is that pid THIS repo's driver?
+  local pid="$1"
+  [[ -n "$pid" && "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  # Pids are reused. A live pid that is some unrelated program is a STALE
+  # pidfile, not a running driver, and refusing on it would wedge the
+  # repository until someone deleted a file by hand.
+  local cwd
+  if cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null)" && [[ -n "$cwd" ]]; then
+    [[ "$cwd" == "$ROOT" ]] || return 1
+    grep -qa 'deliver-loop' "/proc/$pid/cmdline" 2>/dev/null || return 1
+    return 0
+  fi
+  # No /proc (macOS): fall back to the command line alone. Weaker — it cannot
+  # tell two repositories apart, which is the whole finding — so it errs
+  # towards NOT refusing, and the re-exec's tag is what disambiguates there.
+  ps -p "$pid" -o args= 2>/dev/null | grep -q -- "--run-tag $ROOT@" || return 1
+  return 0
+}
+
+# THE RE-EXEC, and it happens before anything else this script does. `ps` is
+# the only tool an operator has at 3am, and it showed nothing that told two
+# runs apart. One `exec` puts the repository and the base into this process's
+# own argv; DELIVER_REEXEC stops it happening twice. Skipped for the modes that
+# do not start a run: a dry run, a phase print and a post-mortem landing all
+# finish in seconds and none of them can be killed by mistake for another
+# repository's twelve-hour driver.
+if [[ -z "${DELIVER_REEXEC:-}" && "$LAND_ONLY" -eq 0 && "$DRY_RUN" -eq 0 && -z "$PRINT_PHASE" ]]; then
+  export DELIVER_REEXEC=1
+  exec bash "$0" ${ORIG_ARGV[@]+"${ORIG_ARGV[@]}"} --run-tag "$ROOT@$RUN_BASE"
+fi
+
+# THE PIDFILE, claimed before any work and released at the stop. It holds the
+# pid AND NOTHING ELSE, so the documented way to stop a run is exactly:
+#
+#     kill $(cat .claude/deliver-loop<lane>/driver.pid)
+#
+# which names one process in one repository and cannot reach across to another.
+if [[ "$LAND_ONLY" -eq 0 && "$DRY_RUN" -eq 0 && -z "$PRINT_PHASE" ]]; then
+  mkdir -p "$STATE_DIR"
+  if [[ -f "$PIDFILE" ]]; then
+    OTHER="$(head -1 "$PIDFILE" 2>/dev/null | tr -dc '0-9')"
+    if driver_pid_alive "$OTHER"; then
+      echo "deliver-loop: a driver is ALREADY RUNNING for this repository and base." >&2
+      echo "  pid $OTHER, base '$RUN_BASE', pidfile $PIDFILE" >&2
+      echo "" >&2
+      echo "  Two drivers on one base fight over the same pull request, the same" >&2
+      echo "  run report and the same evidence. Stop that one first:" >&2
+      echo "" >&2
+      echo "      kill \$(cat $PIDFILE)" >&2
+      echo "" >&2
+      echo "  A different BASE in this repository is fine and needs no waiting —" >&2
+      echo "  pass --base <branch>; the state, the pidfile and the branches are" >&2
+      echo "  all per-base." >&2
+      exit 2
+    fi
+    [[ -n "$OTHER" ]] && echo "deliver-loop: stale pidfile (pid $OTHER is not this repository's driver) — taking over."
+  fi
+  printf '%s\n' "$$" > "$PIDFILE"
+  PIDFILE_HELD=1
+fi
+
+# Released only by the process that holds it, so a run that refused to start
+# cannot delete a live driver's claim. Bash keeps ONE EXIT trap, and the
+# evidence lander installs its own later — so this is a function both traps
+# call rather than a second trap that would silently replace the first.
+release_pidfile() {
+  [[ "${PIDFILE_HELD:-0}" -eq 1 ]] || return 0
+  [[ "$(head -1 "$PIDFILE" 2>/dev/null)" == "$$" ]] && rm -f "$PIDFILE"
+  PIDFILE_HELD=0
+  return 0
+}
+trap release_pidfile EXIT
 
 # The orchestrator session's reach. Explicit and on the command line: the
 # whitelist below is everything /orchestrate documents itself doing — spawn
@@ -308,12 +420,21 @@ command -v claude >/dev/null 2>&1 || die "the claude CLI is not on PATH"
 # not evidence and not this mode's to sweep up.
 if [[ "$LAND_ONLY" -eq 1 ]]; then
   DIRT="$(git status --porcelain | awk '{print $2}' \
-    | grep -vE '^docs/runs/|^\.claude/deliver-loop/' || true)"
+    | grep -vE '^docs/runs/|^\.claude/deliver-loop' || true)"
   [[ -z "$DIRT" ]] \
-    || die "the working tree carries changes OUTSIDE the evidence paths (docs/runs/, .claude/deliver-loop/) — landing only sweeps up a dead run's evidence, not project work: $(head -3 <<<"$DIRT" | tr '\n' ' ')"
+    || die "the working tree carries changes OUTSIDE the evidence paths (docs/runs/, .claude/deliver-loop*/) — landing only sweeps up a dead run's evidence, not project work: $(head -3 <<<"$DIRT" | tr '\n' ' ')"
 else
-  [[ -z "$(git status --porcelain)" ]] \
-    || die "the working tree is dirty — a run recomputes state from the tree, and uncommitted changes make that state a lie"
+  # The driver's OWN scratch directory is not dirt (ESC-81). It is gitignored in
+  # a freshly generated project, but a project whose .gitignore predates the
+  # per-base state directory would see `.claude/deliver-loop--<base>/` as an
+  # untracked file THIS SCRIPT created — and refuse the next run over it. A
+  # script that leaves a file the next documented step rejects is the mobo F10
+  # shape, and it is cheaper to never count our own scratch than to rely on
+  # every downstream .gitignore being current.
+  DIRT="$(git status --porcelain | awk '{print $2}' \
+    | grep -vE '^\.claude/deliver-loop' || true)"
+  [[ -z "$DIRT" ]] \
+    || die "the working tree is dirty — a run recomputes state from the tree, and uncommitted changes make that state a lie: $(head -3 <<<"$DIRT" | tr '\n' ' ')"
 fi
 CURRENT_BRANCH="$(git branch --show-current)"
 [[ "$CURRENT_BRANCH" == "$RUN_BASE" ]] \
@@ -348,6 +469,18 @@ echo "  Every pull request this run opens will merge into '$RUN_BASE',"
 echo "  and this run waits only on pull requests targeting '$RUN_BASE'."
 if [[ -n "$LANE" ]]; then
   echo "  Non-default base: every branch this run pushes is suffixed '$LANE'."
+fi
+# WHICH PROCESS IS THIS RUN (ESC-81). Said here because the operator reads this
+# banner at launch and needs no other source for the one command that stops the
+# right driver. Two runs in two repositories used to be indistinguishable in
+# `ps`; the tag is what tells them apart, and the pidfile is what a kill should
+# name instead of a pattern.
+if [[ "${PIDFILE_HELD:-0}" -eq 1 ]]; then
+  echo "  THIS RUN'S PROCESS:     pid $$  (tag ${RUN_TAG:-none})"
+  echo "  To stop exactly this run, and nothing in any other repository:"
+  echo "      kill \$(cat $PIDFILE)"
+  echo "  Never 'pkill -f deliver-loop': another project's driver can carry an"
+  echo "  identical command line, and killing it takes its evidence with it."
 fi
 banner
 
@@ -672,7 +805,8 @@ land_evidence() {
 # lies (ESC-75); FINAL_RC is set only when it does, so every other stop keeps
 # its own code untouched.
 FINAL_RC=""
-trap 'land_evidence; exit "${FINAL_RC:-$?}"' EXIT
+__rc=0
+trap 'land_evidence; __rc=$?; release_pidfile; exit "${FINAL_RC:-$__rc}"' EXIT
 
 # Landing is the EXIT trap's job, so a land-only invocation is done the moment
 # the trap is armed. Exiting here also keeps the budget interview, the steering

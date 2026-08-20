@@ -156,7 +156,7 @@ EOF
 : > "$R/docs/DESIGN.oracle.md"
 # Mirror the template's gitignore for the driver's transient state, and give
 # the repo an origin/HEAD so DEFAULT_BRANCH resolution works like a clone's.
-printf '.claude/deliver-loop/\n.claude/orchestration-logs/\n.worktrees/\n' > "$R/.gitignore"
+printf '.claude/deliver-loop*/\n.claude/orchestration-logs/\n.worktrees/\n' > "$R/.gitignore"
 git -C "$R" add -A && git -C "$R" commit -qm scaffold
 git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse HEAD)"
 git -C "$R" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -1077,6 +1077,116 @@ expect_contains "the oracle dispatch carries the command file's body" \
   "$prompt_log" "You are the **oracle**"
 expect_not_contains "and not its YAML frontmatter" "$prompt_log" \
   "description: Correct the design from logged evidence"
+
+# ---- ESC-81: two runs on one machine must not be able to reach each other
+# The finding: `find_best_mobo`'s driver and the anvil's driver had command
+# lines matching character for character —
+#
+#   bash .claude/scripts/deliver-loop.sh --base run/local --budget-points 20 ...
+#
+# same owner, same default lane name, same limits, and a RELATIVE script path,
+# so nothing visible named the repository. An operator's `pkill -f` reached
+# across into the other project and SIGKILLed a twelve-hour unattended run —
+# no trap, so the evidence died with it — and every `pgrep -f` liveness check
+# either operator ran had been answering about whichever driver matched first.
+reset_pr_run
+git -C "$R" switch -q main 2>/dev/null || true
+
+# --- the pidfile holds a pid and nothing else, so `kill $(cat …)` works
+: > "$PRLOG"
+out="$(run_loop STUB_OPEN_PR="9 feat/notes" WAIT_TIMEOUT=1 -- --max-iterations 1)" || true
+expect_contains "the run announces the process that IS this run" "$out" "THIS RUN'S PROCESS:"
+# The tag is what `ps` shows. Without it two repositories' drivers are one
+# string, which is the whole finding.
+expect_contains "and its argv now names the repository and the base" "$out" "tag $R@main"
+expect_contains "and the exact command that stops it" "$out" "kill \$(cat .claude/deliver-loop/driver.pid)"
+expect_contains "and warns off the pattern that killed another repository's run" \
+  "$out" "Never 'pkill -f deliver-loop'"
+if [[ -e "$R/.claude/deliver-loop/driver.pid" ]]; then
+  no "the pidfile is released at the stop" "$(cat "$R/.claude/deliver-loop/driver.pid")"
+else ok "the pidfile is released at the stop"; fi
+
+# --- a second driver on the SAME repository and base refuses
+# Simulated with a live pid this repository owns: the check must accept it as
+# this repository's driver, so the stand-in runs FROM the repository with
+# deliver-loop in its command line.
+mkdir -p "$R/.claude/deliver-loop"
+( cd "$R" && exec -a "bash .claude/scripts/deliver-loop.sh --run-tag $R@main" sleep 60 ) &
+LIVE=$!
+printf '%s\n' "$LIVE" > "$R/.claude/deliver-loop/driver.pid"
+out="$(run_loop STUB_OPEN_PR="9 feat/notes" -- --max-iterations 1)"
+expect_rc "a second driver on the same base refuses (ESC-81)" 2 $?
+expect_contains "and names the pid already running" "$out" "pid $LIVE"
+expect_contains "and how to stop that one" "$out" "kill \$(cat"
+expect_contains "and says a different base is fine" "$out" "different BASE"
+if [[ "$(cat "$R/.claude/deliver-loop/driver.pid")" == "$LIVE" ]]; then
+  ok "and the refusal leaves the live driver's claim untouched"
+else no "and the refusal leaves the live driver's claim untouched" \
+  "$(cat "$R/.claude/deliver-loop/driver.pid")"; fi
+
+# --- THE ONE THE OWNER ASKED FOR: another repository, identical arguments
+# A second clone with the same lane name and the same limits — the exact pair
+# that collided — must start with no interference at all.
+R2="$WORK/repo2"
+rm -rf "$R2"; git clone -q "$R" "$R2" 2>/dev/null
+git -C "$R2" config user.email t@e.i; git -C "$R2" config user.name T
+git -C "$R2" config commit.gpgsign false
+git -C "$R2" checkout -q -B main
+out="$( cd "$R2" && env PATH="$WORK/bin:$PATH" GH="$WORK/bin/gh" \
+    DELIVER_SKIP_READY=1 DELIVER_SKIP_PULL=1 \
+    DELIVER_APP_TOKEN_CMD="$WORK/bin/app-token" BUDGET_PROBE_ALLOW_SESSION=0 \
+    CLAUDE_LOG=/dev/null STUB_OPEN_PR="9 feat/notes" WAIT_TIMEOUT=1 \
+    bash "$LOOP" --max-iterations 1 2>&1 )" || true
+expect_not_contains "a driver in ANOTHER repository is not blocked by this one (ESC-81)" \
+  "$out" "ALREADY RUNNING"
+expect_contains "it announces its own base" "$out" "THIS RUN'S BASE BRANCH: main"
+if [[ "$(cat "$R/.claude/deliver-loop/driver.pid" 2>/dev/null)" == "$LIVE" ]]; then
+  ok "and the other repository's pidfile is untouched"
+else no "and the other repository's pidfile is untouched" \
+  "$(cat "$R/.claude/deliver-loop/driver.pid" 2>/dev/null)"; fi
+kill "$LIVE" 2>/dev/null; wait "$LIVE" 2>/dev/null
+rm -f "$R/.claude/deliver-loop/driver.pid"
+
+# --- a stale pidfile does not wedge the repository
+# Two ways to be stale, and both must be taken over rather than refused: the
+# pid is gone, or the pid was REUSED by something that is not our driver.
+reset_pr_run
+mkdir -p "$R/.claude/deliver-loop"
+printf '999999\n' > "$R/.claude/deliver-loop/driver.pid"
+out="$(run_loop STUB_OPEN_PR="9 feat/notes" WAIT_TIMEOUT=1 -- --max-iterations 1)" || true
+expect_not_contains "a dead pid does not block a new run" "$out" "ALREADY RUNNING"
+expect_contains "and the takeover is said out loud" "$out" "stale pidfile"
+
+sleep 30 &
+UNRELATED=$!
+mkdir -p "$R/.claude/deliver-loop"
+printf '%s\n' "$UNRELATED" > "$R/.claude/deliver-loop/driver.pid"
+out="$(run_loop STUB_OPEN_PR="9 feat/notes" WAIT_TIMEOUT=1 -- --max-iterations 1)" || true
+expect_not_contains "a REUSED pid running something else does not block either" \
+  "$out" "ALREADY RUNNING"
+kill "$UNRELATED" 2>/dev/null; wait "$UNRELATED" 2>/dev/null
+
+# --- per-base state: two bases in ONE clone keep separate reports and pidfiles
+# The script's own header promised this and the state directory was one flat
+# path, so the second run appended into the first one's report, inherited its
+# dismissed evidence, and could trip its acceptance marker.
+reset_pr_run
+git -C "$R" switch -qc run/web main 2>/dev/null || git -C "$R" switch -q run/web
+out="$(run_loop STUB_OPEN_PR="9 feat/notes" STUB_OPEN_PR_BASE=run/web WAIT_TIMEOUT=1 \
+        -- --base run/web --max-iterations 1)" || true
+expect_contains "a non-default base names its own pidfile" "$out" \
+  "deliver-loop--run-web/driver.pid"
+if [[ -d "$R/.claude/deliver-loop--run-web" ]]; then
+  ok "and keeps its working state in its own directory (ESC-81)"
+else no "and keeps its working state in its own directory (ESC-81)" \
+  "$(ls -d "$R"/.claude/deliver-loop* 2>/dev/null)"; fi
+if [[ -z "$(git -C "$R" status --porcelain)" ]]; then
+  ok "and that directory is not left as dirt the next run refuses on"
+else no "and that directory is not left as dirt the next run refuses on" \
+  "$(git -C "$R" status --porcelain | head -3)"; fi
+git -C "$R" switch -q main
+git -C "$R" branch -qD run/web 2>/dev/null || true
+rm -rf "$R/.claude/deliver-loop--run-web"
 
 # ------------------------------ landing a dead run's evidence, run-free
 # The buffer rotation (below) rescues a killed run's report ON THE NEXT RUN.
