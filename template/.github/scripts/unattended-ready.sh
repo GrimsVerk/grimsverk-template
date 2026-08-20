@@ -20,9 +20,9 @@
 # reach its goal: nothing would merge (auto-merge off, required checks absent
 # or misnamed, review credential missing) or a gate would misfire (CODEOWNERS
 # unresolvable). A condition only notes when a designed fallback covers it —
-# no merge identity configured means cleanup waits for the nightly sweep, which
-# is degraded, not broken. The notes still print; they are just not this
-# check's call to make.
+# no merge identity configured means cleanup falls to the driver's own branch
+# sweep at the stop, which is degraded, not broken. The notes still print; they
+# are just not this check's call to make.
 #
 # Exit codes: 0 ready, 1 refused (missing items listed), 2 cannot even ask
 # (no gh, no auth, not a repository).
@@ -132,7 +132,7 @@ else
   if grep -q '"delete_branch_on_merge"[[:space:]]*:[[:space:]]*true' <<<"$SETTINGS"; then
     ok "repository deletes head branches on merge"
   else
-    note "'Automatically delete head branches' is off — the workflow and sweep still clean up; scripts/setup-github.sh sets it"
+    note "'Automatically delete head branches' is off — merged heads then stay until something removes them. The driver sweeps merged branches at every stop, and scripts/setup-github.sh sets this; but a hosted session is refused ref deletion by its proxy (403), so in web mode this setting is the ONLY cleanup there is (ESC-78)"
   fi
   # DO THE GATES ACTUALLY BIND? (ESC-73.) Rulesets are enforced on public
   # repositories and on private ones under a paid plan; on a private repository

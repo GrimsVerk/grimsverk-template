@@ -105,6 +105,50 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      - name: Refuse to arm on an unprotected base
+        # ARMING AN UNPROTECTED BASE DOES NOT ARM — IT MERGES (ESC-80).
+        # `gh pr merge --auto` needs required checks on the base to have
+        # something to wait for. Without them GitHub merges on the spot, the
+        # step exits 0, and the job reports success — the log is identical
+        # either way. Observed live: a run recorded `arm-auto-merge: success`
+        # three seconds AFTER the merge it was supposed to be waiting for, and
+        # the required `review` check reported FAILURE two and a half minutes
+        # later, on code that was already on the branch.
+        #
+        # The base can lose its gates while a run is in flight — one lane
+        # re-running setup with a narrower --gate-branch set was exactly how it
+        # happened (ESC-79) — so this is checked at the last moment before the
+        # merge rather than trusted from setup time.
+        #
+        # FAIL CLOSED. A pipeline that cannot wait must stop, not merge.
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -uo pipefail
+          rules="$(gh api "repos/$GITHUB_REPOSITORY/rules/branches/$BASE_REF" 2>/dev/null || true)"
+          if printf '%s' "$rules" | grep -q '"type"[[:space:]]*:[[:space:]]*"required_status_checks"'; then
+            echo "Base '$BASE_REF' carries a required_status_checks rule — auto-merge has something to wait for."
+            exit 0
+          fi
+          {
+            echo "## Refused to arm auto-merge"
+            echo ""
+            echo "The base branch '$BASE_REF' carries NO required status checks."
+            echo "Arming auto-merge there does not wait — GitHub merges immediately,"
+            echo "and this job would report success on a pull request that merged"
+            echo "before its checks reported."
+            echo ""
+            echo "Restore the gates on this branch, then re-run:"
+            echo ""
+            echo "    scripts/setup-github.sh --app --gate-branch $BASE_REF"
+            echo ""
+            echo "If another run narrowed the ruleset, name every base in one call —"
+            echo "--gate-branch is additive, but --gates-only is not."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "arm-auto-merge: base '$BASE_REF' is unprotected; refusing to arm (ESC-80)." >&2
+          exit 1
+
       - name: Enable auto-merge (merge commit)
         # Merge commit (not squash): it preserves the exact commits CI tested and
         # the audit trail of what each agent did — worth more here than a flat
@@ -163,6 +207,32 @@ jobs:
             echo "GraphQL rate limit resets at $(date -u -d "@$reset" +%H:%M:%SZ 2>/dev/null || echo "epoch $reset")." >&2
           fi
           exit 1
+
+      - name: Prove it armed rather than merged
+        # Belt and braces for ESC-80. The step above cannot tell the two apart
+        # from its own exit code, so the pull request is re-read: already merged
+        # means the base was not protecting anything after all, and that has to
+        # be a RED check rather than a green one. It is too late to prevent the
+        # merge; it is not too late to stop the next eleven.
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -uo pipefail
+          state="$(gh pr view "$PR_URL" --json state --jq .state 2>/dev/null || echo UNKNOWN)"
+          if [ "$state" = "MERGED" ]; then
+            {
+              echo "## Auto-merge did not arm — the pull request MERGED immediately"
+              echo ""
+              echo "That happens when the base branch has no required status checks,"
+              echo "so there was nothing to wait for. Any check still running when"
+              echo "this merged was not enforced. Read the base branch's rules before"
+              echo "trusting anything else this run merged."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "arm-auto-merge: merged on arming — the base was unprotected (ESC-80)." >&2
+            exit 1
+          fi
+          echo "Armed; the merge waits on the required checks."
 
   # Delete the head branch once the pull request has actually merged.
   #

@@ -655,6 +655,17 @@ land_evidence() {
     echo "deliver-loop: could not create $ref — the report is at $RUN_DIR/run.md."
   fi
   git switch -q "$RUN_BASE" 2>/dev/null || true
+
+  # HOUSEKEEPING, LAST AND BEST-EFFORT (ESC-78). Nothing here can change the
+  # run's exit code, and only branches already MERGED into this base are
+  # touched — the same test GitHub applies to a merged pull request's head, so
+  # it can lose no work. The evidence branch just created is unmerged by
+  # definition and survives. Two documents used to promise a "sweep" that did
+  # not exist; this is it.
+  if [[ -x .claude/scripts/sweep-branches.sh ]]; then
+    .claude/scripts/sweep-branches.sh --base "$RUN_BASE" 2>&1 \
+      | sed 's/^/deliver-loop: /' || true
+  fi
   return "$rc"
 }
 # `exit` inside the EXIT trap is what lets the recorder correct a status that
