@@ -62,11 +62,17 @@
 #                      (deliver-loop.sh --base): without this the run's pull
 #                      requests merge ungated, and unattended-ready.sh refuses
 #                      the run. The default branch stays targeted either way.
+#                      ADDITIVE (ESC-79): branches already gated stay gated.
+#   --ungate <b>       remove this branch from the gates (repeatable). The only
+#                      way to narrow the ruleset one branch at a time.
+#   --gates-only       the --gate-branch set becomes the WHOLE list: every other
+#                      branch currently gated loses its gates. Announced in a
+#                      banner before it is applied.
 
 set -euo pipefail
 
 APP=0; SSH_HOST=""; VISIBILITY="--private"; VERIFY=0; SKIP_CREATE=0
-GATE_BRANCHES=()
+GATE_BRANCHES=(); UNGATE_BRANCHES=(); GATES_ONLY=0
 # The parse loop consumes $@, and the transcript wrapper below re-execs this
 # script — with the consumed argv, every flag would be silently dropped on the
 # inner run. Keep the original.
@@ -80,6 +86,9 @@ while [[ $# -gt 0 ]]; do
     --skip-create) SKIP_CREATE=1; shift ;;
     --gate-branch) [[ -n "${2:-}" ]] || { echo "setup-github: --gate-branch needs a branch name" >&2; exit 2; }
                    GATE_BRANCHES+=("$2"); shift 2 ;;
+    --ungate)      [[ -n "${2:-}" ]] || { echo "setup-github: --ungate needs a branch name" >&2; exit 2; }
+                   UNGATE_BRANCHES+=("$2"); shift 2 ;;
+    --gates-only)  GATES_ONLY=1; shift ;;
     -h|--help)
       sed -n '2,68p' "$0" | sed -n 's/^# \{0,1\}//p'
       exit 0 ;;
@@ -303,13 +312,78 @@ fi
 # POSTing a duplicate name creates a second ruleset, and two rulesets' rules
 # UNION, which is how a stale one quietly keeps an old check required forever.
 #
-# NOTE the update-in-place consequence for --gate-branch: the include list is
-# REPLACED, not merged. Re-running with a different --gate-branch set installs
-# exactly that set, and running with none returns the ruleset to the default
-# branch only — which is also how a finished lane's protection is removed.
+# THE INCLUDE LIST IS ADDITIVE (ESC-79), and it was not always. A PUT sends the
+# whole list, so building it from the flags alone means naming one branch
+# REMOVES every branch not named. That is not theory: a lane told to "gate
+# run/local alone" ran exactly that, stripped refs/heads/run/web from the shared
+# ruleset while the OTHER lane was mid-run, and nine minutes later that lane
+# merged a pull request 10 seconds after its required review check started and
+# 2m31s before the check reported FAILURE. Unreviewed code the review gate had
+# rejected landed on a protected branch, and nothing anywhere said the gate had
+# gone. The runtime line even read "gated branches: the default branch, PLUS
+# run/local" — the word "plus" describing a removal.
+#
+# So: read what is gated now, union the --gate-branch set into it, and take a
+# branch OUT only when asked explicitly (--ungate, --gates-only). A removal is
+# announced in a banner before it is applied, because losing a gate is the one
+# change here that can end with unreviewed code on a protected branch.
 RULESET_NAME="grimsverk-gates"
+EXISTING_ID="$("$GH" api "repos/$REPO/rulesets" \
+  --jq ".[] | select(.name == \"$RULESET_NAME\") | .id" 2>/dev/null | head -1)"
+CURRENT_REFS=()
+if [[ -n "$EXISTING_ID" ]]; then
+  mapfile -t CURRENT_REFS < <("$GH" api "repos/$REPO/rulesets/$EXISTING_ID" \
+    --jq '.conditions.ref_name.include[]' 2>/dev/null \
+    | grep -v '^~DEFAULT_BRANCH$' | sed 's#^refs/heads/##' || true)
+fi
+
+KEEP=()
+if [[ "$GATES_ONLY" -eq 1 ]]; then
+  KEEP=(${GATE_BRANCHES[@]+"${GATE_BRANCHES[@]}"})
+else
+  KEEP=(${CURRENT_REFS[@]+"${CURRENT_REFS[@]}"} ${GATE_BRANCHES[@]+"${GATE_BRANCHES[@]}"})
+fi
+# --ungate always wins, and de-duplicate while preserving order.
+FINAL_REFS=()
+for b in ${KEEP[@]+"${KEEP[@]}"}; do
+  [[ -n "$b" ]] || continue
+  skip=0
+  # `if`, not `&&`: with set -e a `[[ ]] && x` that ends a loop body false is
+  # the loop's exit status, and the script would die on the last iteration.
+  for u in ${UNGATE_BRANCHES[@]+"${UNGATE_BRANCHES[@]}"}; do
+    if [[ "$b" == "$u" ]]; then skip=1; fi
+  done
+  for k in ${FINAL_REFS[@]+"${FINAL_REFS[@]}"}; do
+    if [[ "$b" == "$k" ]]; then skip=1; fi
+  done
+  if [[ "$skip" -eq 0 ]]; then FINAL_REFS+=("$b"); fi
+done
+
+# WHAT IS ABOUT TO LOSE ITS GATES — said before the PUT, unmissably.
+LOSING=()
+for b in ${CURRENT_REFS[@]+"${CURRENT_REFS[@]}"}; do
+  keep=0
+  for k in ${FINAL_REFS[@]+"${FINAL_REFS[@]}"}; do
+    if [[ "$b" == "$k" ]]; then keep=1; fi
+  done
+  if [[ "$keep" -eq 0 ]]; then LOSING+=("$b"); fi
+done
+if [[ ${#LOSING[@]} -gt 0 ]]; then
+  echo
+  echo "════════════════════════════════════════════════════════════════════"
+  echo "  REMOVING THE GATES FROM: ${LOSING[*]}"
+  echo
+  echo "  Those branches become UNPROTECTED the moment this runs. A pull"
+  echo "  request into one of them can then merge with its required checks"
+  echo "  still running — and arming auto-merge on an unprotected base does"
+  echo "  not wait, it merges immediately. If another run is using one of"
+  echo "  these branches right now, stop and re-run naming it too."
+  echo "════════════════════════════════════════════════════════════════════"
+  echo
+fi
+
 INCLUDE_REFS='"~DEFAULT_BRANCH"'
-for b in ${GATE_BRANCHES[@]+"${GATE_BRANCHES[@]}"}; do
+for b in ${FINAL_REFS[@]+"${FINAL_REFS[@]}"}; do
   INCLUDE_REFS+=", \"refs/heads/$b\""
 done
 # bypass_actors is EXPLICIT, and saying so is the fix for a live finding
@@ -362,8 +436,6 @@ RULESET_JSON="$(cat <<JSON
 JSON
 )"
 
-EXISTING_ID="$("$GH" api "repos/$REPO/rulesets" \
-  --jq ".[] | select(.name == \"$RULESET_NAME\") | .id" 2>/dev/null | head -1)"
 if [[ -n "$EXISTING_ID" ]]; then
   printf '%s' "$RULESET_JSON" | "$GH" api -X PUT "repos/$REPO/rulesets/$EXISTING_ID" --input - >/dev/null
   say "ruleset '$RULESET_NAME': updated in place (id $EXISTING_ID)."
@@ -374,8 +446,12 @@ else
   say "ruleset bypass: repository admins, always — direct admin pushes are WAIVED, not blocked; the App and every non-admin stay fully gated."
 fi
 say "required checks: $BUILD_CHECK secrets plan template-sync test-the-tests acceptance-criteria review"
-if [[ ${#GATE_BRANCHES[@]} -gt 0 ]]; then
-  say "gated branches: the default branch, plus ${GATE_BRANCHES[*]}"
+# BEFORE AND AFTER, not "plus" (ESC-79): a list that only ever grows in the
+# telling is how a removal reads as an addition.
+say "gated branches were: the default branch${CURRENT_REFS[0]+, ${CURRENT_REFS[*]}}"
+say "gated branches now:  the default branch${FINAL_REFS[0]+, ${FINAL_REFS[*]}}"
+if [[ ${#LOSING[@]} -gt 0 ]]; then
+  say "REMOVED from the gates: ${LOSING[*]} — those branches are now unprotected"
 fi
 
 # ----------------------------------------------------------------- 5. verify

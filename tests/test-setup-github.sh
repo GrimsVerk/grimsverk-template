@@ -34,6 +34,10 @@ case "$args" in
   "api user --jq .login") echo "own" ;;
   "api repos/own/repo/rulesets --jq "*)
     [[ -n "${STUB_EXISTING_ID:-}" ]] && echo "$STUB_EXISTING_ID" ;;
+  # What the live ruleset currently gates. The script reads this before it
+  # writes, so that --gate-branch can ADD instead of replacing (ESC-79).
+  "api repos/own/repo/rulesets/"*" --jq .conditions.ref_name.include[]")
+    [[ -n "${STUB_CURRENT_GATES:-}" ]] && printf '%s\n' "${STUB_CURRENT_GATES}" ;;
   "secret set "*) cat > "$GH_CAP/secret-$3" ;;
   "api -X POST repos/own/repo/rulesets --input -") cat > "$GH_CAP/ruleset-post.json" ;;
   "api -X PUT repos/own/repo/rulesets/"*) cat > "$GH_CAP/ruleset-put.json" ;;
@@ -168,7 +172,41 @@ expect_contains "the default branch stays targeted by pointer" "$rs" "~DEFAULT_B
 expect_contains "the first lane branch is targeted" "$rs" '"refs/heads/run/local"'
 expect_contains "and the second" "$rs" '"refs/heads/run/web"'
 expect_contains "and the run says which branches are gated" "$out" \
-  "gated branches: the default branch, plus run/local run/web"
+  "gated branches now:  the default branch, run/local run/web"
+
+# ---------------------------------- ESC-79: gating one lane must not ungate another
+# The live failure: a lane told to "gate run/local alone" ran exactly that,
+# stripped refs/heads/run/web from the shared ruleset while the OTHER lane was
+# mid-run, and nine minutes later that lane merged a pull request 10 seconds
+# after its required review check started — and the check then failed.
+STUB_EXISTING_ID=42; export STUB_EXISTING_ID
+STUB_CURRENT_GATES=$'~DEFAULT_BRANCH\nrefs/heads/run/web'; export STUB_CURRENT_GATES
+rm -f "$WORK/cap/ruleset-put.json"
+out="$(run_setup /dev/null --gate-branch run/local)"
+expect_rc "gating one lane runs clean" 0 $?
+rs="$(cat "$WORK/cap/ruleset-put.json" 2>/dev/null)"
+expect_contains "the lane being gated is targeted" "$rs" '"refs/heads/run/local"'
+expect_contains "AND THE OTHER LANE KEEPS ITS GATES (ESC-79)" "$rs" '"refs/heads/run/web"'
+expect_contains "the before list is stated" "$out" "gated branches were: the default branch, run/web"
+expect_not_contains "and nothing claims a removal happened" "$out" "REMOVED from the gates"
+
+# Removing a gate takes an explicit flag, and says what it costs.
+rm -f "$WORK/cap/ruleset-put.json"
+out="$(run_setup /dev/null --ungate run/web)"
+rs="$(cat "$WORK/cap/ruleset-put.json" 2>/dev/null)"
+expect_not_contains "--ungate removes the named branch" "$rs" '"refs/heads/run/web"'
+expect_contains "and says what just lost its gates" "$out" "REMOVING THE GATES FROM: run/web"
+expect_contains "and what that means" "$out" "merge with its required checks"
+expect_contains "and the after list names the removal" "$out" "REMOVED from the gates: run/web"
+
+# --gates-only is the other explicit narrowing, and it is just as loud.
+rm -f "$WORK/cap/ruleset-put.json"
+out="$(run_setup /dev/null --gates-only --gate-branch run/local)"
+rs="$(cat "$WORK/cap/ruleset-put.json" 2>/dev/null)"
+expect_contains "--gates-only installs exactly the named set" "$rs" '"refs/heads/run/local"'
+expect_not_contains "and drops the rest" "$rs" '"refs/heads/run/web"'
+expect_contains "saying so first" "$out" "REMOVING THE GATES FROM: run/web"
+unset STUB_CURRENT_GATES STUB_EXISTING_ID
 rm -f "$WORK/cap/ruleset-post.json"
 run_setup /dev/null >/dev/null
 rs="$(cat "$WORK/cap/ruleset-post.json" 2>/dev/null)"

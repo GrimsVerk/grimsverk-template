@@ -4,13 +4,12 @@
 #
 #     .claude/scripts/sweep-branches.sh [--base <branch>] [--dry-run]
 #
-# WHAT WAS WRONG. Two documents in this template said a "sweep" cleaned up
-# branches. There was no sweep. The only cleanup that ever happened was
-# GitHub's own `delete_branch_on_merge`, which fires on MERGE and on nothing
-# else — so every branch whose pull request was closed, stalled, or never
-# opened stayed for ever. A test bed running four lanes for two days
-# accumulated a screenful of them, and the owner had to read a branch list to
-# find out which two mattered.
+# WHAT WAS WRONG. Cleanup existed and covered one case: the close-event job and
+# the nightly sweep in auto-merge.yml both key on `merged == true`, deliberately
+# — a closed-but-unmerged branch is often the only copy of its work. Right for
+# one branch, wrong for a bed that runs for days: a pull request that stalls or
+# is closed leaves its branch for ever, and the owner ends up reading a screenful
+# of branches to find the two that matter.
 #
 # THE ASYMMETRY THAT MADE IT VISIBLE. Every leftover belonged to the WEB lane;
 # the local lane's were gone. A hosted session cannot delete a remote ref at
@@ -27,8 +26,10 @@
 # listed and left alone — an unmerged branch is either live work or the only
 # copy of something, and neither is a machine's call at 3am.
 #
-# NEVER TOUCHED: the base itself, the default branch, and anything under
-# chore/ — a lane's ledger lives there and is deliberately never merged.
+# NEVER TOUCHED: the base itself, the default branch, anything under chore/ — a
+# lane's ledger lives there and is deliberately never merged — and any branch an
+# OPEN pull request still names as head or base, which is the same guard the
+# nightly sweep applies so a stacked pull request cannot lose its base.
 #
 # Exit codes: 0 swept (or nothing to sweep), 2 cannot ask (not a repository,
 # no origin). Never non-zero for a branch it could not delete: this is
@@ -61,6 +62,18 @@ git rev-parse -q --verify "refs/remotes/origin/$BASE" >/dev/null 2>&1 \
 
 say() { echo "sweep-branches: $*"; }
 
+# Branches an OPEN pull request still needs, as head or as base. Best-effort:
+# with no gh on PATH the sweep still runs, and its merged-into-base test already
+# means it cannot delete unmerged work.
+INUSE=""
+GH="${GH:-gh}"
+if command -v "$GH" >/dev/null 2>&1; then
+  REPO="$(git remote get-url origin 2>/dev/null \
+    | sed -E 's#^(git@[^:/]+:|https?://[^/]+/|ssh://git@[^/]+/)##; s#\.git$##')"
+  [[ -n "$REPO" ]] && INUSE="$("$GH" api "repos/$REPO/pulls?state=open&per_page=100" \
+    --jq '.[] | .head.ref, .base.ref' 2>/dev/null | sort -u || true)"
+fi
+
 DELETED=0; REFUSED=(); KEPT=()
 while read -r ref; do
   b="${ref#origin/}"
@@ -68,6 +81,7 @@ while read -r ref; do
   # Never the base, never the default branch, never a ledger.
   [[ "$b" == "$BASE" || "$b" == "$DEFAULT_BRANCH" ]] && continue
   case "$b" in chore/*) continue ;; esac
+  if [[ -n "$INUSE" ]] && grep -qxF "$b" <<<"$INUSE"; then KEPT+=("$b"); continue; fi
   # MERGED INTO THE BASE is the whole test. Anything else is left alone.
   git merge-base --is-ancestor "origin/$b" "origin/$BASE" 2>/dev/null || { KEPT+=("$b"); continue; }
   if [[ "$DRY" -eq 1 ]]; then
