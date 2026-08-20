@@ -195,6 +195,63 @@ expect_contains "names the id" "$out" "R1000a"
 expect_contains "and names the document it is in" "$out" "docs/DESIGN.oracle.md"
 rm -f "$R/docs/DESIGN.oracle.md"
 
+# ------------------------- ESC-82: the ledger's PROSE is not scanned for ids
+# The deadlock this repairs, observed live. The oracle ledger is append-only and
+# `oracle-decisions.sh` enforces that as a required check, so a malformed id in
+# a decision's BODY can never be repaired: editing the line fails append-only,
+# and superseding cannot remove text that is already there. Both gates are
+# required, so the lane stopped at SETUP every run with no legal move left.
+#
+# It was also wrong on its own terms: a decision that declares R1000 properly
+# and then writes `**R1000 — Output precision.**` as its body label is following
+# the house style, not inventing an id.
+cat > "$R/docs/DESIGN.oracle.md" <<'EOF'
+# Design decisions from evidence
+
+## OD-1 — Output is rounded to 12 significant digits
+
+- **Requirements added:** R1000
+- **Rationale:** an IEEE-754 double carries roughly 15-17 digits.
+
+**R1000 — Output precision.** A conversion result is printed as `format(result, ".12g")`.
+EOF
+out="$(run)"
+rc=$?
+if [[ "$rc" -ne 2 ]]; then ok "a body label in the ledger is prose, not a malformed id (ESC-82)"
+else no "a body label in the ledger is prose, not a malformed id (ESC-82)" "$out"; fi
+expect_not_contains "so nothing is reported malformed" "$out" "malformed requirement id"
+expect_contains "and the requirement it declared still counts" "$out" "R1000"
+
+# The guard still bites where it means something: the DECLARATION line.
+cat > "$R/docs/DESIGN.oracle.md" <<'EOF'
+# Design decisions from evidence
+
+## OD-1 — a decision that declares a broken id
+
+- **Requirements added:** **R1000 — Output precision.**
+EOF
+out="$(run)"
+expect_rc "a malformed id on a declaration line is still an error" 2 $?
+expect_contains "and still names it" "$out" "R1000 — Output precision."
+rm -f "$R/docs/DESIGN.oracle.md"
+
+# And the owner-editable design keeps the whole-file scan: that document can be
+# edited, so a malformed id anywhere in it is a fixable mistake, not a trap.
+design <<'EOF'
+# Design
+
+## 5. Requirements
+
+- **R1** something
+
+## 12. Milestones
+
+Ship **R2a** in the first slice.
+EOF
+out="$(run)"
+expect_rc "a malformed id in the owner's design is still an error anywhere" 2 $?
+expect_contains "and names it" "$out" "R2a"
+
 # ----------------------------------- plans in a subdirectory are not invisible
 # plan-resolve.sh, plan-lint.sh and coverage.sh all enumerated plans with
 # `find -maxdepth 1`. A steward's plans live under docs/plans/oracle/, so the

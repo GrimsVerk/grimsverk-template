@@ -156,9 +156,32 @@ done < <(
 # Malformed ids anywhere in a design document — not just section 5. An id-shaped
 # token in section 12's milestones or section 13's criteria is read as an id by
 # every human who passes it, so it has to be one.
+#
+# EXCEPT IN THE ORACLE LEDGER, WHERE WHOLE-FILE SCANNING IS A TRAP (ESC-82).
+# That document is APPEND-ONLY and `oracle-decisions.sh` enforces it, so a
+# malformed id landed in a decision's prose can never be repaired: editing the
+# line fails the append-only gate, and superseding the decision cannot remove
+# text that is already there. Both gates are required checks, so the repository
+# deadlocks — observed live, a lane stuck at SETUP with no sequence of legal
+# actions able to clear it.
+#
+# It is also wrong on its own terms. A decision that declares R1000 on its
+# `**Requirements added:**` line and then writes `**R1000 — Output precision.**`
+# as the body's label is following the house style, not inventing an id. The
+# id-collection pass one screen up already refuses to read this file's prose,
+# with a comment explaining exactly why ("its rationales legitimately mention
+# ids they did NOT define"); the malformed pass was never given the same care.
+#
+# So in the ledger only DECLARATION lines are scanned — the same lines the
+# collection pass reads. A malformed id there is still caught, and that is the
+# place where it means something. Every other design document is owner-editable,
+# so the whole-file scan stays: an owner can always fix their own file.
 mapfile -t BAD_IDS < <(
   for doc in "${PRESENT[@]}"; do
-    awk -v doc="${doc#"$ROOT"/}" '
+    ledger=0
+    [[ "$(basename "$doc")" == "DESIGN.oracle.md" ]] && ledger=1
+    awk -v doc="${doc#"$ROOT"/}" -v ledger="$ledger" '
+      ledger && !/^[-*] \*\*Requirements (added|superseded):\*\*/ { next }
       {
         line = $0
         while (match(line, /\*\*[RS][0-9][^*]*\*\*/)) {
