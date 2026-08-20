@@ -287,8 +287,24 @@ command -v "$GH" >/dev/null 2>&1 || die "'$GH' is not on PATH"
 "$GH" auth status >/dev/null 2>&1 || die "gh is not authenticated — run: gh auth login"
 command -v claude >/dev/null 2>&1 || die "the claude CLI is not on PATH"
 
-[[ -z "$(git status --porcelain)" ]] \
-  || die "the working tree is dirty — a run recomputes state from the tree, and uncommitted changes make that state a lie"
+# The dirty-tree refusal guards a RUN, whose state is recomputed from the
+# tree. It must NOT guard --land-evidence (ESC-60, anvil F13): the exact
+# failure that mode exists for — an evidence commit that died half way —
+# ALWAYS leaves the tree dirty with the very files to be landed, so refusing
+# a dirty tree made the documented rescue unrunnable after every failure it
+# was built to rescue, and cleaning by hand destroys the evidence. Landing
+# tolerates dirt confined to the evidence paths (docs/runs/ and the driver's
+# own state dir) and still refuses anything else: dirt in project space is
+# not evidence and not this mode's to sweep up.
+if [[ "$LAND_ONLY" -eq 1 ]]; then
+  DIRT="$(git status --porcelain | awk '{print $2}' \
+    | grep -vE '^docs/runs/|^\.claude/deliver-loop/' || true)"
+  [[ -z "$DIRT" ]] \
+    || die "the working tree carries changes OUTSIDE the evidence paths (docs/runs/, .claude/deliver-loop/) — landing only sweeps up a dead run's evidence, not project work: $(head -3 <<<"$DIRT" | tr '\n' ' ')"
+else
+  [[ -z "$(git status --porcelain)" ]] \
+    || die "the working tree is dirty — a run recomputes state from the tree, and uncommitted changes make that state a lie"
+fi
 CURRENT_BRANCH="$(git branch --show-current)"
 [[ "$CURRENT_BRANCH" == "$RUN_BASE" ]] \
   || die "on branch '$CURRENT_BRANCH', but this run's base is '$RUN_BASE' — the driver dispatches from its base branch only. Switch to it, or name the intended base with --base <branch>"
@@ -405,7 +421,12 @@ if [[ "$LAND_ONLY" -eq 1 ]]; then
   fi
   PREV_RUN="$(sed -n 's/^# Delivery run //p' "$STATE_DIR/run.md" | head -1)"
   RUN_ID="${PREV_RUN:-$(date -u +%Y%m%dT%H%M%SZ)-recovered}"
-  while [[ -d "docs/runs/$RUN_ID" ]] \
+  # Collision means COMMITTED — at HEAD, or as a landing branch. An
+  # uncommitted docs/runs/<id>/ on disk is not a collision, it is the dead
+  # run's own stranded evidence (the died-commit case this mode exists for,
+  # ESC-60), and dodging to a -recovered id would land the buffer while
+  # abandoning exactly those files.
+  while git rev-parse -q --verify "HEAD:docs/runs/$RUN_ID" >/dev/null 2>&1 \
      || git rev-parse -q --verify "refs/heads/docs/run-$RUN_ID$LANE" >/dev/null 2>&1; do
     RUN_ID="$RUN_ID-recovered"
   done
