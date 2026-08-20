@@ -241,16 +241,20 @@ if [[ "$RUNTIME" -eq 1 ]]; then
   # ambient login and opens pull requests through the open-pr workflow, which
   # mints server-side where minting works — so what THIS check must prove
   # shifts: not "the mint works here" but "the opener exists here".
+  # `gh api user`, NEVER `gh auth status`: auth status inspects the LOCAL
+  # configuration and reports failure on exactly the platform this branch
+  # exists for, while real requests succeed at the proxy (ESC-52). The probe
+  # must ask the network, not the config.
   if "$READY_APP_TOKEN_CMD" >/dev/null 2>&1; then
     ok "App identity mints a token (the merge identity is live, not just named)"
-  elif "$GH" auth status >/dev/null 2>&1; then
+  elif "$GH" api user >/dev/null 2>&1; then
     if [[ -f ".github/workflows/open-pr.yml" ]]; then
       note "App mint impossible here (a hosted platform's proxy owns the credential — ESC-50); the ambient login drives, and pull requests open as the App via the open-pr workflow"
     else
       refuse "App mint impossible here (ESC-50) and this scaffold carries no .github/workflows/open-pr.yml — every pull request this run opened would be owner-authored; update to a template release that ships the open-pr workflow"
     fi
   else
-    refuse "no GitHub identity works here: the App cannot mint ($READY_APP_TOKEN_CMD failed) and gh holds no login at all — fix the App id and key this environment carries, or run where the platform injects a credential"
+    refuse "no GitHub identity works here: the App cannot mint ($READY_APP_TOKEN_CMD failed) and gh api user answers nothing — fix the App id and key this environment carries, or run where the platform injects a credential"
   fi
   note "secret names (CLAUDE_CODE_OAUTH_TOKEN): the full check's job — a runtime identity cannot list secrets"
   SECRETS=""

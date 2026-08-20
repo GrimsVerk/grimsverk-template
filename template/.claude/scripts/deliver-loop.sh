@@ -334,6 +334,28 @@ if [[ "${DELIVER_SKIP_READY:-0}" != "1" && "$LAND_ONLY" -eq 0 ]]; then
   fi
 fi
 
+# Workspace trust (anvil F6). An untrusted workspace makes the claude engine
+# silently DROP the permissions.allow entries in .claude/settings.json — the
+# workers run with a quieter grant than the template believes it granted, and
+# the only trace is one line at the top of each worker's own log. Refuse now,
+# loudly, while someone can act, rather than run every worker degraded. jq is
+# already a hard dependency of the pipeline's scripts.
+if [[ "${DELIVER_SKIP_READY:-0}" != "1" && "$LAND_ONLY" -eq 0 ]]; then
+  CLAUDE_CFG="${CLAUDE_CONFIG_PATH:-$HOME/.claude.json}"
+  if [[ -f "$CLAUDE_CFG" ]] \
+     && ! jq -e --arg p "$ROOT" '.projects[$p].hasTrustDialogAccepted == true' \
+          "$CLAUDE_CFG" >/dev/null 2>&1; then
+    banner
+    echo "  STOP — this workspace is not trusted by the claude engine."
+    echo "  Untrusted, the engine drops the permissions.allow entries in"
+    echo "  .claude/settings.json and every worker runs with a narrower grant"
+    echo "  than the one this repository documents. Run claude interactively"
+    echo "  here once and accept the trust dialog, then re-run."
+    banner
+    exit 2
+  fi
+fi
+
 # ------------------------------------------------------------ the identity
 # owner-authored.sh compares the pull request's author login to the CODEOWNERS
 # owner. Opening driver pull requests under the owner's own `gh` credentials
@@ -492,7 +514,7 @@ land_evidence() {
     cp "$STATE_DIR"/unlanded-*.md "$RUN_DIR/unlanded/" 2>/dev/null || true
   fi
 
-  .claude/scripts/collect-evidence.sh --run-dir "$RUN_DIR" \
+  RUN_BASE="$RUN_BASE" .claude/scripts/collect-evidence.sh --run-dir "$RUN_DIR" \
     --since "$RUN_STARTED_AT" 2>&1 | sed 's/^/deliver-loop: /' || true
 
   # On a branch and a pull request, never straight onto the default branch:

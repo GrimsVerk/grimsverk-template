@@ -53,9 +53,11 @@ case "$args" in
     printf '%s' "${STUB_SETTINGS:-}" ;;
   "secret list")
     [[ -n "${STUB_SECRETS:-}" ]] && printf '%s\n' "$STUB_SECRETS" ;;
-  "auth status")
-    # Off by default: a runtime session's gh works only when a platform
-    # injects a credential (ESC-50), and most scenarios model no platform.
+  "api user")
+    # The ambient-credential liveness probe — `gh api user`, never `gh auth
+    # status`, which lies on the hosted platform (ESC-52). Off by default: a
+    # runtime session's gh works only when a platform injects a credential
+    # (ESC-50), and most scenarios model no platform.
     [[ "${STUB_AUTH_OK:-0}" == "1" ]] ;;
   *) exit 1 ;;
 esac

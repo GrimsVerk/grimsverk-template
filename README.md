@@ -71,17 +71,21 @@ scaffold, which has no Python virtual environment to install into at all.
 You also need the **Claude Code CLI** for `claude setup-token` in step 6a — see
 [the install docs](https://docs.claude.com/en/docs/claude-code/setup).
 
-**Verify SSH.** Everything downstream depends on this answering with your name:
+**Verify SSH.** `<ssh_host>` below is your personal SSH host alias for
+GitHub (for example `github.com-yourname` in `~/.ssh/config`; the owner keeps
+theirs, with the other machine-local values, in an identity register at
+`~/.config/grimsverk/identity.json`). Everything downstream depends on this
+answering with your name:
 
 ```sh
-ssh -T git@github.com-grimsverk
+ssh -T git@<ssh_host>
 ```
 
-Expect `Hi GrimsVerk! You've successfully authenticated...`. If instead you get
+Expect `Hi <you>! You've successfully authenticated...`. If instead you get
 a permission error, stop and fix the key before going further — every git and
 `gh` command below will fail in ways that look like something else.
 
-> `ssh -T git@github.com` (without the `-grimsverk` alias) failing is **normal**
+> `ssh -T git@github.com` (without the alias) failing is **normal**
 > and not a problem. The alias is what carries the right key; the bare host has
 > no key attached.
 
@@ -92,7 +96,7 @@ rule bridges the two:
 
 ```sh
 git config --global \
-  url."ssh://git@github.com-grimsverk/GrimsVerk/grimsverk-template.git".insteadOf \
+  url."ssh://git@<ssh_host>/GrimsVerk/grimsverk-template.git".insteadOf \
   "https://github.com/GrimsVerk/grimsverk-template.git"
 ```
 
@@ -130,7 +134,7 @@ cd $PROJECT
 **Use the `https://` URL, even though you authenticate over SSH.** Copier records
 whatever URL you type into `.copier-answers.yml` as `_src_path`, and that value
 is later read by *CI* — which has no SSH key and cannot resolve a host alias from
-your personal `~/.ssh/config`. Hand it an `ssh://git@github.com-grimsverk/…` URL
+your personal `~/.ssh/config`. Hand it an `ssh://git@<ssh_host>/…` URL
 and the `template-sync` check fails with `Could not resolve hostname` before
 copier even starts, and no token can fix it.
 
@@ -173,8 +177,8 @@ git init -b main
 ### 3. Bootstrap the toolchain, then make the first commit
 
 ```sh
-uv sync              # python — this creates uv.lock, which MUST be committed
-pre-commit install
+uv sync                     # python — this creates uv.lock, which MUST be committed
+uv run pre-commit install   # pre-commit is a dev dependency, installed by uv sync (ESC-55)
 ```
 
 ```sh
@@ -200,7 +204,7 @@ git log -1 --format='%an <%ae>'
 ```
 
 It must show the GrimsVerk identity — the conditional include in `~/.gitconfig`
-handles that for anything under `~/code/GrimsVerk/`. If it shows something else,
+handles that for anything under your `<repos_root>`. If it shows something else,
 fix it now:
 
 ```sh
@@ -216,7 +220,7 @@ Everything from here through step 6 is one idempotent run of the script every
 generated project ships:
 
 ```sh
-scripts/setup-github.sh --ssh-host github.com-grimsverk --app --verify
+scripts/setup-github.sh --ssh-host <ssh_host> --app --verify
 ```
 
 It creates the repository and pushes (step 4), sets the merge settings and
@@ -344,13 +348,13 @@ it by hand.
 
 ```sh
 gh repo create GrimsVerk/$PROJECT --private --source=.
-git remote set-url origin git@github.com-grimsverk:GrimsVerk/$PROJECT.git
+git remote set-url origin git@<ssh_host>:GrimsVerk/$PROJECT.git
 git push -u origin main
 ```
 
 The `set-url` line is not optional and not a fix for a failure. `gh repo create`
 will report that it added a `git@github.com:` remote — that plain host has no key
-attached, so a push against it fails. Rewriting it to the `github.com-grimsverk`
+attached, so a push against it fails. Rewriting it to the `<ssh_host>`
 alias is what makes the push work.
 
 > Do **not** use `gh repo create --remote=origin --push`. It sets the remote to

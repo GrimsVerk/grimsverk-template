@@ -10,7 +10,7 @@ pull in template updates with `scripts/update-from-template.sh`.
 ```sh
 uv sync                # install dependencies (creates .venv)
 uv run pytest          # run tests
-pre-commit install     # enable git-level checks (ruff, mypy, gitleaks)
+uv run pre-commit install   # enable git-level checks (ruff, mypy, gitleaks)
 ```
 {% else %}
 ```sh
