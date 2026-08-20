@@ -53,6 +53,10 @@ case "$args" in
     printf '%s' "${STUB_SETTINGS:-}" ;;
   "secret list")
     [[ -n "${STUB_SECRETS:-}" ]] && printf '%s\n' "$STUB_SECRETS" ;;
+  "api repos/own/repo/pulls?state=open&base="*)
+    # ESC-72: a run must not start into a base that already carries an open
+    # pull request — the driver's first act would be to wait on it.
+    [[ -n "${STUB_OPEN_ON_BASE:-}" ]] && printf '%s\n' "$STUB_OPEN_ON_BASE" ;;
   "api user")
     # The ambient-credential liveness probe — `gh api user`, never `gh auth
     # status`, which lies on the hosted platform (ESC-52). Off by default: a
@@ -266,6 +270,26 @@ ready_env
 out="$(run_rt app-ok)"
 expect_rc "--runtime without RUN_BASE falls back to the default branch" 0 $?
 expect_contains "and still verifies its rules" "$out" "base branch 'main'"
+
+# ESC-72: an open pull request on the run's base refuses the run BEFORE it
+# starts, rather than stalling it at exit 4 ten minutes in. A template update
+# always waits for the owner's review, because it edits the gates themselves.
+# ESC-73: a private repository's rulesets may be configured and not binding.
+ready_env
+STUB_SETTINGS='{"allow_auto_merge": true, "delete_branch_on_merge": true, "default_branch": "main", "private": true}'
+out="$(run)"; expect_rc "a private repository is still ready" 0 $?
+expect_contains "but says the gates may not bind at all (ESC-73)" "$out" "NOT binding"
+
+ready_env
+export STUB_OPEN_ON_BASE="#42 template/v0.4.40"
+out="$(run)"; expect_rc "an open pull request on the base refuses the run (ESC-72)" 1 $?
+expect_contains "and names it" "$out" "#42 template/v0.4.40"
+expect_contains "and says who has to clear it" "$out" "YOUR review"
+unset STUB_OPEN_ON_BASE
+
+ready_env
+out="$(run)"; expect_rc "a clear base is ready" 0 $?
+expect_contains "and says the base is clear" "$out" "starts on a clear base"
 
 ready_env
 STUB_CO_ERRORS="2"

@@ -1012,6 +1012,37 @@ out="$(land_only)"
 expect_rc "a second landing finds nothing and exits clean" 0 $?
 expect_contains "and says so" "$out" "nothing to land"
 
+# ESC-70: the evidence branch is cut from the REMOTE tip. The gates ruleset
+# requires branches to be up to date, and the evidence branch is created at
+# the stop from a checkout several merges old — so it was born BEHIND, and
+# the only job that updates stale branches fires on a merge that, for the
+# last pull request of a run, never comes. Auto-merge then waits for ever on
+# a condition that cannot change (observed live: eleven green checks, armed
+# by the App, permanently BEHIND).
+git -C "$R" switch -q main
+printf '# Delivery run 20260819T050607Z\n\n- 05:06:07Z a run whose base moved on\n' \
+  > "$R/.claude/deliver-loop/run.md"
+# The remote moves ahead of this checkout, exactly as merges during the run do.
+AHEAD="$WORK/ahead"; rm -rf "$AHEAD"
+git clone -q "$ORIGIN" "$AHEAD"
+git -C "$AHEAD" config user.email t@e.i; git -C "$AHEAD" config user.name T
+git -C "$AHEAD" config commit.gpgsign false
+# Explicit: the bare repo carries several branches and its HEAD may name any
+# of them, so a clone's default checkout is not necessarily main.
+git -C "$AHEAD" checkout -q -B main origin/main
+echo "a merge that happened during the run" > "$AHEAD/moved-on.txt"
+git -C "$AHEAD" add -A && git -C "$AHEAD" commit -qm "the base moved on"
+git -C "$AHEAD" push -q origin main || no "the fixture could advance the remote base"
+out="$(land_only)"
+expect_rc "landing succeeds against a base that moved on" 0 $?
+REMOTE_TIP="$(git -C "$AHEAD" rev-parse main)"
+if git -C "$R" merge-base --is-ancestor "$REMOTE_TIP" "docs/run-20260819T050607Z" 2>/dev/null; then
+  ok "the evidence branch is cut from the remote tip, so it is not born BEHIND (ESC-70)"
+else
+  no "the evidence branch is cut from the remote tip, so it is not born BEHIND (ESC-70)" \
+    "$(git -C "$R" log --oneline -3 docs/run-20260819T050607Z 2>&1)"
+fi
+
 # ESC-60: the failure this mode exists for — an evidence commit that died
 # half way — ALWAYS leaves the tree dirty with the evidence itself, so
 # landing tolerates dirt confined to the evidence paths...
