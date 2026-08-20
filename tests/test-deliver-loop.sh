@@ -915,6 +915,115 @@ git -C "$R" switch -q main
 git -C "$R" reset -q --hard "$PRE_SEED99"
 git -C "$R" update-ref refs/remotes/origin/main "$PRE_SEED99"
 
+# ---- ESC-75: a stop the run did not choose is never reported as success
+# Round 3.3 died five minutes in with its only worker's engine dead, and the
+# landed report said "exit code 0" — the success code — with no reason, under
+# the sentence "Every stop says why; none degrades silently". An owner reading
+# it in the morning sees a clean run. Success is now something the driver has
+# to EARN by reaching a stop that names itself.
+reset_pr_run
+git -C "$R" branch -qD feat/sqlite-store 2>/dev/null || true
+PRE_ESC75="$(git -C "$R" rev-parse main)"
+printf '| ESC-98 | 2026-08-20 | another seeded escape | none | none |\n' >> "$R/docs/escapes.md"
+git -C "$R" add -A && git -C "$R" commit -qm "seed an uncited escape for ESC-75"
+git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse main)"
+
+# ---- the engine dies: the cause is named, and the stop that follows says why
+cat > "$WORK/bin/spawn-worker-dead" <<'STUB'
+#!/usr/bin/env bash
+echo "Execution error"
+exit 3
+STUB
+chmod +x "$WORK/bin/spawn-worker-dead"
+git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' \
+  | xargs -r git -C "$R" branch -qD 2>/dev/null || true
+out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-dead" \
+        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
+expect_rc "a worker whose engine dies twice stops the run" 5 $?
+expect_contains "and the driver names the cause rather than 'worker failed'" "$out" \
+  "its engine did not finish"
+landref="$(git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' | tail -1)"
+landed="$(git -C "$R" show "$landref:$(git -C "$R" ls-tree -r --name-only "$landref" \
+  | grep -m1 'docs/runs/.*/run\.md')" 2>/dev/null)"
+expect_contains "the landed report gives the stop a reason (ESC-75)" "$landed" \
+  "with exit code 5:"
+expect_contains "and the reason is the rule that fired" "$landed" "livelock guard"
+expect_not_contains "and does not call an unchosen stop undocumented" "$landed" \
+  "WITHOUT"
+
+# ---- killed mid-dispatch: exit 7, and the report says it was killed
+# The stub kills its GRANDPARENT — the driver, since `timeout` sits between —
+# which is what a session teardown does to a run waiting on a worker.
+reset_pr_run
+printf '| ESC-97 | 2026-08-20 | a third seeded escape | none | none |\n' >> "$R/docs/escapes.md"
+git -C "$R" add -A && git -C "$R" commit -qm "seed an uncited escape for the kill test"
+git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse main)"
+cat > "$WORK/bin/spawn-worker-kill" <<'STUB'
+#!/usr/bin/env bash
+gp="$(ps -o ppid= -p "$PPID" 2>/dev/null | tr -d ' ')"
+[[ -n "$gp" ]] && kill -TERM "$gp" 2>/dev/null
+exit 0
+STUB
+chmod +x "$WORK/bin/spawn-worker-kill"
+git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' \
+  | xargs -r git -C "$R" branch -qD 2>/dev/null || true
+out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-kill" \
+        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
+expect_rc "a run killed mid-dispatch does not exit 0 (ESC-75)" 7 $?
+landref="$(git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' | tail -1)"
+landed="$(git -C "$R" show "$landref:$(git -C "$R" ls-tree -r --name-only "$landref" \
+  | grep -m1 'docs/runs/.*/run\.md')" 2>/dev/null)"
+expect_contains "and the report says what killed it" "$landed" "killed by SIGTERM"
+expect_not_contains "and never reports the success code" "$landed" "exit code 0"
+git -C "$R" switch -q main
+git -C "$R" reset -q --hard "$PRE_ESC75"
+git -C "$R" update-ref refs/remotes/origin/main "$PRE_ESC75"
+
+# ---- ESC-74: the reset boundary is an instant, not a rendered string
+# The gauge rounds its reset to the minute for a human reader, so the SAME
+# instant reads "10:59am" one moment and "11am" the next. Reading that as a
+# weekly rollover re-baselines the allowance — it zeroes the ceiling that
+# --budget-points exists to enforce — and it can fire on any run that crosses
+# a minute boundary.
+cat > "$WORK/bin/fakeusage-round" <<'STUB'
+#!/usr/bin/env bash
+n="$(cat "$FAKEUSAGE_N" 2>/dev/null || echo 0)"; n=$((n + 1)); echo "$n" > "$FAKEUSAGE_N"
+if [[ "$n" -le 1 ]]; then
+  echo "session=7 week=29 week_model=25 reset=Aug 27, 10:59am (Europe/Amsterdam)"
+else
+  echo "session=7 week=31 week_model=27 reset=Aug 27, 11am (Europe/Amsterdam)"
+fi
+STUB
+chmod +x "$WORK/bin/fakeusage-round"
+: > "$WORK/cap/usage-n"
+out="$(run_loop BUDGET_PROBE_CMD="$WORK/bin/fakeusage-round" \
+        FAKEUSAGE_N="$WORK/cap/usage-n" \
+        STUB_OPEN_PR="7 feat/notes" STUB_CHECKS_RC=0 STUB_PR_STATE=MERGED \
+        WAIT_TIMEOUT=5 -- --budget-points 15 --max-iterations 2)" || true
+expect_not_contains "a rounded reset is not read as a weekly rollover (ESC-74)" \
+  "$out" "the weekly window reset mid-run"
+expect_contains "and the spend keeps counting against the original baseline" \
+  "$out" "spent 2 of 15 points"
+
+# The real thing still fires: a rollover moves the boundary by seven days.
+cat > "$WORK/bin/fakeusage-rolled" <<'STUB'
+#!/usr/bin/env bash
+n="$(cat "$FAKEUSAGE_N" 2>/dev/null || echo 0)"; n=$((n + 1)); echo "$n" > "$FAKEUSAGE_N"
+if [[ "$n" -le 1 ]]; then
+  echo "session=7 week=74 week_model=70 reset=Aug 27, 11am (Europe/Amsterdam)"
+else
+  echo "session=1 week=6 week_model=6 reset=Sep 3, 11am (Europe/Amsterdam)"
+fi
+STUB
+chmod +x "$WORK/bin/fakeusage-rolled"
+: > "$WORK/cap/usage-n"
+out="$(run_loop BUDGET_PROBE_CMD="$WORK/bin/fakeusage-rolled" \
+        FAKEUSAGE_N="$WORK/cap/usage-n" \
+        STUB_OPEN_PR="7 feat/notes" STUB_CHECKS_RC=0 STUB_PR_STATE=MERGED \
+        WAIT_TIMEOUT=5 -- --budget-points 15 --max-iterations 2)" || true
+expect_contains "a real seven-day rollover still re-baselines (ESC-74)" \
+  "$out" "the weekly window reset mid-run"
+
 # ---- a session that pushed nothing
 # Removing the grant means the orchestrator cannot open a pull request at all,
 # so a session that ends without a branch leaves nothing behind. That has to
