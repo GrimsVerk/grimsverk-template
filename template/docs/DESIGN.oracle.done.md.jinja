@@ -1,69 +1,39 @@
-# Design decisions — retired requirements — {{ project_name }}
+# Design — delivered requirements — {{ project_name }}
 
-One line per requirement id in [`DESIGN.oracle.md`](DESIGN.oracle.md) or
-[`DESIGN.md`](DESIGN.md) that a landed decision has **retired**. Append only;
+One line per requirement id that has been **built and merged**. Append only;
 nothing here is ever edited.
 
-## Why this is a separate file
+## What this is for
 
-[`DESIGN.oracle.md`](DESIGN.oracle.md) is append-only, and enforced
-(`.github/scripts/oracle-decisions.sh`). That is what makes an `OD-<n>` mean
-something: a landed decision cannot be reworded after a plan was built on it.
+A planner could not tell what had actually been built. `coverage.sh` says which
+requirements a plan CLAIMS — and its own report says so in as many words:
+"covered means PLANNED, not delivered and not verified." A plan's `status:`
+field was the nearest thing to an answer and it is set by hand, so on a real
+project every plan still read `status: draft` long after its work had shipped.
 
-The cost of that rule is that **a requirement cannot be retired in place.** The
-ledger keeps every decision on its page forever, so a requirement a later
-decision reversed still reads as a live requirement of the design — and
-`.github/scripts/coverage.sh` counted it as one. It reported the id `NOT
-PLANNED` on every run for a behaviour deliberately not being built, and the
-delivery driver, which commissions planning for exactly that report's gaps,
-dispatched a planner for the dead decision every cycle and could never walk past
-it. [`BACKLOG.md`](BACKLOG.md) and [`escapes.md`](escapes.md) each hit the
-identical problem and got their own done-log; this is the same answer for the
-same reason.
+So a steward planning the next piece had no way to know which requirements were
+already live, and nothing in the repository could tell it. That is what this
+file answers, and it answers it from the one thing that cannot be stale: a
+merged pull request.
 
-The pair is the point: the ledger says what was decided and never changes; this
-says which requirements those decisions have taken out of the design. Neither
-can be revised to suit the other.
+**The driver writes it.** `.claude/scripts/record-delivered.sh` reads the
+`feat/<slug>` pull requests that have MERGED into the run's base, maps each slug
+to the plan carrying it, and appends that plan's `covers:` ids. Nobody types a
+line here, which is the point — a hand-maintained record of what shipped is a
+record of what somebody remembered to write down.
 
-**Do not remove anything from [`DESIGN.oracle.md`](DESIGN.oracle.md) when you
-add a line here.** A plan that cited `OD-7` must still find `OD-7` where it was.
+## Delivered is not finished
 
-## This file cannot retire anything on its own
-
-A line here is a **record of a decision**, never the decision itself.
-`coverage.sh` refuses in both directions:
-
-- a `**Requirements superseded:**` id in the ledger with **no line here** is an
-  error — write the line, and the report tells you so by id;
-- a line here naming an id **no landed decision supersedes** is an error too.
-
-That second half is the important one. Without it, one appended line could
-delete a requirement from the design's universe — and "every requirement is
-covered" would become true by emptying the design. The authority to retire a
-requirement stays where it belongs: a decision in the ledger, gated, evidenced,
-and naming the vision statement it leaned on.
-
-## What is NOT recorded here, and why
-
-**Delivery.** A requirement that has been built and merged is not written down
-here, because it is not finished — a delivered requirement is one the system
-must go on satisfying forever, and the day it stops is a regression. What ends
-here is a requirement's *life*, not its implementation.
-
-Delivery also needs no record, because it already has one: a plan carries
-`status:` in its front matter, and `coverage.sh` reads it. Writing it a second
-time by hand would create two sources for one fact that can disagree — which is
-the shape of nearly every defect this project has logged.
+A delivered requirement stays a requirement. The system has to go on satisfying
+it, and the day it stops is a regression. Nothing leaves the design because it
+was built — that is [`DESIGN.oracle.retired.md`](DESIGN.oracle.retired.md), it
+is a different question, and only the owner answers it.
 
 ## Format
 
 One line each, and the id in backticks exactly as the design spells it:
 
-    - `R<n>` — retired by `OD-<n>`, replaced by `R<m>` — YYYY-MM-DD — why it went
-    - `R<n>` — retired by `OD-<n>`, no replacement — YYYY-MM-DD — why it went
-
-Say which decision retired it. An id here with no decision behind it is a claim,
-and the gate above refuses one.
+    - `R<n>` — delivered — YYYY-MM-DD — PR #<n>, plan `<slug>`
 
 ---
 

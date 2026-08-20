@@ -207,32 +207,35 @@ git -C "$R3" add -A && git -C "$R3" commit -qm "Empty the approvals ledger"
 expect_rc "emptying the approvals ledger fails" 1 "$(run3 >/dev/null; echo $?)"
 git -C "$R3" reset -q --hard HEAD~1
 
-# ----------- ESC-202: the same rule, over the oracle ledger's done-log
-# docs/DESIGN.oracle.done.md is what lets an append-only ledger retire a
-# requirement at all, and coverage.sh SUBTRACTS what it names — so a line here
-# removes a requirement from the universe every later report is judged against.
-# That is exactly the kind of line that must not be quietly reworded afterwards,
-# and it needed no second script: the rule is identical, only the id shape
-# differs. Copying a check to change one regex is how two checks drift apart.
+# ----------- ESC-203: the same rule, over the design layer's two id ledgers
+# docs/DESIGN.oracle.retired.md holds what the OWNER has taken out of the
+# design, and coverage.sh SUBTRACTS what it names — so a line there removes a
+# requirement from the universe every later report is judged against.
+# docs/DESIGN.oracle.done.md holds what shipped, which is what a planner reads
+# to avoid rebuilding something. Both are exactly the kind of line that must not
+# be quietly reworded afterwards, and neither needed a second script: the rule
+# is identical, only the id shape differs. Copying a check to change one regex
+# is how two checks drift apart.
 R4="$WORK/repo4"
 init_repo "$R4"
 mkdir -p "$R4/docs"
-cat > "$R4/docs/DESIGN.oracle.done.md" <<'EOF'
-# Design decisions — retired requirements
+cat > "$R4/docs/DESIGN.oracle.retired.md" <<'EOF'
+# Design — retired requirements
 
-- `R1001` — retired by `OD-13`, replaced by `R1008` — 2026-08-20 — the cap was reversed
+- `R1001` — retired — 2026-08-20 — I reversed the cap; nothing should build it
 EOF
 git -C "$R4" add -A && git -C "$R4" commit -qm seed
 B4="$(git -C "$R4" rev-parse HEAD)"
-run4() { ( cd "$R4" && BASE_SHA="$B4" LEDGERS="docs/DESIGN.oracle.done.md" \
+run4() { ( cd "$R4" && BASE_SHA="$B4" \
+           LEDGERS="docs/DESIGN.oracle.done.md docs/DESIGN.oracle.retired.md" \
            ID_PATTERN="R[0-9]+" "$CHECK" 2>&1 ); }
 
 out="$(run4)"
 expect_rc "an untouched retirement log passes" 0 $?
 
 # Appending another retirement is free — a run files these as decisions land.
-cat >> "$R4/docs/DESIGN.oracle.done.md" <<'EOF'
-- `R1009` — retired by `OD-21`, no replacement — 2026-08-21 — the probe was dropped
+cat >> "$R4/docs/DESIGN.oracle.retired.md" <<'EOF'
+- `R1009` — retired — 2026-08-21 — the probe was dropped
 EOF
 git -C "$R4" add -A && git -C "$R4" commit -qm "Retire R1009"
 expect_rc "appending a retirement passes" 0 "$(run4 >/dev/null; echo $?)"
@@ -241,16 +244,16 @@ B4="$(git -C "$R4" rev-parse HEAD)"
 # Rewriting a landed one does not. Repointing a retirement at a different
 # replacement rewrites what the design says took the behaviour over, after
 # every plan built since was judged against it.
-sed -i 's/replaced by `R1008`/replaced by `R1010`/' "$R4/docs/DESIGN.oracle.done.md"
+sed -i 's/I reversed the cap/the oracle asked me to/' "$R4/docs/DESIGN.oracle.retired.md"
 git -C "$R4" add -A && git -C "$R4" commit -qm "Repoint R1001"
 out="$(run4)"
 expect_rc "rewriting a landed retirement fails" 1 $?
-expect_contains "and names the file" "$out" "docs/DESIGN.oracle.done.md"
+expect_contains "and names the file" "$out" "docs/DESIGN.oracle.retired.md"
 git -C "$R4" reset -q --hard HEAD~1
 
 # Un-retiring by deletion fails too: coverage.sh would silently put the
 # requirement back in the universe and the driver would plan it again.
-sed -i '/R1001/d' "$R4/docs/DESIGN.oracle.done.md"
+sed -i '/R1001/d' "$R4/docs/DESIGN.oracle.retired.md"
 git -C "$R4" add -A && git -C "$R4" commit -qm "Drop R1001"
 expect_rc "deleting a landed retirement fails" 1 "$(run4 >/dev/null; echo $?)"
 git -C "$R4" reset -q --hard HEAD~1

@@ -1,0 +1,54 @@
+# Retirement suggestions — for the owner — {{ project_name }}
+
+Requirements an agent thinks the owner may want to retire, and why. Append only.
+
+## Nothing reads this file
+
+Not `coverage.sh`. Not `deliver-phase.sh`. Not any gate, any workflow, or any
+other role's prompt. **The owner reads it, and nobody else.** A test in the
+template asserts exactly that: if any script or command file ever starts reading
+this path, CI fails.
+
+That is deliberate, and it is the whole design. A suggestion that something be
+retired must never be able to:
+
+- excuse a requirement from the coverage report,
+- stop a run, refuse a phase, or fail a check,
+- keep a planner from being dispatched for the requirement,
+- or change any decision that has landed.
+
+The reason is worth stating plainly, because it was the second design that was
+tried and it was wrong. If a suggestion excused a requirement from the work
+list, an agent could take work off its own list by suggesting the work be
+dropped — the exact thing
+[`DESIGN.oracle.retired.md`](../DESIGN.oracle.retired.md) exists to keep behind
+the owner. And if a suggestion could stop a run, it would be a veto with extra
+steps, held by the party that is supposed to keep working.
+
+So the requirement stays live and gets planned and built as normal until the
+owner says otherwise. The cost is real and accepted: work may go into something
+the owner later retires. That is cheaper than an unattended run that stalls at
+3am on a judgement nobody is awake to make.
+
+## Writing one
+
+Append. Say which id, what evidence points at it, what the requirement would be
+replaced by if anything, and what has already been built against it — the owner
+is deciding whether to undo work, so the size of that work is part of the
+question.
+
+    ## R<n> — <one line on why this might be wrong>
+
+    - **Date:** YYYY-MM-DD
+    - **Evidence:** ESC-<n>, BL-<n>
+    - **Replaced by:** R<m>, or "(nothing — the behaviour would simply go)"
+    - **Already built against it:** <plans and pull requests, or "nothing yet">
+    - **Why:** ...
+
+To act on one, the owner appends a line to
+[`DESIGN.oracle.retired.md`](../DESIGN.oracle.retired.md) on a pull request they
+open themselves. To reject one, they do nothing.
+
+---
+
+_(nothing yet)_

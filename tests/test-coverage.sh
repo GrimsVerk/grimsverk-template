@@ -355,26 +355,23 @@ out="$(run)"
 expect_contains "a plan whose slices name every claim is reported clean" "$out" \
   "Every claimed requirement is mentioned by a slice"
 
-# ------ ESC-200 / ESC-202: retirement lives in the ledger's OWN done-log
-# The oracle ledger is append-only, so a requirement a later decision reverses
-# cannot be retired in place: it stays on its page reading like a live
-# requirement forever. coverage.sh counted it as one — `NOT PLANNED` every run,
-# exit 1 every run, for a behaviour deliberately not being built — and the
-# delivery driver, which commissions planning for exactly that report's gaps,
-# dispatched a planner for the dead decision every cycle and could never walk
-# past it. A full unattended session per turn, observed live.
-#
-# docs/BACKLOG.md and docs/escapes.md each hit this and each got a done-log.
-# This is the same answer for the same reason, and the ledger was the last of
-# the three append-only machine-parsed files without one.
+# ---------------- ESC-203: retiring is the owner's, and it is the only subtraction
+# Both design documents are append-only, so a requirement that turns out wrong
+# cannot be edited away: it stays on its page reading like a live requirement
+# forever, and this script counted it as one. The driver commissions planning
+# for every gap reported here, so a permanent gap dispatched a planner for the
+# dead requirement every cycle — a full unattended session per turn, observed
+# live. docs/DESIGN.oracle.retired.md is what removes it, and the owner is the
+# only one who can land a line there.
 rm -f "$R/docs/plans/everything.md" "$R/docs/plans/oracle/nested.md"
 design <<'EOF'
 # Design
 ## 5. Requirements
 - **R1** — the first thing
 EOF
-oracle() { cat > "$R/docs/DESIGN.oracle.md"; }
-retired() { cat > "$R/docs/DESIGN.oracle.done.md"; }
+oracle()  { cat > "$R/docs/DESIGN.oracle.md"; }
+retired() { cat > "$R/docs/DESIGN.oracle.retired.md"; }
+shipped() { cat > "$R/docs/DESIGN.oracle.done.md"; }
 oracle <<'EOF'
 # Design decisions from evidence
 
@@ -391,52 +388,38 @@ oracle <<'EOF'
 - **Evidence:** BL-14
 - **Requirements added:** R1008
 - **Requirements superseded:** R1001
-- **Rationale:** the cap R1001 set is reversed. R1008 supersedes R1001.
 EOF
+plan everything "R1, R1000, R1008"
+
+# THE DECISION ALONE RETIRES NOTHING. This is the half two earlier designs got
+# wrong: a landed decision naming an id on `**Requirements superseded:**` says
+# what its new requirement replaces, and nothing more. Until the owner acts, the
+# requirement is still required, still a gap, and still gets planned — which is
+# what keeps an unattended run moving instead of waiting for a person.
+out="$(run)"
+expect_rc "a decision naming an id does not retire it" 1 $?
+expect_contains "the id is still a live gap" "$out" "R1001 NOT PLANNED"
+expect_contains "and still counts as work outstanding" "$out" "requirement(s) with no plan"
+
+# The owner's line is what removes it.
 retired <<'EOF'
 # Retired requirements
 
-- `R1001` — retired by `OD-2`, replaced by `R1008` — 2026-08-16 — the cap was reversed before anything built it
+- `R1001` — retired — 2026-08-20 — I reversed the cap; nothing should build it
 EOF
-plan everything "R1, R1000, R1008"
 out="$(run)"
-expect_rc "a retired requirement is not a gap" 0 $?
+expect_rc "the owner's line is what retires it" 0 $?
 expect_contains "the surviving requirements are the universe" "$out" "Covered: 3/3"
 expect_not_contains "the retired id is not reported as unplanned" "$out" "R1001 NOT PLANNED"
 
 # Subtracted, never silently: absence has to read as a decision.
 expect_contains "the retirement is reported as its own class" "$out" \
-  "Retired (no longer part of the design)"
-expect_contains "and names the decision and the replacement" "$out" \
-  "R1001 — retired by OD-2, replaced by R1008"
+  "Retired by the owner"
+expect_contains "and names the id and the date" "$out" "R1001 — retired 2026-08-20"
 
-# ---- the ledger is the AUTHORITY; the done-log is only the record of it
-# Both directions are errors, and the second is the one that matters: without
-# it a single appended line could delete a requirement from the universe, and
-# "every requirement is covered" would become true by emptying the design.
-retired <<'EOF'
-# Retired requirements
-
-_(nothing yet)_
-EOF
-out="$(run)"
-expect_rc "a decision retiring an id the done-log omits is an error" 2 $?
-expect_contains "names the id" "$out" "R1001"
-expect_contains "and the decision that retired it" "$out" "OD-2"
-expect_contains "and says where to write it" "$out" "docs/DESIGN.oracle.done.md"
-
-retired <<'EOF'
-# Retired requirements
-
-- `R1000` — retired by `OD-2`, no replacement — 2026-08-16 — I would simply like it gone
-- `R1001` — retired by `OD-2`, replaced by `R1008` — 2026-08-16 — the cap was reversed
-EOF
-out="$(run)"
-expect_rc "retiring an id no decision superseded is an error" 2 $?
-expect_contains "names the unbacked claim" "$out" "R1000"
-expect_contains "and says a decision has to do it" "$out" "no landed decision supersedes"
-
-# ---- a retirement with no replacement reads as a decision, not a dangling line
+# No cross-check against the ledger, in either direction. The owner may retire a
+# requirement no decision ever mentioned — it is their design — and a decision
+# that names one it wants gone is not owed a matching line.
 oracle <<'EOF'
 # Design decisions from evidence
 
@@ -446,95 +429,76 @@ oracle <<'EOF'
 - **Evidence:** ESC-1
 - **Requirements added:** R1000, R1001
 - **Requirements superseded:** (none)
-
-## OD-2 — the cap is dropped and nothing takes its place
-
-- **Date:** 2026-08-16
-- **Evidence:** BL-14
-- **Requirements added:** (none)
-- **Requirements superseded:** R1001
 EOF
 retired <<'EOF'
 # Retired requirements
 
-- `R1001` — retired by `OD-2`, no replacement — 2026-08-16 — the cap was reversed
+- `R1001` — retired — 2026-08-20 — I changed my mind, no decision needed
 EOF
 plan everything "R1, R1000"
 out="$(run)"
-expect_rc "a retirement with no replacement still leaves no gap" 0 $?
-expect_contains "and is reported without a dangling replacement" "$out" \
-  "R1001 — retired by OD-2, with no replacement"
+expect_rc "the owner may retire an id no decision mentions" 0 $?
+expect_contains "and it leaves the universe" "$out" "Covered: 2/2"
 
-# ---- a plan claiming a retired id is NOT credited with it
-# This is the over-claim the false gap used to pressure authors into: `covers:`
-# reads as "this plan delivers this id", and a retired id's behaviour is
-# deliberately not being built, so the claim is false the day it is written.
+# A plan claiming a retired id is NOT credited with it — that is the over-claim
+# the false gap used to pressure authors into writing.
 plan everything "R1, R1000, R1001"
 out="$(run)"
 expect_rc "a plan claiming a retired id does not fail the report" 0 $?
 expect_contains "the claim is reported by name" "$out" \
-  "R1001 (in everything) — retired by OD-2"
+  "R1001 (in everything) — retired by the owner"
 expect_not_contains "and is not mistaken for a typo" "$out" "doesn't define"
 expect_contains "the retired id is not credited as covered" "$out" "Covered: 2/2"
 
-# ---- the skeleton's own indented example retires nothing
-# Column-anchored, exactly like the ledger's `**Requirements added:**` rule and
-# for the identical reason: the shipped skeleton documents its format in an
-# INDENTED code block. A rule matching a backticked id anywhere would read that
-# example as a real retirement in every generated project on day one.
+# Column-anchored: the skeleton documents its own format in an INDENTED code
+# block, example id and all. A rule matching a backticked id anywhere would
+# retire a live requirement in every generated project on day one.
+oracle <<'EOF'
+# Design decisions from evidence
+
+## OD-1 — send whole transcripts rather than excerpts
+
+- **Date:** 2026-08-15
+- **Evidence:** ESC-1
+- **Requirements added:** R1000
+- **Requirements superseded:** (none)
+EOF
 retired <<'EOF'
 # Retired requirements
 
 ## Format
 
-    - `R1001` — retired by `OD-2`, replaced by `R1008` — YYYY-MM-DD — why it went
+    - `R1000` — retired — YYYY-MM-DD — why it is no longer required
 
 _(nothing yet)_
 EOF
 plan everything "R1, R1000"
 out="$(run)"
-expect_rc "the skeleton's indented example retires nothing" 2 $?
-expect_contains "so the real retirement is still demanded" "$out" "R1001"
+expect_rc "the skeleton's indented example retires nothing" 0 $?
+expect_contains "so the requirement is still live and still counted" "$out" "Covered: 2/2"
+expect_not_contains "and nothing is reported as retired" "$out" "Retired by the owner"
 
-# ---- DELIVERED is computed, never written down
-# A plan carries `status:` in its front matter and this reads it. Recording
-# delivery by hand as well would be two sources for one fact, and the two can
-# disagree — which is the shape of nearly every defect in this project's log.
-rm -f "$R/docs/DESIGN.oracle.md" "$R/docs/DESIGN.oracle.done.md"
-design <<'EOF'
-# Design
-## 5. Requirements
-- **R1** — the first thing
-- **R2** — the second thing
-EOF
-cat > "$R/docs/plans/everything.md" <<'EOF'
----
-slug: everything
-status: merged
-covers: [R1]
----
-# Everything — Plan
+# ---------------- DELIVERED: what actually shipped, which nothing recorded before
+# A planner could not tell what was already built. This report says what a plan
+# CLAIMS, and a plan's `status:` is set by hand — on a real project every plan
+# still read `draft` long after its work had merged. The driver writes this file
+# from merged pull requests instead.
+rm -f "$R/docs/DESIGN.oracle.retired.md"
+shipped <<'EOF'
+# Delivered
 
-## Slice 1 — the thing
-- **Delivers:** R1, observably
+- `R1` — delivered — 2026-08-20 — PR #99, plan `everything`
 EOF
-cat > "$R/docs/plans/later.md" <<'EOF'
----
-slug: later
-status: draft
-covers: [R2]
----
-# Later — Plan
-
-## Slice 1 — the other thing
-- **Delivers:** R2, observably
-EOF
+plan everything "R1, R1000"
 out="$(run)"
-expect_rc "a fully planned design still passes" 0 $?
-expect_contains "delivered is reported as its own class" "$out" "a merged plan claims it"
-expect_contains "and names the delivered id and its plan" "$out" "R1 — everything"
-expect_not_contains "a drafted plan's id is not delivered" "$out" "R2 — later"
+expect_rc "a delivered requirement does not change the coverage verdict" 0 $?
+expect_contains "delivered is reported as its own class" "$out" "built and merged"
+expect_contains "and names the id and what landed it" "$out" "R1 — PR #99, plan \`everything\`"
 expect_contains "and the count is stated" "$out" "Delivered: 1/2"
-rm -f "$R/docs/plans/later.md"
+
+# Delivered is NOT finished: a delivered requirement stays a requirement, and
+# stays in the universe. Nothing leaves the design because it was built.
+expect_contains "the delivered id is still counted as a requirement" "$out" "Covered: 2/2"
+rm -f "$R/docs/DESIGN.oracle.done.md" "$R/docs/DESIGN.oracle.md"
 
 summary
