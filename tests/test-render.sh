@@ -832,6 +832,27 @@ sys.exit(0 if 'claude -p' not in allow and 'codex exec' not in allow else 1)
     ok "$lang the backlog check runs in CI"
   else no "$lang the backlog check runs in CI"; fi
 
+  # The oracle ledger's own pair, and its enforcer (ESC-202). It was the last of
+  # the three append-only machine-parsed ledgers without a done-log, and the
+  # cost was a requirement that could never be retired: the decision stays on
+  # the ledger's page forever, so coverage.sh went on counting a reversed
+  # requirement as live, reported it unplanned on every run, and the delivery
+  # driver commissioned planning for it every cycle.
+  if [[ -f "$out/docs/DESIGN.oracle.done.md" ]]; then
+    ok "$lang docs/DESIGN.oracle.done.md ships"
+  else no "$lang docs/DESIGN.oracle.done.md ships"; fi
+  if grep -q 'DESIGN.oracle.done.md' "$out/.github/workflows/ci.yml"; then
+    ok "$lang the retirement log is held append-only in CI"
+  else no "$lang the retirement log is held append-only in CI"; fi
+  # A fresh project retires NOTHING. The skeleton documents its own format in an
+  # indented code block, example id and all, so a rule that matched a backticked
+  # id anywhere would delete a requirement from every generated project on day
+  # one — the identical trap the ledger's `**Requirements added:**` rule and the
+  # escapes ledger's `_ESC-<n>_` placeholder each dodge the same way.
+  if ( cd "$out" && .github/scripts/coverage.sh >/dev/null 2>&1 || [[ $? -ne 2 ]] ); then
+    ok "$lang a fresh render's retirement log retires nothing"
+  else no "$lang a fresh render's retirement log retires nothing"; fi
+
   # The setup a human has to do by hand should be reduced to typing values, so
   # the skeleton ships and the script writes the real file. Both halves are
   # asserted because setting one and not the other leaves the App looking

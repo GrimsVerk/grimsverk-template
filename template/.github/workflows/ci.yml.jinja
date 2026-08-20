@@ -105,6 +105,22 @@ jobs:
         run: |
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
             .github/scripts/backlog-append-only.sh
+      - name: Retired requirements are append-only
+        # docs/DESIGN.oracle.done.md is what lets an append-only ledger retire a
+        # requirement at all: the decision stays on its page forever, so the
+        # design's CURRENT shape has to be recorded somewhere else. coverage.sh
+        # subtracts what this file names, so a line here removes a requirement
+        # from the universe every later report is judged against — which is
+        # exactly the kind of line that must not be quietly reworded afterwards.
+        #
+        # Same script as the backlog's ledgers, with the id shape it carries.
+        # coverage.sh refuses a line here that no landed decision backs, so
+        # authority stays in the ledger and this file stays a record of it.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+          LEDGERS="docs/DESIGN.oracle.done.md" \
+          ID_PATTERN="R[0-9]+" \
+            .github/scripts/backlog-append-only.sh
       - name: Oracle decisions are append-only and evidence-backed
         # docs/DESIGN.oracle.md is the one design document an agent may write
         # unattended, so it is deliberately NOT behind CODEOWNERS — ownership
