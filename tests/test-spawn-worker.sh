@@ -49,6 +49,9 @@ case "${STUB_MODE:-commit}" in
   dirty)  echo "half-finished" > worker-artifact.txt ;;
   noop)   : ;;
   fail)   echo "engine blew up" >&2; exit 7 ;;
+  # The engine's allowance stop, verbatim from the live run that hit it
+  # (ESC-208): an ordinary exit 1 whose real cause is one line of output.
+  limit)  echo "You've hit your session limit · resets 3:20pm (UTC)"; exit 1 ;;
 esac
 exit 0
 STUB
@@ -192,10 +195,25 @@ expect_contains "and the plan linter" "$out" "Bash(.github/scripts/plan-lint.sh:
 expect_contains "a denied git switch no longer costs the commit" "$out" \
   "Bash(git switch:*)"
 
+# ESC-214: a grant that lets a role CREATE a file must cover removing it. The
+# steward abandoned scratch it could not delete — no rm, no mv in its grant —
+# and an uncommitted leftover makes the tree dirty, which is the state the
+# driver refuses to start on: one tidy-minded session blocked the next run.
+# The sandbox already scopes both commands to the worker's own worktree.
+expect_contains "the steward may remove a file it created (ESC-214)" "$out" \
+  "Bash(rm:*)"
+expect_contains "and rename one" "$out" "Bash(mv:*)"
+expect_contains "the oracle may clean up after itself too" \
+  "$(role_cmd oracle)" "Bash(rm:*)"
+expect_contains "and so may the default writing worker" \
+  "$("$SPAWN" --id x --prompt hi --engine claude --print-command 2>&1)" "Bash(rm:*)"
+
 for role in reviewer explore; do
   out="$(role_cmd "$role")"
   expect_not_contains "the $role cannot write" "$out" "Write("
   expect_not_contains "the $role cannot commit" "$out" "git commit"
+  # Read-only roles create nothing, so they get no cleanup grant (ESC-214).
+  expect_not_contains "the $role cannot delete" "$out" "Bash(rm"
 done
 expect_contains "explore runs at low effort" "$(role_cmd explore)" "low"
 
@@ -275,6 +293,28 @@ expect_contains "distinguishes it from writing nothing" "$out" "uncommitted path
 # ------------------------------------------------ the engine's own exit passes through
 out="$(STUB_MODE=fail spawn --id fail-1 --prompt "blow up" --engine codex)"
 expect_rc "an engine failure propagates its exit code" 7 $?
+
+# ------------------ ESC-208: an exhausted allowance is a documented stop
+# The first worker failure of a 21-iteration live run died on "You've hit your
+# session limit" and reported a generic exit=1 commits=0. The cause was one
+# grep away in the worker's own log and nobody was told to look, so a driver
+# would treat the engine's allowance as a retryable crash and dispatch
+# straight back into it. The script now reads its own log and reserves exit 75
+# (EX_TEMPFAIL) for this stop, with the classification on the result line the
+# driver actually collects.
+out="$(STUB_MODE=limit spawn --id limit-1 --prompt "hi" --engine codex)"
+expect_rc "an exhausted allowance exits 75, not the engine's own code" 75 $?
+expect_contains "and the result line says so" "$out" "stop=allowance"
+expect_contains "and the diagnosis calls it a stop, not a crash" "$out" \
+  "documented stop"
+expect_contains "the result line still reports the engine's own exit" "$out" "exit=1"
+
+# An ordinary engine failure stays an ordinary engine failure: its own exit
+# code, no allowance marker — a distinct code means nothing if everything
+# earns it.
+out="$(STUB_MODE=fail spawn --id limit-2 --prompt "hi" --engine codex)"
+expect_rc "a plain engine failure still propagates its own code" 7 $?
+expect_not_contains "and is not mislabelled as an allowance stop" "$out" "stop=allowance"
 
 # ----------------------------------------------------------------- preflight
 # `command -v` said the engine existed; it said nothing about whether the engine

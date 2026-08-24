@@ -14,7 +14,9 @@
 # and trusts none of what it does persist.
 #
 # Output: KEY=VALUE lines, PHASE first, then BASE (the base branch this
-# detection was scoped to). The phases, in detection priority:
+# detection was scoped to), then BASE_SHA (the commit of the checkout this
+# detection actually read — a phase reading nobody can date is a reading
+# nobody can check, ESC-215). The phases, in detection priority:
 #
 #   PHASE=WAIT PR=<n> HEADREF=<ref>   an open pipeline pull request TARGETING
 #                                     THIS RUN'S BASE BRANCH — nothing is
@@ -96,6 +98,35 @@ if [[ -z "${RUN_BASE:-}" ]]; then
   [[ -n "$RUN_BASE" ]] || RUN_BASE="$(git branch --show-current)"
 fi
 
+# THE READING IS DATED, AND A STALE CHECKOUT SAYS SO OUT LOUD (ESC-215). This
+# detector is only ever as current as the checkout it runs in, and nothing in
+# its output used to say which commit that was — so a run on a tree three
+# commits behind its remote produced an honest reading of a stale world, and
+# the reading was reported onward as though it described the real base. A
+# phase reading nobody can date is a reading nobody can check. So:
+#   - every report below carries BASE_SHA= — the commit this detection read —
+#     beside its BASE= line (the driver's KEY=VALUE parser ignores keys it
+#     does not know, so the extra line costs nothing);
+#   - a checkout behind its remote-tracking ref gets a loud warning first, on
+#     STDERR so the KEY=VALUE contract on stdout stays clean. The check is a
+#     cheap rev-list count, guarded: a branch with no upstream (a fresh
+#     repository, a detached head, a test fixture) skips it silently rather
+#     than failing the detection.
+BASE_SHA="$(git rev-parse --verify HEAD 2>/dev/null || echo unknown)"
+emit_base() {
+  printf 'BASE=%s\n' "$RUN_BASE"
+  echo "BASE_SHA=$BASE_SHA"
+}
+if UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+  BEHIND="$(git rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
+  if [[ "$BEHIND" -gt 0 ]]; then
+    {
+      echo "deliver-phase: WARNING — this checkout is $BEHIND commit(s) BEHIND $UPSTREAM."
+      echo "deliver-phase: the phase below describes $BASE_SHA, not the remote tip. Pull the base branch before trusting it."
+    } >&2
+  fi
+fi
+
 # REST, never GraphQL, for every API read this script makes. A hosted web
 # session's egress proxy serves REST plus only a pinned set of review GraphQL
 # operations — `gh pr list` is GraphQL, so on that platform it dies with an
@@ -120,7 +151,7 @@ OPEN_PR="$("$GH" api "repos/$REPO/pulls?state=open&base=$RUN_BASE&per_page=30" \
   --jq '.[0] | "\(.number) \(.head.ref)"' 2>/dev/null || true)"
 if [[ -n "$OPEN_PR" && "$OPEN_PR" != "null null" ]]; then
   echo "PHASE=WAIT"
-  echo "BASE=$RUN_BASE"
+  emit_base
   echo "PR=${OPEN_PR%% *}"
   echo "HEADREF=${OPEN_PR#* }"
   exit 0
@@ -160,23 +191,44 @@ CLOSED_IDS="$(closed)"
 is_closed() { grep -qxF "$1" <<<"$CLOSED_IDS"; }
 
 # --------------------------------- 2. HIGH uncertainties with no ruling yet?
-# Items in the backlog's uncertainties section: an id plus the word HIGH on
-# the item's first line. A HIGH uncertainty blocks planning by design — it is
-# the one guess the planner was not allowed to proceed on.
+# Items in the backlog's uncertainties section. A HIGH uncertainty blocks
+# planning by design — it is the one guess the planner was not allowed to
+# proceed on.
+#
+# THE CLASSIFICATION IS MATCHED ANYWHERE IN THE ITEM'S BLOCK — from the list
+# line that opens it (`- **BL-<n>** …`) to the line that opens the next item
+# or ends the section — NOT only on its first line (ESC-209). The
+# first-line-only read shipped, and no real entry ever satisfied it: every
+# worker opens the item with the question and puts `**HIGH**:` in the body,
+# where the reasoning for the classification belongs. So this branch had
+# never fired once on a live run — every blocked question reached the oracle
+# through the section-3 catch-all instead, indistinguishable from an unread
+# escape, and REASON=uncertainties was decorative. A check that silently does
+# nothing is the exact shape this template distrusts everywhere else.
 UNRULED=""
 if [[ -f "$BACKLOG" ]]; then
-  while IFS= read -r line; do
-    id="$(grep -oE 'BL-[0-9]+' <<<"$line" | head -1 || true)"
+  while IFS= read -r id; do
     [[ -n "$id" ]] || continue
-    grep -qE '\bHIGH\b' <<<"$line" || continue
     is_cited "$id" && continue
     UNRULED="$UNRULED $id"
-  done < <(awk '/^## Uncertainties awaiting oracle ruling/{insec=1; next}
-                insec && /^## /{insec=0} insec' "$BACKLOG")
+  done < <(awk '
+    /^## Uncertainties awaiting oracle ruling/ { insec=1; next }
+    insec && /^## / { insec=0 }
+    !insec { next }
+    # A new item: a list line carrying a BL id. Everything up to the next such
+    # line belongs to this item, so a HIGH in item N+1 never marks item N.
+    /^- / && match($0, /BL-[0-9]+/) {
+      if (id != "" && high) print id
+      id = substr($0, RSTART, RLENGTH); high = 0
+    }
+    # HIGH as a word, anywhere in the block — `**HIGH**:` mid-body included.
+    id != "" && /(^|[^A-Za-z0-9_])HIGH([^A-Za-z0-9_]|$)/ { high = 1 }
+    END { if (id != "" && high) print id }
+  ' "$BACKLOG")
 fi
 if [[ -n "${UNRULED# }" ]]; then
   echo "PHASE=ORACLE"
-  echo "BASE=$RUN_BASE"
+  emit_base
   echo "REASON=uncertainties"
   echo "UNRULED=${UNRULED# }"
   exit 0
@@ -202,7 +254,7 @@ done < "$IDS_TMP"
 rm -f "$IDS_TMP"
 if [[ -n "${UNCITED# }" ]]; then
   echo "PHASE=ORACLE"
-  echo "BASE=$RUN_BASE"
+  emit_base
   echo "REASON=evidence"
   echo "UNCITED=${UNCITED# }"
   exit 0
@@ -214,7 +266,7 @@ COV_OUT="$(.github/scripts/coverage.sh 2>&1)" || COV_RC=$?
 case "$COV_RC" in
   2)
     echo "PHASE=SETUP"
-    echo "BASE=$RUN_BASE"
+    emit_base
     echo "REASON=$(head -1 <<<"$COV_OUT")"
     exit 0 ;;
   1)
@@ -238,12 +290,12 @@ case "$COV_RC" in
     done
     if [[ -n "${STEWARD_ODS# }" ]]; then
       echo "PHASE=STEWARD"
-      echo "BASE=$RUN_BASE"
+      emit_base
       echo "ODS=${STEWARD_ODS# }"
       exit 0
     fi
     echo "PHASE=PLAN"
-    echo "BASE=$RUN_BASE"
+    emit_base
     echo "REQS=${PLAN_REQS# }"
     exit 0 ;;
 esac
@@ -318,7 +370,7 @@ while IFS= read -r f; do
   # `feat/<slug-as-a-substring-of-a-different-name>`.
   if ! grep -qE "^feat/${slug}([/-][^/]*)?$" <<<"$MERGED_REFS"; then
     echo "PHASE=ORCHESTRATE"
-    echo "BASE=$RUN_BASE"
+    emit_base
     echo "SLUG=$slug"
     exit 0
   fi
@@ -334,7 +386,7 @@ done < <(find "$PLANS_DIR" -name '*.md' 2>/dev/null | sort)
 # put the loop in charge of deciding a criterion is unmeetable, which is exactly
 # the judgement docs/acceptance.md exists to keep away from the pipeline.
 echo "PHASE=ACCEPTANCE"
-echo "BASE=$RUN_BASE"
+emit_base
 FAILING=""
 if [[ -d "$ACCEPTANCE_DIR" ]]; then
   while IFS= read -r s; do

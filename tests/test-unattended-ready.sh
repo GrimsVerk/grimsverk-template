@@ -347,4 +347,66 @@ ready_env
 out="$(run)"; expect_rc "a clean tree still passes" 0 $?
 expect_contains "and says the debris check ran" "$out" "no leftover worktrees"
 
+# --------------------------------------------------- ESC-207: --start/--health
+# Readiness was designed as a START check, and the delivery loop re-ran it at
+# every wake as a health check. Two start-time refusals misfired there,
+# observed live on a real project: the open-PR refusal (ESC-72) fired on the
+# run's OWN pipeline pull request and said "merge or close it first" — advice
+# that has the driver destroy its own in-flight work — and the
+# leftover-worktree refusal (ESC-76) fired on a LIVE worker's worktree,
+# asserted "a previous run died mid-dispatch" as fact, and prescribed the
+# removal that would have deleted a plan while it was being written. --health
+# is the mid-run question: configuration still refuses, the run's own working
+# state does not. --start (the default) keeps the full start behaviour.
+run_health() { (cd "$R" && GH="$WORK/bin/gh" "$CHECK" --health 2>&1); }
+run_start()  { (cd "$R" && GH="$WORK/bin/gh" "$CHECK" --start  2>&1); }
+
+# An open pull request on the base, mid-run, is the pipeline working — the
+# detector calls it WAIT — so --health reports it as a normal state.
+ready_env
+export STUB_OPEN_ON_BASE="#120 docs/oracle-plan-od-7"
+out="$(run_health)"
+expect_rc "--health does not refuse on an open pull request (ESC-207)" 0 $?
+expect_contains "and reports it as the run working" "$out" "the pipeline working"
+expect_not_contains "and never tells the driver to destroy its own work" \
+  "$out" "Merge or close it first"
+unset STUB_OPEN_ON_BASE
+
+# The identical state still refuses a fresh START, exactly as before — the
+# explicit flag spells the default, so both spellings are pinned.
+ready_env
+export STUB_OPEN_ON_BASE="#42 template/v0.4.40"
+out="$(run_start)"
+expect_rc "--start (spelled out) still refuses on an open pull request" 1 $?
+expect_contains "with the unchanged start-time message" "$out" "Merge or close it first"
+unset STUB_OPEN_ON_BASE
+
+# A worktree that holds uncommitted work is, mid-run, a worker (possibly
+# RUNNING, exactly the live steward the refusal once fired on) — not debris.
+ready_env
+mkdir -p "$R/.worktrees/steward-od-7"
+echo "plan draft, mid-write" > "$R/.worktrees/steward-od-7/plan.md"
+out="$(run_health)"
+expect_rc "--health does not refuse on a worktree with uncommitted work (ESC-207)" 0 $?
+expect_contains "and says a worker may be running in it" "$out" "may be RUNNING"
+expect_contains "and names the live sign it saw" "$out" "uncommitted work"
+
+# The same worktree still refuses a START (the driver would refuse on it too),
+# and the message now states the OBSERVATION — a worktree exists — instead of
+# asserting a dead run as fact, and never prescribes bare removal.
+out="$(run_start)"
+expect_rc "--start still refuses on that worktree" 1 $?
+expect_contains "and names it" "$out" "steward-od-7"
+expect_contains "and still says to read before touching" "$out" "READ THEM FIRST"
+expect_not_contains "but no longer asserts a dead run as fact" \
+  "$out" "a previous run died mid-dispatch"
+expect_contains "it says a live worker leaves the same trace" "$out" "still RUNNING"
+expect_contains "and gates removal on what the reading shows" "$out" "Only after reading"
+rm -rf "$R/.worktrees"
+
+# The argument line still fails loudly on a typo, naming every mode.
+out="$( (cd "$R" && GH="$WORK/bin/gh" "$CHECK" --helth 2>&1) )"
+expect_rc "an unknown flag is rejected" 2 $?
+expect_contains "and the usage names the health mode" "$out" "--health"
+
 summary

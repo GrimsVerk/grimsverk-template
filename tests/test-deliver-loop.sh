@@ -53,7 +53,18 @@ case "$args" in
     echo "$args" >> "${GH_CHECKS_LOG:-/dev/null}"
     exit "${STUB_CHECKS_RC:-0}" ;;
   "pr checks "*)
-    printf 'lint\tfail\t1m\thttps://x\nreview\tpass\t2m\thttps://y\n' ;;
+    # STUB_FAILING names the failing check, so a test can manufacture a red
+    # check that is terminal for an agent (ESC-206) as well as the default
+    # fixable lint failure.
+    if [[ -n "${STUB_FAILING:-}" ]]; then
+      printf '%s\tfail\t1m\thttps://x\nreview\tpass\t2m\thttps://y\n' "$STUB_FAILING"
+    else
+      printf 'lint\tfail\t1m\thttps://x\nreview\tpass\t2m\thttps://y\n'
+    fi ;;
+  "pr view "*"--json files"*)
+    # The driver's ESC-206 probe: which files does the red pull request touch?
+    # STUB_PR_FILES supplies newline-separated paths; unset means none.
+    [[ -n "${STUB_PR_FILES:-}" ]] && printf '%s\n' "$STUB_PR_FILES" ;;
   "pr view "*)
     echo "${STUB_PR_STATE:-MERGED}" ;;
   "pr create "*)
@@ -1206,6 +1217,11 @@ rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"
 mkdir -p "$R/.claude/deliver-loop" "$R/.worktrees/leftover-worker"
 printf '# Delivery run 20260819T010203Z\n\n- 01:02:03Z dispatch oracle worker\n- 01:05:00Z the line before the kill\n' \
   > "$R/.claude/deliver-loop/run.md"
+# The dead run's own console, teed into the state dir while it lived (ESC-205).
+# The recovery must LAND this — it is the record that explains the death — not
+# overwrite it with its own few lines.
+printf 'deliver-loop: pull --ff-only failed; continuing on the local tree\n' \
+  > "$R/.claude/deliver-loop/console.log"
 : > "$WORK/cap/claude.land.log"
 : > "$WORK/cap/prcreate.log"
 out="$(land_only PR_CREATE_LOG="$WORK/cap/prcreate.log")"
@@ -1219,6 +1235,11 @@ expect_contains "carrying the killed run's last lines" "$landed" \
   "the line before the kill"
 expect_contains "with an honest post-mortem marker" "$landed" "Landed post-mortem"
 expect_not_contains "and no invented exit code" "$landed" "with exit code"
+# ESC-205: the console log that used to die in /tmp lands beside the report —
+# it is the one artifact carrying the line that explains a failed evidence sync.
+conlanded="$(git -C "$R" show "$landref:docs/runs/20260819T010203Z/console.log" 2>/dev/null)"
+expect_contains "the dead run's console log lands beside run.md (ESC-205)" \
+  "$conlanded" "pull --ff-only failed; continuing on the local tree"
 expect_contains "the pull request is opened for it" "$(cat "$WORK/cap/prcreate.log")" \
   "--head $landref"
 if [[ -s "$WORK/cap/claude.land.log" ]]; then
@@ -1315,6 +1336,11 @@ git -C "$R" for-each-ref --format='%(refname:short)' 'refs/heads/docs/run-*' \
 mkdir -p "$R/.claude/deliver-loop"
 printf '# Delivery run OLDRUN\n\n- 00:00:00Z the run that never landed\n' \
   > "$R/.claude/deliver-loop/run.md"
+# The dead run's console rides the same rotation as its report buffer (ESC-205):
+# set aside under the dead run's own id, landed under unlanded/, never mixed
+# into the next run's console.
+printf 'console of the run that never landed\n' \
+  > "$R/.claude/deliver-loop/console.log"
 out="$(run_loop CLAUDE_LOG=/dev/null SESSION_TIMEOUT=30 -- --max-iterations 1)"
 runref="$(git -C "$R" for-each-ref --format='%(refname:short)' 'refs/heads/docs/run-*' | sort | tail -1)"
 runid="${runref#docs/run-}"
@@ -1325,6 +1351,19 @@ expect_not_contains "the landed report carries only its own run" "$report" \
 unlanded="$(git -C "$R" show "$runref:docs/runs/$runid/unlanded/unlanded-OLDRUN.md" 2>/dev/null)"
 expect_contains "the killed run's buffer is landed beside it, labeled" "$unlanded" \
   "the run that never landed"
+# ESC-205, the live-run half: this run's OWN console is teed into the state dir
+# and lands as docs/runs/<id>/console.log — the driver's account of itself
+# (run.md) and what actually happened (the console) land together.
+conlog="$(git -C "$R" show "$runref:docs/runs/$runid/console.log" 2>/dev/null)"
+expect_contains "the driver's own console log lands beside the report (ESC-205)" \
+  "$conlog" "iteration 1: phase"
+expect_contains "including the banner only the console used to carry" \
+  "$conlog" "THIS RUN'S BASE BRANCH"
+expect_not_contains "and carries only THIS run's console" \
+  "$conlog" "console of the run that never landed"
+oldcon="$(git -C "$R" show "$runref:docs/runs/$runid/unlanded/unlanded-OLDRUN-console.log" 2>/dev/null)"
+expect_contains "the killed run's console is landed beside it, labeled (ESC-205)" \
+  "$oldcon" "console of the run that never landed"
 if [[ -s "$R/.claude/deliver-loop/run.md" ]]; then
   no "a landed buffer is cleared" "the buffer still has content after a successful landing"
 else
@@ -1335,5 +1374,171 @@ if compgen -G "$R/.claude/deliver-loop/unlanded-*.md" >/dev/null 2>&1; then
 else
   ok "a landed unlanded file is cleared too"
 fi
+
+# ------------------------- ESC-206: failures no fix session can ever fix
+# The driver spent three model-funded fix sessions on a pull request whose
+# failing check said, in its own text, that the fix was a different HUMAN
+# opening the pull request — owner-authored.sh fails identically on every
+# retry, and the fix session it got dispatched anyway deleted the owner's
+# change to get green (the wrong half to keep). A terminal-for-the-agent
+# failure stops on the FIRST strike, as a documented stop (exit 4, blocked on
+# the owner), with no session dispatched.
+reset_pr_run
+: > "$WORK/cap/claude.log"
+out="$(run_loop STUB_OPEN_PR="9 feat/notes" STUB_CHECKS_RC=8 \
+        STUB_FAILING="owner-authored" WAIT_TIMEOUT=60 SESSION_TIMEOUT=60 --)"
+expect_rc "a red owner-authored check stops on the FIRST strike (ESC-206)" 4 $?
+expect_contains "and names owner action as the remedy" "$out" "remedy is OWNER action"
+if grep -q '^-p ' "$WORK/cap/claude.log"; then
+  no "and not one fix session is dispatched" "$(head -c 200 "$WORK/cap/claude.log")"
+else ok "and not one fix session is dispatched"; fi
+
+# The gate here runs as a STEP inside the `plan` check, so the check NAME can
+# say nothing — the classifier's other half reads which files the pull request
+# touches. A red check on a PR carrying docs/DESIGN.md can only go green when
+# the OWNER opens the pull request, whatever the check is called.
+reset_pr_run
+: > "$WORK/cap/claude.log"
+out="$(run_loop STUB_OPEN_PR="9 feat/notes" STUB_CHECKS_RC=8 \
+        STUB_PR_FILES="docs/DESIGN.md" WAIT_TIMEOUT=60 SESSION_TIMEOUT=60 --)"
+expect_rc "a red check on a PR touching docs/DESIGN.md is terminal too" 4 $?
+if grep -q '^-p ' "$WORK/cap/claude.log"; then
+  no "and no fix session gets to edit around the owner's document" \
+    "$(head -c 200 "$WORK/cap/claude.log")"
+else ok "and no fix session gets to edit around the owner's document"; fi
+
+# The classifier must not over-reach: docs/DESIGN.oracle.md is deliberately
+# NOT owner-landed, so an ordinary failure there keeps its three strikes and
+# its fix sessions.
+reset_pr_run
+: > "$WORK/cap/claude.log"
+out="$(run_loop STUB_OPEN_PR="9 feat/notes" STUB_CHECKS_RC=8 \
+        STUB_PR_FILES="docs/DESIGN.oracle.md" WAIT_TIMEOUT=60 SESSION_TIMEOUT=60 --)"
+expect_rc "an unowned document keeps the ordinary three-strike path" 3 $?
+if [[ "$(grep -c '^-p ' "$WORK/cap/claude.log")" == "2" ]]; then
+  ok "and its two fix sessions still run"
+else no "and its two fix sessions still run" \
+  "$(grep -c '^-p ' "$WORK/cap/claude.log") sessions"; fi
+
+# ------------------- ESC-208: the engine's allowance, exhausted mid-run
+# The first worker failure of a 21-iteration run was `engine exited 1` with
+# the real cause seven lines deep in the worker's log: "You've hit your
+# session limit". The `|| true` on every dispatch meant the loop would come
+# round and send the next worker straight into the same exhausted allowance,
+# forever, with no signature counted and no stop (anvil web F21). The
+# interface: spawn-worker exits 75 (EX_TEMPFAIL) and/or prints
+# `WORKER_ALLOWANCE_EXHAUSTED id=<id> resets=<time>`; either signal alone
+# stops the run as a documented stop — exit 6, the spent-allowance code.
+reset_pr_run
+git -C "$R" for-each-ref --format='%(refname:short)' 'refs/heads/docs/run-*' \
+  | while read -r b; do git -C "$R" branch -qD "$b" 2>/dev/null || true; done
+cat > "$WORK/bin/spawn-worker-allowance" <<'STUB'
+#!/usr/bin/env bash
+id=""; while [[ $# -gt 0 ]]; do [[ "$1" == "--id" ]] && id="$2"; shift; done
+echo "WORKER_RESULT id=$id branch=worker/$id engine=claude exit=1 commits=0"
+echo "spawn-worker[$id]: engine allowance exhausted (You've hit your session limit)"
+echo "WORKER_ALLOWANCE_EXHAUSTED id=$id resets=3:20pm (UTC)"
+exit 75
+STUB
+chmod +x "$WORK/bin/spawn-worker-allowance"
+out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-allowance" \
+        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
+expect_rc "an exhausted engine allowance is a documented stop, not a retry (ESC-208)" 6 $?
+expect_contains "and the stop names the allowance, not a bare exit code" \
+  "$out" "usage allowance"
+expect_contains "and carries the reset time the worker reported" \
+  "$out" "resets 3:20pm (UTC)"
+disp="$(grep -c "dispatch oracle worker" <<<"$out")"
+if [[ "$disp" -eq 1 ]]; then
+  ok "exactly one dispatch — never a re-dispatch into the exhausted allowance"
+else no "exactly one dispatch — never a re-dispatch into the exhausted allowance" \
+  "$disp dispatches"; fi
+landref="$(git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' | sort | tail -1)"
+landed="$(git -C "$R" show "$landref:$(git -C "$R" ls-tree -r --name-only "$landref" \
+  | grep -m1 'docs/runs/.*/run\.md')" 2>/dev/null)"
+expect_contains "the landed report records it as a spent allowance (ESC-75 convention)" \
+  "$landed" "with exit code 6:"
+expect_contains "and says whose allowance it was" "$landed" "engine's usage allowance"
+
+# Either half of the interface alone must be enough: an exit code with no
+# marker line (75 is EX_TEMPFAIL, colliding with none of spawn-worker's
+# documented codes)...
+reset_pr_run
+cat > "$WORK/bin/spawn-worker-allowance-code" <<'STUB'
+#!/usr/bin/env bash
+echo "spawn-worker[x]: engine exited 1"
+exit 75
+STUB
+chmod +x "$WORK/bin/spawn-worker-allowance-code"
+out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-allowance-code" \
+        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
+expect_rc "the exit code alone stops the run (ESC-208)" 6 $?
+
+# ...and a marker line with an ordinary exit code.
+reset_pr_run
+cat > "$WORK/bin/spawn-worker-allowance-marker" <<'STUB'
+#!/usr/bin/env bash
+id=""; while [[ $# -gt 0 ]]; do [[ "$1" == "--id" ]] && id="$2"; shift; done
+echo "WORKER_ALLOWANCE_EXHAUSTED id=$id resets=unknown"
+exit 1
+STUB
+chmod +x "$WORK/bin/spawn-worker-allowance-marker"
+out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-allowance-marker" \
+        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
+expect_rc "the marker line alone stops the run too (ESC-208)" 6 $?
+
+# ------------- ESC-204: an evidence push is verified, never announced
+# The evidence trap said "landing this run's evidence" and the branch never
+# reached the remote — `git ls-remote` had no trace of it, and the whole
+# record of a 26-iteration run sat on one machine until an operator checked
+# by hand. The push is now read back from the remote and compared to the
+# local sha; anything short of a match is a LOUD failure — nonzero where the
+# run would otherwise claim success, and queued into the report buffer so the
+# failure itself reaches landed evidence.
+git -C "$R" switch -q main 2>/dev/null || true
+rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"
+mkdir -p "$R/.claude/deliver-loop"
+printf '# Delivery run 20260821T010203Z\n\n- 01:02:03Z evidence of a dead run\n' \
+  > "$R/.claude/deliver-loop/run.md"
+git -C "$R" remote set-url origin "$WORK/no-remote-here.git"
+out="$(land_only)"
+expect_rc "an unverified evidence push fails loudly, never silently (ESC-204)" 8 $?
+expect_contains "and says the branch is NOT on the remote" "$out" "NOT on the remote"
+expect_contains "and how to rescue it" "$out" "committed locally"
+expect_contains "and queues the failure for the NEXT landed evidence, not just the console" \
+  "$(cat "$R/.claude/deliver-loop/run.md" 2>/dev/null)" "EVIDENCE PUSH FAILED (ESC-204)"
+git -C "$R" remote set-url origin "$ORIGIN"
+git -C "$R" branch -qD docs/run-20260821T010203Z 2>/dev/null || true
+rm -rf "$R/.claude/deliver-loop"
+
+# The degraded state a failed push inherits — "pull --ff-only failed;
+# continuing on the local tree" — must reach the LANDED report, not only the
+# console that dies with the machine (the F31/F36 pair). Manufactured by
+# diverging local main from origin/main, which is exactly what makes a
+# --ff-only pull fail on a live run.
+reset_pr_run
+git -C "$R" for-each-ref --format='%(refname:short)' 'refs/heads/docs/run-*' \
+  | while read -r b; do git -C "$R" branch -qD "$b" 2>/dev/null || true; done
+DIVERGE="$WORK/diverge"; rm -rf "$DIVERGE"
+git clone -q "$ORIGIN" "$DIVERGE"
+git -C "$DIVERGE" config user.email t@e.i; git -C "$DIVERGE" config user.name T
+git -C "$DIVERGE" config commit.gpgsign false
+git -C "$DIVERGE" checkout -q -B main origin/main
+echo "the remote moved on" > "$DIVERGE/remote-moved.txt"
+git -C "$DIVERGE" add -A && git -C "$DIVERGE" commit -qm "remote moved"
+git -C "$DIVERGE" push -q origin main
+PRE_204="$(git -C "$R" rev-parse main)"
+echo "a local-only commit" > "$R/local-moved.txt"
+git -C "$R" add -A && git -C "$R" commit -qm "local moved — ff-only will refuse"
+out="$(run_loop DELIVER_SKIP_PULL=0 STUB_OPEN_PR="7 feat/notes" STUB_CHECKS_RC=0 \
+        STUB_PR_STATE=MERGED WAIT_TIMEOUT=5 -- --max-iterations 1)" || true
+landref="$(git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' | sort | tail -1)"
+landed="$(git -C "$R" show "$landref:$(git -C "$R" ls-tree -r --name-only "$landref" \
+  | grep -m1 'docs/runs/.*/run\.md')" 2>/dev/null)"
+expect_contains "a degraded sync is recorded IN the landed evidence (ESC-204)" \
+  "$landed" "SYNC DEGRADED (ESC-204)"
+expect_contains "counting the failures" "$landed" "pull --ff-only failed 1 time(s)"
+git -C "$R" switch -q main 2>/dev/null || true
+git -C "$R" reset -q --hard "$PRE_204"
 
 summary

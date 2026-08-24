@@ -237,3 +237,246 @@ The owner named the trade-off when giving the ruling: it is suboptimal, and it
 is preferred to blocking. If it produces real friction or waste, that is
 evidence for `docs/escapes.md` — including where the cause is the owner's own
 availability. Logged when it costs something, not in advance of it.
+
+## 2026-08-16 — Approximate upload dates, with a fixed slop constant
+
+The first real run kept 0 of 1215 videos: `classify` reads `upload_date`, which
+a flat channel listing never returns. Fixing that raised a real choice, because
+the listing's dates are bucketed to roughly mid-month and two different videos
+were observed sharing one timestamp.
+
+Options: fetch each video individually for an exact date (~1215 network calls
+instead of one), or accept the listing's approximate dates. Owner ruled:
+approximate, no per-video fetching.
+
+The boundary is therefore a **fixed constant, not a configuration lever** —
+owner's explicit wording — chosen so that anything uploaded from 2023-01-01
+onward is guaranteed to be included, accepting that some 2022 videos come along
+for the ride. Two months of slop, on the reasoning that the cutoff is a
+preference rather than a rule, and that a missed 2023 video is a real loss while
+an extra 2022 video costs only a little processing.
+
+## 2026-08-16 — A saturated video is sent whole, not as excerpts
+
+Excerpting around every keyword mention was found to multiply cost roughly
+fivefold on videos that mention boards constantly, because the windows overlap
+and the merged result approaches the whole transcript anyway.
+
+Owner ruled: measure, per video, the total characters of its excerpts against
+the characters of its full transcript. At **80% or more**, send the whole
+transcript and ask for a full review. Below that, send the excerpts as now.
+
+The feature is kept rather than abandoned — it earns its keep on videos that
+mention a board once in passing. The rule only removes the case where it stops
+paying: past that ratio you are buying excerpt overhead plus duplication to
+deliver nearly the whole text, and a model reads one continuous transcript
+better than overlapping fragments of it.
+
+## 2026-08-16 — Ten percent of the weekly limit, and nothing wasted on the way
+
+Owner set the budget for the whole extraction effort at **10% of their weekly
+subscription limits**. Two consequences ruled at the same time:
+
+- The agent cannot read those limits — no tool exposes them — so the ceiling is
+  enforced by owner readings before and after the calibration batch, and the
+  projection is calibrated against them. This is why `docs/DESIGN.md` §13 marks
+  that criterion owner-verified.
+- **If the estimate is wrong and the budget is exceeded, nothing already spent
+  may be lost.** Every model output is written as it is produced, and full
+  transcripts are kept rather than discarded after excerpting — they are already
+  downloaded. Overrunning the estimate should cost the overrun, never the work.
+
+## 2026-08-16 — Batch shape confirmed against the first real run
+
+Owner confirmed the design's staging with the numbers now known: run the first
+batch, produce a cost estimate from what it actually consumed, then 3–4 further
+batches, then reassess. Unchanged from the design's intent; recorded because it
+was re-affirmed after the corpus turned out to be 1215 videos rather than the
+500–1000 assumed while drafting.
+
+The entries below shipped with the template — rulings the template's owner made
+once so every generated project does not re-ask them. They bind here like any
+other entry: to change one for this project, supersede it.
+
+## 2026-08-16 — Waiting is mechanical, and belongs to the driver
+
+Resolves the open question `/deliver` step 4 used to carry (idle vs poll vs
+scheduled wake-up). The wait is not agentic: a **driver** — deterministic
+tooling, not a model — invokes one headless session per phase and waits between
+phases on `gh pr checks --watch`-style polling, so no model budget is spent
+watching CI. Run it locally (`.claude/scripts/deliver-loop.sh`) or from a
+Claude Code web session (`/deliver-loop`); the mode is chosen explicitly by
+which entry point you start. The exit condition stands as previously decided:
+wait until **no check is still pending**, never until the pull request is no
+longer open — a failing pull request never leaves the open state, so the second
+condition makes red indistinguishable from still-running.
+
+## 2026-08-16 — Mid-run authority: the design layer rules, the oracle rules it
+
+Plans derive only from the design layer. When new work surfaces mid-run, it
+enters through the chain — the oracle amends `docs/DESIGN.oracle.md` on its own
+pull request, a plan follows on its own pull request, then code — never
+directly. Uncertainties a plan raises are handled by risk class, judged by a
+contract test: **HIGH** if the candidate answers change slice boundaries,
+Signatures blocks, external formats or schemas, or anything expensive to
+reverse — and when unsure, that doubt itself makes it HIGH. High-risk: the
+planner files the question in `docs/BACKLOG.md` and waits for the oracle's
+ruling. Low-risk: the planner proceeds on a recorded default and the oracle
+reviews it next cycle. Attended runs keep the original behaviour: the owner
+rules. The owner steers unattended runs by editing `docs/VISION.md` and
+`docs/DESIGN.md`, and reviews at the end.
+
+## 2026-08-16 — Unattended runs act as a GitHub App, not as the owner
+
+A user PAT shares the owner's per-hour API budget with every tool acting as
+that user, and the built-in Actions token cannot trigger workflows from its own
+events — both were hit in practice. A GitHub App has its own rate-limit budget,
+its events fire workflows (so merged branches actually get deleted), and pull
+requests it opens are authored as the app, which makes "opened by the owner"
+(`.github/scripts/owner-authored.sh`) mean exactly that. Fallback when no App
+is configured: `AUTO_MERGE_TOKEN`, then the Actions token plus the nightly
+branch sweep.
+
+## 2026-08-16 — The budget ceiling is subscription percentage points, and it halts
+
+An unattended run stops — it does not degrade to a cheaper model or a smaller
+scope — when it has consumed its allowance, measured in percentage points of
+the owner's subscription rate limit from the run's start. Because that probe is
+best-effort, two hard backstops always also apply: a pull-request count and a
+wall-clock limit. A loop that quietly gets worse when it runs low is harder to
+diagnose than one that stops and says why.
+
+## 2026-08-18 — After a merge, the other open pull requests are updated for you
+
+Branch protection here requires branches to be up to date, so the moment one
+pull request merges every other open one becomes unmergeable however green it
+is. GitHub calls that `BEHIND`, and it is not a check — it never appears in the
+checks list, so the pull request shows a column of green ticks and simply does
+not merge. Auto-merge does not rescue it either.
+
+So `auto-merge.yml` updates them: on a merge, `gh pr update-branch` over every
+other open pull request in this repository. It **never fails** — a real conflict
+is reported and left for a human, not turned into a red check on a pull request
+that did nothing wrong — and it **will not run on the built-in Actions token**,
+because a push made with that token creates no workflow runs, so the branch
+would come up to date with its required checks permanently missing. That is
+worse than being behind. Configure the App (`scripts/setup-github.sh --app`);
+without it, the run summary says so and nothing is touched.
+
+## 2026-08-19 — Two credentials, total: the App, and the review token. No PATs.
+
+The owner's ruling, taken to reduce setup: a project configures exactly one
+GitHub credential — the App (`APP_ID` + `APP_PRIVATE_KEY`) — and one Anthropic
+credential — `CLAUDE_CODE_OAUTH_TOKEN` for the review gate. Everything GitHub
+needs beyond the built-in Actions token is minted from the App at use time:
+`template-sync` mints a read-only token scoped to the template repository
+(which is why the App must be installed there too), the driver mints its
+pull-request identity per request, and a web session mints `gh`'s token per
+turn. `TEMPLATE_TOKEN` and `AUTO_MERGE_TOKEN` are gone, deliberately without
+fallbacks — a fallback that must be set up defeats the point of having less to
+set up, PATs expire and fail every project at once, and a PAT acts as the
+owner, which hollows out `owner-authored.sh`. The App stays at exactly
+Contents RW, Pull requests RW, Checks RO: never Administration or Secrets, or
+the unattended driver could edit its own gates.
+
+<!-- Append project decisions below, newest at the bottom. -->
+
+## 2026-08-16 — The agent can read subscription usage after all
+
+The owner asked whether a shell command could reach `/usage`. It can, by two
+routes: `claude -p "/usage"` returns the readings headlessly, and on Omarchy
+`omarchy-agent-usage-claude --limits-only --force` returns the same limits as
+JSON without starting a session at all — so the reading itself costs nothing.
+
+This supersedes the claim made twice in this file and once in the design on the
+same day: that no tool exposed the subscription limits. It was an assumption
+stated as a fact, and it survived because nobody spent thirty seconds testing
+it. The error mattered in a specific direction — it turned an enforceable
+ceiling into an estimate to be checked by hand afterwards. The cap of the
+earlier entry can now be enforced from inside a run, and `docs/DESIGN.md` §13
+therefore treats that criterion as checkable by running a command rather than
+owner-only.
+
+Two limits, from the commands' own output: the figure is approximate, and it
+counts local sessions on this machine only — not other devices, not claude.ai.
+The owner's own figure stays the tiebreaker where the two disagree.
+
+## 2026-08-18 — The first unattended run may spend 35 percentage points
+
+The 10% ceiling of the earlier entry is the **standing** cap. For the first
+truly unattended run it is raised, once, to **35 percentage points of the weekly
+limit**. The owner's reason: the weekly window resets in a day or two, so
+unspent allowance is lost rather than saved.
+
+**It is a delta, not a level.** The measurement is the difference between a
+reading taken before the run starts and one taken after it stops — not the
+absolute figure the gauge shows, which already includes everything else spent
+this week. The driver takes it as `--budget-points 35`.
+
+**Two readers exist and both were tested on 2026-08-18.** They agree.
+
+- `omarchy-agent-usage-claude --limits-only --force` — JSON, ~0.3s, starts no
+  session and therefore costs nothing. **Prefer it**: point `BUDGET_PROBE_CMD`
+  at it and `.claude/scripts/budget-probe.sh` uses it instead of the paid path.
+- `claude -p "/usage"` — the fallback, and correct, but it starts a small
+  session per call, so every probe spends a little of the thing it measures.
+
+**One trap, recorded because it already misled a reader.** The omarchy JSON
+reports `percent` as a **fraction of one** — `0.35` means 35%, not 0.35%.
+`claude -p "/usage"` prints whole percents. `budget-probe.sh` normalises both
+(`v <= 1 ? v * 100 : v`) and emits whole points, which is the form to trust:
+
+    session=10 week=36 week_model=25 reset=Aug 20, 10:59am (Europe/Amsterdam)
+
+Both readings remain approximate and count local sessions on this machine only.
+
+## 2026-08-19 — Owner's standing ruling for the first unattended run
+
+Recorded from the owner, in their words, as the instruction this run operates
+under:
+
+> you will work endlessly and tirelessly until this project is done as is
+> already defined in these files. use the oracle if you run into places where
+> you would need my ruling, that is what the oracle is for, to be my second in
+> command.
+
+Three things follow, and they bind every session this run commissions:
+
+- **The design layer is the finish line.** "Done" means what the vision, the
+  design and its success criteria already say — not a new scope invented while
+  building. Nothing here authorises widening the work.
+- **The oracle is the escalation, not the owner.** A question that would
+  previously have stopped for a ruling is filed and ruled through the oracle
+  chain. Stopping to wait for the owner is the last resort, not the first.
+- **Bugs are dug into and fixed, not stepped around.** Each one is recorded, and
+  a defect belonging to the *template* is recorded separately in
+  `docs/template-bugs.md` so the fixes can be taken upstream after the run.
+  A fix applied here to a template-owned file is drift, and saying so is part of
+  logging it.
+
+## 2026-08-19 — Clustered excerpts, an uncapped whole-transcript path, and blanket backlog approval
+
+Owner's ruling, given in chat during the post-run review and recorded here
+because chat is not storage. Four parts:
+
+1. **OD-4 stands.** Its reasoning is correct; R1000's re-cut is kept. The
+   clustering language below is its formalization, not its reversal.
+2. **OD-5 is overruled on the cap.** The whole-transcript path is NOT capped
+   at the bundle token cap; R1001 is to be superseded. The lumpy-spend concern
+   it answered is handled where it arises instead: excerpt windows keep their
+   R5 sizes, but overlapping windows merge transitively into CLUSTERS. A
+   mention-dense video coalesces toward one cluster; a long stream that
+   mentions the board only at the start and the end yields two small clusters
+   and stays cheap. The 80% ratio (R28) is kept and computed from the re-cut
+   cluster characters: at or above it, the video is information-dense by
+   measurement, and paying for the whole transcript is V4's choice.
+3. **Why OD-5 went wrong, in the owner's reading:** the backlog items were
+   sitting unapproved, so the oracle treated BL-13 as "a logged proposal" it
+   could not adopt against an earlier ruling. All current backlog items
+   (BL-1 through BL-13) are approved by the owner as of this date — recorded
+   in `docs/BACKLOG.approved.md`.
+4. **Mechanics for the oracle:** supersede OD-5/R1001 next cycle citing this
+   entry and the owner's amended `docs/DESIGN.md` (R5/R28). A transcript
+   larger than one bundle's token cap is delivered across sequential bundles
+   rather than falling back to excerpts; the mechanics are the implementing
+   plan's to specify.
