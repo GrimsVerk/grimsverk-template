@@ -425,6 +425,17 @@ PYCHK
     if grep -qE '^[[:space:]]*if:.*secrets\.' "$op"
     then no "$lang open-pr.yml reads no secret in an if:" "$(grep -nE '^[[:space:]]*if:.*secrets\.' "$op")"
     else ok "$lang open-pr.yml reads no secret in an if:"; fi
+    # ESC-212: the merged marker persists on the base branch, so every branch
+    # cut from it inherits a complete, valid request for the PREVIOUS pull
+    # request — and head->base idempotence cannot catch that, because a new
+    # branch is a new head. The workflow must treat "the file exists" and
+    # "this push wrote it" as different questions, by reading the push
+    # payload's per-commit paths.
+    if grep -qF 'any(. == ".pr-request.json")' "$op" \
+       && grep -qF '"$GITHUB_EVENT_PATH"' "$op"
+    then ok "$lang open-pr.yml opens only when the push itself wrote the marker (ESC-212)"
+    else no "$lang open-pr.yml opens only when the push itself wrote the marker (ESC-212)" \
+      "a stale marker inherited from the base would reopen the previous pull request"; fi
   else
     no "$lang ships the open-pr workflow"
   fi
@@ -436,6 +447,40 @@ PYCHK
   if says "$out/.claude/commands/deliver-loop.md" "gh api user"
   then ok "$lang deliver-loop.md probes the credential with gh api user"
   else no "$lang deliver-loop.md probes the credential with gh api user"; fi
+  # ESC-211: the ESC-52 fix landed in the credential rule but not in step 2's
+  # preflight, which kept instructing the forbidden command by name for three
+  # releases — the file contradicted itself, and a driver following the step
+  # literally ran the one probe that lies on the hosted platform. Pin both
+  # halves: the preflight names the compliant probe, and the exact
+  # contradictory instruction cannot come back.
+  if says "$out/.claude/commands/deliver-loop.md" \
+    "**Preflight, first turn only:** confirm the credential established above with \`gh api user\`"
+  then ok "$lang deliver-loop.md preflight uses the probe the credential rule mandates (ESC-211)"
+  else no "$lang deliver-loop.md preflight uses the probe the credential rule mandates (ESC-211)"; fi
+  if says "$out/.claude/commands/deliver-loop.md" \
+    "**Preflight, first turn only:** \`gh auth status\`"
+  then no "$lang deliver-loop.md preflight no longer instructs gh auth status (ESC-211)"
+  else ok "$lang deliver-loop.md preflight no longer instructs gh auth status (ESC-211)"; fi
+  # ESC-210: the ESC-69 unattended contract existed only as a heredoc inside
+  # the LOCAL driver, so deliver-loop.md — the web frontend — told the driver
+  # to send "the addendum" while giving it nothing to send, and web rounds
+  # dispatched workers without the contract. The text is now embedded in the
+  # command file verbatim, and this check pins the two copies together: it
+  # extracts the heredoc from deliver-loop.sh, undoes the shell quoting, and
+  # requires the command file to carry it word for word (whitespace-collapsed,
+  # like every prose check here). Drift in either direction goes red.
+  addendum="$(sed -n "/^UNATTENDED_ADDENDUM='/,/'\$/p" "$out/.claude/scripts/deliver-loop.sh" \
+    | sed -e '1d' -e "s/'\"'\"'/'/g" -e "\$ s/'\$//")"
+  if [[ -n "$addendum" ]]; then
+    ok "$lang deliver-loop.sh still carries the UNATTENDED_ADDENDUM heredoc"
+    if says "$out/.claude/commands/deliver-loop.md" \
+      "$(printf '%s' "$addendum" | tr -s '[:space:]' ' ')"
+    then ok "$lang deliver-loop.md embeds the unattended contract verbatim (ESC-210)"
+    else no "$lang deliver-loop.md embeds the unattended contract verbatim (ESC-210)" \
+      "the shell heredoc and the command file's copy have drifted apart"; fi
+  else
+    no "$lang deliver-loop.sh still carries the UNATTENDED_ADDENDUM heredoc"
+  fi
   # ESC-61: a fresh render's escape ledger is empty, so a rendered GATED
   # document citing any ESC-<n> id cites an entry the project cannot have —
   # escape-refs.sh fails the very first pull request. Template-repo escape

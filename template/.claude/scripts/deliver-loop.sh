@@ -47,10 +47,15 @@
 #   3  the same failure signature three times — a pattern, not a blip
 #      (deliver.md step 5's rule, mechanised)
 #   4  blocked on the owner: a green pull request only the owner can merge
-#      (gate paths are CODEOWNERS-owned), reported rather than waited out
+#      (gate paths are CODEOWNERS-owned), reported rather than waited out — or
+#      a RED check whose only remedy is owner action (owner-authored and its
+#      kin), stopped on the FIRST strike instead of spending fix sessions on a
+#      failure no agent push can change (ESC-206)
 #   5  iteration limit, or the livelock guard
-#   6  allowance spent: the weekly percentage-point allowance, or a limit the
-#      owner set (--max-prs, --max-hours)
+#   6  allowance spent: the weekly percentage-point allowance, a limit the
+#      owner set (--max-prs, --max-hours), or the ENGINE's own usage allowance,
+#      reported exhausted by spawn-worker (ESC-208) — re-dispatching into an
+#      exhausted allowance fails identically every time
 #   7  UNDOCUMENTED STOP: the run ended without reaching any of the stops above
 #      — killed by a signal, its shell torn down, or a fall-through nobody
 #      foresaw. The report names the last thing that happened, including a
@@ -59,6 +64,13 @@
 #      exit code 0, the success code, with no reason given (anvil local F20).
 #      Success is a thing the driver has to EARN by reaching a stop that says
 #      its own name; it is never what is left over.
+#   8  EVIDENCE NOT LANDED: the run's evidence branch could not be VERIFIED on
+#      the remote — the push failed, or claimed success while `git ls-remote`
+#      never saw the ref move (ESC-204: a trap once announced the evidence
+#      landed while the branch existed on one machine only). The evidence is
+#      committed locally; push it by hand or re-run with --land-evidence. Only
+#      replaces a stop that would otherwise have reported SUCCESS — a run
+#      already failing keeps its own code, and the failure is still said.
 #
 # THE CEILING IS ASKED FOR, EVERY RUN. Nothing below has a default, because a
 # limit the owner did not choose is a limit they will not recognise when it
@@ -321,6 +333,32 @@ release_pidfile() {
   return 0
 }
 trap release_pidfile EXIT
+
+# THE DRIVER'S OWN CONSOLE IS EVIDENCE, AND IT USED TO DIE IN /tmp (ESC-205).
+# The landed record carried run.md, every worker log and every review payload —
+# and not the driver's own console, which is the one artifact that says what
+# the driver actually DID: the banner, the landing messages, and the line that
+# explained a failed evidence push (F31's cause survived only because an
+# operator copied /tmp by hand — F36). The report is the driver's account of
+# itself; the console is what happened, and the two differ exactly when
+# something went wrong. So wherever the operator pointed stdout, a copy is
+# teed into the state directory, and land_evidence() ships it to
+# docs/runs/<id>/console.log beside run.md at every stop — the same road the
+# report buffer already travels. A leftover console from a run killed too hard
+# for its EXIT landing to fire is set aside under the dead run's own id,
+# exactly like the report rotation below (ESC-44), and lands under unlanded/.
+# Gated like the pidfile: a dry run, a phase print and a --land-evidence
+# recovery record nothing of their own (the recovery LANDS the dead run's
+# console instead of overwriting it with its own few lines).
+if [[ "${PIDFILE_HELD:-0}" -eq 1 ]]; then
+  if [[ -s "$STATE_DIR/console.log" && -s "$STATE_DIR/run.md" ]]; then
+    PREV_CONSOLE="$(sed -n 's/^# Delivery run //p' "$STATE_DIR/run.md" | head -1)"
+    mv -f "$STATE_DIR/console.log" \
+       "$STATE_DIR/unlanded-${PREV_CONSOLE:-unknown}-console.log" 2>/dev/null || true
+  fi
+  : > "$STATE_DIR/console.log"
+  exec > >(tee -a "$STATE_DIR/console.log") 2>&1
+fi
 
 # The orchestrator session's reach. Explicit and on the command line: the
 # whitelist below is everything /orchestrate documents itself doing — spawn
@@ -655,6 +693,11 @@ LANDED=0
 # never what is left over.
 STOP_REASON=""
 LAST_WORKER_FAILURE=""
+# How many times this run degraded to "continuing on the local tree" (ESC-204).
+# The console line saying so was the only record explaining a later evidence
+# push that failed — and it died in /tmp. The count is carried into the LANDED
+# report at the stop, where the reader of the evidence actually looks.
+SYNC_DEGRADED=0
 stop() { # stop <exit-code> <one-line reason> — the only deliberate way out
   STOP_REASON="$2"
   exit "$1"
@@ -719,18 +762,42 @@ land_evidence() {
       echo "See .claude/scripts/deliver-loop.sh's header for what each exit code"
       echo "means. Every stop says why; none degrades silently."
     fi
+    # A SYNC DEGRADATION IS PART OF THE RECORD, NOT CONSOLE NOISE (ESC-204).
+    # "pull --ff-only failed; continuing on the local tree" was a console-only
+    # line — and it is the exact state in which the evidence push below
+    # inherits the same broken remote and fails too. Said here, at the stop,
+    # where the reader of the landed evidence actually looks.
+    if [[ "${SYNC_DEGRADED:-0}" -gt 0 ]]; then
+      echo
+      echo "SYNC DEGRADED (ESC-204): pull --ff-only failed ${SYNC_DEGRADED} time(s) during this"
+      echo "run and the driver continued on the local tree. The tree may be behind"
+      echo "the remote, and the evidence push inherits whatever broke the pull —"
+      echo "verify that docs/run-$RUN_ID$LANE actually reached origin."
+    fi
   } > "$RUN_DIR/run.md"
 
   # A previous run's set-aside buffer (the run-start rotation above) travels
   # with this run's evidence, under unlanded/ rather than inside this run's
-  # report — preserved, and labeled as what it is.
-  if compgen -G "$STATE_DIR/unlanded-*.md" >/dev/null 2>&1; then
+  # report — preserved, and labeled as what it is. The glob is unlanded-*, not
+  # unlanded-*.md, so a dead run's rotated CONSOLE log (ESC-205) rides along
+  # beside its rotated report.
+  if compgen -G "$STATE_DIR/unlanded-*" >/dev/null 2>&1; then
     mkdir -p "$RUN_DIR/unlanded"
-    cp "$STATE_DIR"/unlanded-*.md "$RUN_DIR/unlanded/" 2>/dev/null || true
+    cp "$STATE_DIR"/unlanded-* "$RUN_DIR/unlanded/" 2>/dev/null || true
   fi
 
   RUN_BASE="$RUN_BASE" .claude/scripts/collect-evidence.sh --run-dir "$RUN_DIR" \
     --since "$RUN_STARTED_AT" 2>&1 | sed 's/^/deliver-loop: /' || true
+
+  # THE DRIVER'S CONSOLE LOG LANDS BESIDE THE REPORT (ESC-205). Copied here,
+  # late, so it carries everything up to the landing itself; the landing's own
+  # lines keep appending to the state copy and reach the record through the
+  # next stop's rotation if this one fails. In --land-evidence mode this is the
+  # DEAD run's console — the tee above never starts for a recovery, so the file
+  # still holds what the dead run said, which is exactly what should land.
+  if [[ -s "$STATE_DIR/console.log" ]]; then
+    cp "$STATE_DIR/console.log" "$RUN_DIR/console.log" 2>/dev/null || true
+  fi
 
   # On a branch and a pull request, never straight onto the default branch:
   # the same branch discipline every other change in this repository obeys, and
@@ -792,9 +859,40 @@ land_evidence() {
       # the mirror image of ESC-44. Kept when the commit failed, because then
       # the buffer is still the only copy.
       : > "$STATE_DIR/run.md"
-      rm -f "$STATE_DIR"/unlanded-*.md 2>/dev/null
-      if ! git push -q origin "$ref" 2>/dev/null; then
-        echo "deliver-loop: could not push $ref — the evidence is committed locally."
+      rm -f "$STATE_DIR"/unlanded-* 2>/dev/null
+      # PUSHED MEANS VERIFIED ON THE REMOTE, NOT ANNOUNCED (ESC-204). This trap
+      # once reported a run's evidence landed while `git ls-remote` had never
+      # heard of the branch: an earlier `pull --ff-only failed; continuing on
+      # the local tree` was inherited by the push without a second complaint,
+      # and the whole record of a 26-iteration run sat on one machine, found
+      # only because an operator checked the remote by hand. So the push is not
+      # trusted to mean what it returned — the remote ref is read back and
+      # compared to the local sha, and anything short of a match fails LOUDLY:
+      # a clear console message, a note queued into the report buffer so the
+      # failure travels with the NEXT landed evidence, and exit code 8 when
+      # this run would otherwise have reported success. Announcing success
+      # while delivering nothing is worse than failing, because nobody looks.
+      local push_rc=0 pushed_ok="" want_sha="" have_sha=""
+      git push -q origin "$ref" 2>/dev/null || push_rc=$?
+      if [[ "$push_rc" -eq 0 ]]; then
+        want_sha="$(git rev-parse -q --verify "refs/heads/$ref" 2>/dev/null)"
+        have_sha="$(git ls-remote origin "refs/heads/$ref" 2>/dev/null | awk '{print $1}')"
+        [[ -n "$want_sha" && "$have_sha" == "$want_sha" ]] && pushed_ok=1
+      fi
+      if [[ -z "$pushed_ok" ]]; then
+        echo "deliver-loop: EVIDENCE PUSH FAILED — $ref is NOT on the remote (ESC-204)." >&2
+        echo "deliver-loop: the evidence is committed locally on $ref; push it by" >&2
+        echo "deliver-loop: hand (git push origin $ref) or re-run --land-evidence." >&2
+        { echo "# Delivery run $RUN_ID"
+          echo
+          echo "EVIDENCE PUSH FAILED (ESC-204): docs/run-$RUN_ID$LANE was committed"
+          echo "locally but could not be verified on the remote. Its evidence has NOT"
+          echo "landed anywhere durable — push the branch by hand."
+        } >> "$STATE_DIR/run.md"
+        # Success is earned (ESC-75): a run that could not land its own record
+        # did not succeed, whatever the loop's own stop said. A run already
+        # failing keeps its own code — the message above still fires.
+        [[ "$rc" -eq 0 ]] && FINAL_RC=8
       elif token="$("$APP_TOKEN_CMD" 2>/dev/null)" && [[ -n "$token" ]]; then
         GH_TOKEN="$token" "$GH" pr create --head "$ref" --base "$RUN_BASE" \
           --title "Run evidence for $RUN_ID" \
@@ -1028,6 +1126,12 @@ mechanical_pr() { # mechanical_pr <source-branch> <head-ref> <title>
 # grant correctly denies it), and once denied it addressed a person instead of
 # reporting to the machine that commissioned it. The marker alone did not say
 # so; now it does.
+#
+# DUPLICATED, ON PURPOSE (ESC-210): the web frontend cannot read this heredoc,
+# so `.claude/commands/deliver-loop.md` ("The unattended addendum") carries the
+# same text verbatim — the web rounds before it did dispatched with no contract
+# at all. `tests/test-render.sh` pins the two copies word-for-word; change them
+# together or the suite goes red.
 UNATTENDED_ADDENDUM='
 UNATTENDED CONTRACT — read this before you finish.
 - NOBODY IS WATCHING. This session is headless and commissioned by a script.
@@ -1052,7 +1156,36 @@ run_worker() { # run_worker <id> <role> <prompt> <docs-ref> <pr-title>
        --engine "$ENGINE" --base "$RUN_BASE" --prompt "$prompt" \
        > "$out_file" 2>&1 || wrc=$?
   if [[ "$wrc" -ne 0 ]]; then
-    cat "$out_file" >> "$STATE_DIR/run.md"; rm -f "$out_file"
+    cat "$out_file" >> "$STATE_DIR/run.md"
+    # THE ENGINE'S OWN ALLOWANCE IS EXHAUSTED — A DOCUMENTED STOP, NOT A RETRY
+    # (ESC-208, anvil web F21). A worker died with "You've hit your session
+    # limit" seven lines deep in its log, spawn-worker said only "engine
+    # exited 1", and the `|| true` on every dispatch meant this loop would
+    # come round and send the NEXT worker straight into the same exhausted
+    # allowance, forever, with no signature counted and no stop. The interface
+    # with spawn-worker.sh, kept deliberately simple — either signal alone is
+    # honoured, so a spawn-worker that manages only one still stops the loop:
+    #   - exit code 75 (EX_TEMPFAIL, "try again later" — colliding with none
+    #     of spawn-worker's documented codes: 0, 2, 3, 124, or the engine's own
+    #     small exits), and/or
+    #   - a line of its own in the output, beside WORKER_RESULT:
+    #         WORKER_ALLOWANCE_EXHAUSTED id=<id> resets=<rendered time>
+    #     (resets= is last on the line and may hold spaces, or say unknown).
+    # Today's spawn-worker.sh sends the FIRST signal: exit 75, with
+    # `stop=allowance` appended to its WORKER_RESULT line for the human
+    # reading the report. The marker line is the optional second channel a
+    # future spawner may prefer; nothing emits it yet.
+    # The stop goes through stop() with a named reason (ESC-75's convention):
+    # exit 6, the spent-allowance code, because that is exactly what this is —
+    # an allowance, just the engine's rather than one the owner set.
+    if [[ "$wrc" -eq 75 ]] || grep -q '^WORKER_ALLOWANCE_EXHAUSTED' "$out_file"; then
+      local resets
+      resets="$(sed -n 's/^WORKER_ALLOWANCE_EXHAUSTED .*resets=\(.*\)$/\1/p' "$out_file" | head -1)"
+      rm -f "$out_file"
+      log "the $role worker ($id) died on the engine's usage allowance${resets:+ (resets $resets)} — stopping; a re-dispatch would fail identically"
+      stop 6 "the engine's usage allowance is exhausted${resets:+ (resets $resets)} — not re-dispatching into it (ESC-208)"
+    fi
+    rm -f "$out_file"
     # NAME THE CAUSE (ESC-75). A worker whose engine died and a worker that ran
     # out of time are different problems with different answers, and if this run
     # is killed before it can stop on its own this sentence is the only account
@@ -1171,6 +1304,32 @@ wait_on_pr() { # wait_on_pr <number> <headref>
   # Red. Same signature three times is a pattern, not a blip.
   local failing sig count
   failing="$("$GH" pr checks "$pr" 2>/dev/null | awk -F'\t' '$2=="fail"{print $1}' | sort | tr '\n' ' ')"
+  # SOME RED CHECKS ARE TERMINAL FOR AN AGENT, AND GET NO FIX SESSION AT ALL
+  # (ESC-206). The driver spent three model-funded fix sessions on a pull
+  # request whose failure text said the remedy was not a code change but a
+  # different HUMAN opening the pull request: owner-authored.sh fails any PR
+  # touching an owner-landed document that the owner did not open, and it
+  # fails identically on every retry — worse, a fix session facing it tends to
+  # delete the owner's change to get green, which is the wrong half to keep.
+  # So the failure is classified before any session is dispatched, and a
+  # terminal one stops on the FIRST strike with a documented reason (exit 4,
+  # blocked on the owner) instead of burning three sessions to learn the same
+  # thing. Two classifiers, either one decides: a failing check NAMED for the
+  # owner-authored gate (a project may surface it as its own check); or the
+  # pull request touching a document only the owner may land — needed because
+  # here the gate runs as a STEP inside the `plan` check, so the check name
+  # alone says nothing.
+  local owner_terminal=""
+  case "$failing" in *owner-authored*|*owner_authored*) owner_terminal=1 ;; esac
+  if [[ -z "$owner_terminal" ]] \
+     && "$GH" pr view "$pr" --json files --jq '.files[].path' 2>/dev/null \
+        | grep -qxE 'docs/DESIGN\.md|docs/VISION\.md|docs/DESIGN\.oracle\.retired\.md'; then
+    owner_terminal=1
+  fi
+  if [[ -n "$owner_terminal" ]]; then
+    log "PR #$pr red (${failing:-unknown}) and the remedy is OWNER action — no fix session can change who opened a pull request (ESC-206); stopping on the first strike"
+    stop 4 "PR #$pr fails a check only the OWNER can fix (${failing:-unknown}) — a fix session cannot change who opened it"
+  fi
   sig="$(printf '%s|%s' "$headref" "$failing" | sha1sum | awk '{print $1}')"
   count="$(grep -cxF "$sig" "$SIG_FILE" || true)"
   echo "$sig" >> "$SIG_FILE"
@@ -1202,8 +1361,14 @@ while :; do
   fi
 
   if [[ "${DELIVER_SKIP_PULL:-0}" != "1" ]] && git remote get-url origin >/dev/null 2>&1; then
-    git pull -q --ff-only origin "$RUN_BASE" 2>/dev/null \
-      || log "pull --ff-only failed; continuing on the local tree"
+    if ! git pull -q --ff-only origin "$RUN_BASE" 2>/dev/null; then
+      # COUNTED, not merely said (ESC-204). This line was once the only record
+      # explaining why the run's evidence push later failed — and it lived on
+      # a console in /tmp. The count reaches the landed report at the stop, and
+      # the push itself is verified there rather than believed.
+      SYNC_DEGRADED=$((SYNC_DEGRADED + 1))
+      log "pull --ff-only failed; continuing on the local tree ($SYNC_DEGRADED so far this run)"
+    fi
   fi
 
   # The steering lever working is not an error: the owner edited the design
