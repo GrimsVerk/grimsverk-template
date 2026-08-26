@@ -37,9 +37,9 @@ two-lane comparison reached the same decisions from the same documents. None
 of that is rebuilt.
 
 The part that turns decisions into product — the delivery loop's *economy* —
-failed completely: across ~20 hours, four lanes, 1650 recorded events and
-roughly a hundred merged pull requests, **zero product source code survived on
-any branch**. The one feature slice that was built and merged (anvil web PR
+failed completely: across a full day, four lanes, 1650 recorded events and
+dozens of merged pull requests, **zero product source code survived on any
+branch**. The one feature slice that was built and merged (anvil web PR
 #30, +541 lines of product code) was merged under a broken gate, erased by a
 force-rebuild, and reachable today from zero refs. This is not a tuning
 problem in any one prompt. It is a structural property: the loop has a
@@ -98,6 +98,13 @@ decided (LOW items whose filer had "proceeded on the default" still got
 45–78-line rulings). (`backlog-lifecycle/analysis.md` "The answer";
 `SYNTHESIS.md` finding 7.)
 
+The code and the rules also disagree here, verified against this repository:
+`AGENTS.md` promises that a LOW uncertainty "proceeds on the recorded default
+and the oracle reviews it next cycle" — but `deliver-phase.sh` routes *any*
+uncited id to ORACLE ahead of every planning and build phase, so "next cycle"
+in practice means "before anything else happens". The prose describes the
+economy W1 proposes; the detector implements the one that failed.
+
 ### F-D. Rulings bound themselves to things that did not exist (five arms agree)
 
 mobo OD-6 ordered a fixture from "BL-8's measured 52-variant set" — present in
@@ -126,11 +133,23 @@ and had no mechanism to act on that knowledge.
 
 ### F-F. Delivery mechanics burned whole rounds (recorded tier)
 
-- Eight of nine anvil local rounds retired nothing **because the oracle's own
-  pull request never landed**: the same checks red three times, or
-  `gh pr create` failing six times in a row (round 3.2) — each failure
-  consuming a full dispatch, with no typed stop and no escalation path.
+- Eight of nine anvil local rounds retired nothing for what the lifecycle
+  analysis calls "a landing problem": the oracle's own pull request never
+  landed — the same checks red three times, or `gh pr create` failing six
+  times in a row (round 3.2), each failure consuming a full dispatch.
   (`backlog-lifecycle/analysis.md` §6, rounds 2.0–3.5.)
+- **The shipped driver has since grown typed stops** — exit 3 (same failure
+  signature three times), exit 4 (owner-action check, first strike, ESC-206),
+  exit 5 (two consecutive dispatches with no pull request, ESC-66) — and the
+  later ones demonstrably fired in round 3.6. **But the mobo livelock defeats
+  every one of them, at today's HEAD too**: each stuck STEWARD dispatch
+  *did* open a pull request (containing only a new backlog filing — PR #129,
+  "Plan for OD-5", "contains no plan and only the BL-22 filing itself"), so
+  `NO_PROGRESS` reset to zero every cycle, no check failed, and no signature
+  repeated. The guard that is actually missing keys on the *detector*, not
+  the dispatch: the same phase with the same scope emitted N times with no
+  closure event in between. (Verified against
+  `template/.claude/scripts/deliver-loop.sh` `note_dispatch_outcome()`.)
 - The three-strikes counter is not a bound: PR #133 consumed ≥4 fix dispatches
   before exit-3 (H004, confirmed).
 - The same OD dispatched twice produced two different outcomes at the same
@@ -284,6 +303,13 @@ reaches a merged feature slice within a bounded number of iterations, and
 that a ruling with no plan pulls a STEWARD dispatch before any new-evidence
 ORACLE dispatch.
 
+**The trade this makes, named.** Letting build outrank non-blocking evidence
+means a slice can be built against a design that a pending LOW item would
+have corrected. That risk is deliberate and bounded — the cost is one slice,
+reworkable, where the current arrangement's cost was the entire run — and it
+is the economy `AGENTS.md` already promises for LOW items. HIGH keeps its
+veto precisely so the unbounded version of this risk cannot happen.
+
 **Not changed.** The mid-run authority chain (oracle → plan → code, never
 sideways) stays exactly as is. This workstream changes *scheduling*, not
 authority.
@@ -318,11 +344,15 @@ to make "this does not exist yet" explicit and cheap, not to forbid it.
 
 **Change.**
 
-- **Supersession becomes effective.** `coverage.sh` (and every id-reader)
-  honours `**Requirements superseded:**`. Generalise it as a rule with a
-  test: *no write-only fields* — every field the ruling schema lets an agent
-  write is named by at least one script that reads it, checked mechanically
-  across the shipped scripts.
+- **Supersession becomes effective.** `coverage.sh`'s `ids_from()` collects
+  requirement ids from `**Requirements added:**` lines and nothing subtracts
+  the `**Requirements superseded:**` ones (verified at HEAD) — while
+  `oracle-decisions.sh` **requires** every decision to write that superseded
+  field. The schema mandates a write that no script reads; that is the
+  livelock's whole mechanism. Fix the reader, then generalise it as a rule
+  with a test: *no write-only fields* — every field the ruling schema
+  requires is named by at least one script that reads it, checked
+  mechanically across the shipped scripts.
 - **A brake the oracle can pull — scoped, not a run-stop.** The owner's
   standing rulings (synthesis R10/R11: the rate limit is the only default
   stop; anomalies are signals) are respected by making the brake *per
@@ -331,11 +361,13 @@ to make "this does not exist yet" explicit and cheap, not to forbid it.
   around it, and reports it loudly in `run.md`. Whether a full run-halt file
   should also exist is put to the owner as open question Q1 — it contradicts
   R10 as ruled, so it is not assumed here.
-- **A typed-stop taxonomy for repeated mechanical failure.** The same
-  failure signature N times (a `gh pr create` failure, the same check red on
-  the same PR) becomes a distinct stop with its evidence attached — never an
-  unbounded re-dispatch. The three-strikes counter gets a test that proves
-  it is actually a bound (H004 showed it is not).
+- **Complete the typed-stop taxonomy where F-F showed it leaks.** Exits 3, 4
+  and 5 already exist; what is missing is the guard the mobo livelock walked
+  through: the detector emitting the **same phase with the same scope** N
+  times with no closure event in between becomes its own typed stop, however
+  productive the dispatches look. And the three-strikes counter gets a test
+  that proves it is actually a bound (H004 showed ≥4 dispatches before it
+  fired).
 - **A surrender path for gate defects.** A generated project must not edit
   its gates — correct, keep it. Therefore when a typed stop's signature
   points at gate machinery, the driver's stop writes a mechanical
@@ -356,14 +388,20 @@ not a third dispatch.
 **Change.**
 
 - **The factory's own output is evidence.** Every merge the pipeline makes is
-  recorded in the run's `run.md` at merge time: PR number, merge SHA, files,
-  added/removed lines. (The vision already demands this for everything else:
-  "a change nothing can observe is a change nobody can evaluate.")
-- **No ref becomes unreachable by routine action.** Any sweep, force-rebuild
-  or lane reset first records the old tip under a preserved namespace
-  (`refs/` tag or equivalent); `sweep-branches.sh` refuses to drop an
-  unmerged tip that is not so preserved. PR #30 stays reachable under this
-  rule.
+  recorded at merge time with PR number, merge SHA, files and added/removed
+  lines. The local driver today logs only a one-line "PR #n merged", and the
+  web mode logs whatever the session types — which for PR #30 was nothing.
+  The structured merge record becomes a required event in the W5 stream, on
+  both drivers. (The vision already demands this: "a change nothing can
+  observe is a change nobody can evaluate.")
+- **No ref becomes unreachable by teardown.** `sweep-branches.sh` already
+  refuses to delete unmerged work — the loss went through a different door:
+  PR #30's merge landed on a run base branch that was later force-rebuilt,
+  which no guard covers. So: whenever work merges into a base that is not
+  the default branch, the driver tags the merge commit under a preserved
+  namespace; and any tooling this repository ships that resets or rebuilds a
+  base refuses unless the old tip is so preserved. PR #30 stays reachable
+  under this rule.
 - **Evidence parity across environments.** Worker transcripts, the driver
   console, and review payloads are committed into `docs/runs/<ts>/` on both
   the local and the web path, or the run says loudly which of them this
@@ -384,7 +422,9 @@ today's script.
 machine-readable event stream (`docs/runs/<ts>/events.jsonl`) with a frozen
 small schema: timestamp, base/lane, run id, iteration, phase, worker id,
 role, ids referenced, plan path, pr number, exit code, bytes written,
-verdict. Write-through at every transition (the post-mortem's own harness
+verdict, and the dispatched prompt (by committed path or hash — H034 showed
+the same OD dispatched twice yields different outcomes, and nothing recorded
+what either dispatch was actually asked). Write-through at every transition (the post-mortem's own harness
 proved that discipline survives kills). The rule for the schema is exactly
 the list of fields the hypothesis pass starved for: it could not join
 dispatches to PRs, rulings to bytes, or web anything to clock time. Hand-typed
@@ -405,13 +445,16 @@ machine layer under it.
 paraphrased — by every command file, gate script and document: the phase
 names, the verdict set, "uncertainty", "derivation" vs "guess", "HIGH",
 "escalation", "resolved", "artifact", the closure states W1 adds. The ruling
-schema is unified (one field set; HALT a kind, not a fork) and the vision
-citation gets an honest empty: "below the vision's altitude" becomes a
-legitimate, machine-recognisable value — and a triage signal that the
-question probably did not need the oracle at all, feeding the LOW fast-path
-below. Dispatch hygiene rides along: prompts by stdin, never argv; sizes
-tested (the 128 KB argv death); `state.json`-style caches lose to the
-filesystem on resume, by rule.
+schema is unified (one field set; HALT a kind, not a fork — today
+`oracle-decisions.sh` enforces two different field sets). The honest empty
+for the vision citation **already exists** — `(no vision statement decided
+this)` is a legitimate, machine-recognisable value at HEAD — so the new work
+is downstream of it: one qualitative arm found that rulings carrying it got
+*zero* "this escalation was needed" verdicts, so the value becomes a triage
+signal feeding the LOW fast-path below, not just a permitted spelling.
+Dispatch hygiene rides along: prompts by stdin, never argv; sizes tested
+(the 128 KB argv death); `state.json`-style caches lose to the filesystem on
+resume, by rule.
 
 **And the LOW fast-path, here because it is a vocabulary change as much as a
 mechanism:** an item filed "Risk: LOW — proceeded on the default" is closed
@@ -497,7 +540,7 @@ are the post-mortem's):
 | sessions burned on one repeated failure signature | 6 (`gh pr create`), 4 (PR #133) | ≤ typed-stop bound |
 | dispatch rows with null `pr_number` | 18 of 18 | 0 |
 | full rulings on LOW/defaulted items | dozens (per arms) | 0 (one-line closures) |
-| hypothesis-style questions answerable post-run | 17 of 40 | the W5 conformance suite |
+| hypothesis-style questions answerable post-run | 15 of 40 reached a verdict | the W5 conformance suite |
 
 **Cost note, honestly.** Stage 1 touches the most load-bearing script in the
 template (`deliver-phase.sh`) and the ruling schema. That is the point: the
@@ -548,9 +591,10 @@ to protect, which is why W7's fixture project should be drafted *with* Stage
 
 ## Appendix B — confidence notes
 
-The quantitative pass reached a verdict on 17 of 40 hypotheses (4 confirmed,
-11 falsified, 2 blocked, 23 inconclusive) — the inconclusive majority is
-itself finding F-H, and is why W5 ranks above everything except W1. The
+The quantitative pass reached a verdict on 15 of 40 hypotheses (4 confirmed,
+11 falsified; 2 more were blocked on missing data, 23 inconclusive) — the
+inconclusive majority is itself finding F-H, and is why W5 ranks above
+everything except W1. The
 qualitative arms disagreed on the *judgment* question (was an escalation
 warranted) by 1%–50% but agreed on every *structural* story this plan builds
 on: the four cascades of §1.2, the livelock, the resolution rate, the
@@ -558,3 +602,46 @@ authority rate. Claims in this plan lean only on the agreed layer and on the
 mechanically confirmed hypotheses; where a lead landed inconclusive (merge
 latency, batching, tier bias) this plan deliberately proposes measurement
 (W5) rather than change.
+
+## Appendix C — the verification pass, and what it changed
+
+After the first draft of this plan was committed, every code-level claim in
+it was re-checked against the shipped scripts at this branch's HEAD, and
+every headline number against the post-mortem files. Four things were wrong
+or too weak in the draft and are corrected above; they are recorded here
+because a plan that silently repairs itself is the exact shape this
+repository distrusts.
+
+1. **The draft proposed a typed-stop taxonomy the driver already largely
+   has.** `deliver-loop.sh` at HEAD carries exit 3 (same failure signature
+   three times), exit 4 (owner-action red check, first strike), and exit 5
+   (two consecutive no-PR dispatches). The correction made the finding
+   *sharper*, not moot: the mobo livelock defeats all three at today's HEAD,
+   because its stuck dispatches each opened a pull request and so reset the
+   no-progress counter every cycle. W3 now names the guard that is actually
+   missing — detector-state repetition — instead of re-proposing the ones
+   that exist. (F-F, W3.)
+2. **The draft proposed the `(no vision statement decided this)` opt-out as
+   new.** It exists at HEAD, alternatives-obligation and all. W6 now builds
+   on it (as a triage signal) rather than inventing it. (W6.)
+3. **The draft implied `sweep-branches.sh` could drop unmerged work.** It
+   refuses to, by design. PR #30 was lost through a lane force-rebuild —
+   a path no guard covers — so W4's rule is now aimed at base-branch
+   teardown and at tagging merges into non-default bases, which is the door
+   the work actually left through. (F-G, W4.)
+4. **A count error:** 15 of 40 hypotheses reached a verdict, not 17.
+
+Two claims came out of the re-check *stronger* than drafted, and the text
+above now says so: `oracle-decisions.sh` **requires** every decision to
+write the `Requirements superseded` field that no shipped script reads —
+the livelock is a mandated write-only field, which is why W3's "no
+write-only fields" rule is a class fix rather than a spot fix. And
+`AGENTS.md`'s own words promise the LOW-uncertainty economy that W1
+proposes ("proceeds on the recorded default and the oracle reviews it next
+cycle") while `deliver-phase.sh` implements the one that failed — W1 is in
+that sense the code catching up to the rules, not a new philosophy.
+
+What was *not* re-verifiable from here is stated as such in the text: web
+timings are reconstructed tier throughout, the anvil round-3.2 gate story is
+the ledger's own account, and the "zero product code" framing is the task
+brief's, qualified by H024's confirmed exception.
