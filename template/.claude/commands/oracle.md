@@ -163,6 +163,25 @@ under all three you spawn nothing and write only your two paths.
    it must first be created — the gate cannot see prose, so the honesty duty
    is yours there.
 
+   **A defaulted LOW item gets a line, not a ruling** (the owner's Q2
+   ruling; ESC-226). When the filer wrote LOW and proceeded on the recorded
+   default, and the evidence gives you no reason to overturn that default,
+   do not spend eight fields saying so. Append one line under a
+   `## Clearances` heading (create it once, at the end of the file — never
+   a bare line at the end, which would extend the last decision's block and
+   trip the append-only check):
+
+       ## Clearances
+
+       - **Cleared:** BL-7 — LOW, default stood: the flag shipped as proposed
+
+   Batch them: every defaulted LOW item you agree with, one line each, in
+   the same append. The check refuses a clearance of a HIGH item (a HIGH is
+   ruled, never cleared), of an item that does not exist, and of one with
+   no reason — the one line of why is the whole price. Downstream, dozens
+   of full rulings on already-decided LOW items were the single largest
+   class of oracle work every reader agreed nobody needed.
+
 4. **Write the handoff.** `docs/oracle/handoff-<date>-<n>.md`: which decisions
    need planning, which existing plans each one touches, and anything the
    orchestrator should NOT act on yet and why. Write it once. If you need to

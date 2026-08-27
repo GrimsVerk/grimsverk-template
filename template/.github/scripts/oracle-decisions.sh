@@ -123,9 +123,13 @@ mapfile -t HEAD_IDS < <([[ -f "$HEAD_DOC" ]] && ids_in "$HEAD_DOC")
 
 # Evidence that exists at the base commit. Read once; every decision resolves
 # against these two sets.
+# The `|| true` on each grep is load-bearing under `set -e`: a ledger with no
+# ESC ids yet made the first pipeline fail, which aborted this brace group
+# BEFORE the backlog was read — so on a young project every BL citation
+# "did not exist" (latent until the clearance check exercised it).
 mapfile -t HAVE_EVIDENCE < <(
-  { show_base "$LEDGER"  | grep -oE 'ESC-[0-9]+'
-    show_base "$BACKLOG" | grep -oE 'BL-[0-9]+'
+  { show_base "$LEDGER"  | grep -oE 'ESC-[0-9]+' || true
+    show_base "$BACKLOG" | grep -oE 'BL-[0-9]+' || true
   } | sort -u
 )
 has_evidence() {
@@ -192,18 +196,25 @@ for id in "${HEAD_IDS[@]:-}"; do
   is_halt=0
   printf '%s\n' "$block" | head -1 | grep -q 'HALTED' && is_halt=1
 
+  # ONE SCHEMA, WITH HALT AS A KIND, NOT A FORK (ESC-225). The legacy halt
+  # field set stays legal — landed halts cannot be repaired in an append-only
+  # ledger — but a halt written with the full decision schema is equally
+  # legal, so the vocabulary stops forking: new tooling reads one shape.
+  legacy_halt_ok="$is_halt"
   if [[ "$is_halt" -eq 1 ]]; then
     for field in "Date" "Evidence" "Tenet relied on" \
                  "What a decision would have said" "What it needs from the owner"; do
       value="$(printf '%s\n' "$block" \
         | sed -n "s/^[[:space:]]*[-*][[:space:]]*\*\*${field}:\*\*[[:space:]]*//p" | head -1)"
-      if ! printf '%s\n' "$block" | grep -qF "**${field}:**"; then
-        fail "$id is a HALT and has no **${field}:** field"
-      elif [[ -z "$value" ]]; then
-        fail "$id is a HALT with an empty **${field}:** field"
+      if ! printf '%s\n' "$block" | grep -qF "**${field}:**" || [[ -z "$value" ]]; then
+        legacy_halt_ok=0
       fi
     done
+  fi
+  if [[ "$legacy_halt_ok" -eq 1 ]]; then
+    : # the legacy HALT shape, complete — nothing further to check here
   else
+  halt_fails_before=${#PROBLEMS[@]}
 
   # Schema. Each field is asserted to be present AND to say something: a label
   # with nothing after it is the shape a schema check is most often satisfied by
@@ -368,14 +379,17 @@ next — so a sentence they never wrote makes the lever a decoration."
     if [[ -z "$closure_value" ]]; then
       fail "$id has an empty **Closure:** field — say why there is nothing to build, or drop the field and add a requirement"
     fi
-  elif [[ -z "$added_says" && -z "$sup_says" ]] \
+  elif [[ -z "$added_says" && -z "$sup_says" && "$is_halt" -eq 0 ]] \
     && ! printf '%s\n' "$block" | grep -qF "**Criterion waived:**"; then
     # A waiver is a disposition too — it changes what the acceptance gate does,
     # which is this ledger's one directly-effective outcome.
     fail "$id has no disposition: it adds no requirement, supersedes none, waives nothing, and carries no **Closure:** field. A decision that creates no work must say so — add '- **Closure:** <why there is nothing to build>' — or it evaporates the way 35 of 58 did on 2026-08-20 (ESC-217)"
   fi
 
-  fi  # end of the non-HALT schema
+  if [[ "$is_halt" -eq 1 && ${#PROBLEMS[@]} -gt ${halt_fails_before:-0} ]]; then
+    fail "$id is a HALT satisfying NEITHER shape — write either the halt fields (Date, Evidence, Tenet relied on, What a decision would have said, What it needs from the owner) or the full decision schema; the failures above are the full-schema reading"
+  fi
+  fi  # end of the unified schema branch
 
   # A DECISION DECLARES WHAT IT FASTENS WORK TO, AND THE GATE RESOLVES IT
   # (ESC-222). Downstream, one ruling bound a requirement to a fixture in no
@@ -453,6 +467,61 @@ done
 TOTAL=${#HEAD_IDS[@]}
 if [[ "$TOTAL" -gt "$MAX_DECISIONS" ]]; then
   fail "$TOTAL decisions, over the cap of $MAX_DECISIONS — this is a runaway-loop backstop, not a real bound; if it has been reached legitimately, the owner raises it"
+fi
+
+# --------------------------- clearances: the LOW fast-path (ESC-226)
+# An item the filer had already resolved — "Risk: LOW … proceeded on the
+# default" — used to cost a full eight-field ruling anyway, because citation
+# from a decision was the only door out of the queue. Downstream that bought
+# dozens of rulings every reader later agreed nobody needed. The fast path:
+#
+#     ## Clearances
+#
+#     - **Cleared:** BL-7 — LOW, default stood: the flag shipped as proposed
+#
+# One line, appended under a `## Clearances` heading (never bare at the end
+# of the file — a bare trailing line would extend the last decision's block
+# and trip the append-only check). The detector already counts any cited id
+# as metabolised, so a clearance closes the item the moment it lands. The
+# rules that keep the fast path from becoming a trapdoor:
+#   - the id exists in the backlog at the base commit — a clearance closes a
+#     real filed item, it cannot invent one;
+#   - the item is not HIGH — a HIGH is ruled, never cleared;
+#   - the one line of WHY is present — it is the whole price;
+#   - landed clearance lines are immutable, like everything else here.
+clearance_lines() { grep -E '^[-*] \*\*Cleared:\*\*' "$1" 2>/dev/null || true; }
+if [[ -f "$HEAD_DOC" ]]; then
+  while IFS= read -r cl; do
+    [[ -n "$cl" ]] || continue
+    grep -qxF -- "$cl" "$HEAD_DOC" \
+      || fail "a landed clearance line was modified or removed — clearances are append-only: '$cl'"
+  done < <(clearance_lines "$BASE_DOC")
+  while IFS= read -r cl; do
+    [[ -n "$cl" ]] || continue
+    cid="$(grep -oE 'BL-[0-9]+' <<<"$cl" | head -1 || true)"
+    if [[ -z "$cid" ]]; then
+      fail "a clearance line names no BL id: '$cl'"
+      continue
+    fi
+    if ! has_evidence "$cid"; then
+      fail "clearance of $cid: no such item in $BACKLOG at the base commit — a clearance closes a real filed item, it cannot invent one"
+      continue
+    fi
+    if show_base "$BACKLOG" | awk -v id="$cid" '
+        $0 ~ "^- \\*\\*" id "\\*\\*" { inb = 1; print; next }
+        inb && (/^- / || /^## /)             { inb = 0 }
+        inb                                  { print }' \
+      | grep -qE '(^|[^A-Za-z0-9_])HIGH([^A-Za-z0-9_]|$)'; then
+      fail "clearance of $cid: the item is classified HIGH — a HIGH is ruled, never cleared; the one-line path is for defaulted LOW items only (ESC-226)"
+      continue
+    fi
+    rest="${cl#*Cleared:\*\*}"
+    rest="${rest//$cid/}"
+    rest="$(printf '%s' "$rest" | tr -cd '[:alnum:]')"
+    if [[ "${#rest}" -lt 5 ]]; then
+      fail "clearance of $cid says nothing — one line of why is the whole price of the fast path; pay it"
+    fi
+  done < <(clearance_lines "$HEAD_DOC")
 fi
 
 # ------------------------------------------------------- handoffs, per run
