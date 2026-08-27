@@ -425,6 +425,17 @@ PYCHK
     if grep -qE '^[[:space:]]*if:.*secrets\.' "$op"
     then no "$lang open-pr.yml reads no secret in an if:" "$(grep -nE '^[[:space:]]*if:.*secrets\.' "$op")"
     else ok "$lang open-pr.yml reads no secret in an if:"; fi
+    # ESC-212: the merged marker persists on the base branch, so every branch
+    # cut from it inherits a complete, valid request for the PREVIOUS pull
+    # request — and head->base idempotence cannot catch that, because a new
+    # branch is a new head. The workflow must treat "the file exists" and
+    # "this push wrote it" as different questions, by reading the push
+    # payload's per-commit paths.
+    if grep -qF 'any(. == ".pr-request.json")' "$op" \
+       && grep -qF '"$GITHUB_EVENT_PATH"' "$op"
+    then ok "$lang open-pr.yml opens only when the push itself wrote the marker (ESC-212)"
+    else no "$lang open-pr.yml opens only when the push itself wrote the marker (ESC-212)" \
+      "a stale marker inherited from the base would reopen the previous pull request"; fi
   else
     no "$lang ships the open-pr workflow"
   fi
@@ -436,6 +447,40 @@ PYCHK
   if says "$out/.claude/commands/deliver-loop.md" "gh api user"
   then ok "$lang deliver-loop.md probes the credential with gh api user"
   else no "$lang deliver-loop.md probes the credential with gh api user"; fi
+  # ESC-211: the ESC-52 fix landed in the credential rule but not in step 2's
+  # preflight, which kept instructing the forbidden command by name for three
+  # releases — the file contradicted itself, and a driver following the step
+  # literally ran the one probe that lies on the hosted platform. Pin both
+  # halves: the preflight names the compliant probe, and the exact
+  # contradictory instruction cannot come back.
+  if says "$out/.claude/commands/deliver-loop.md" \
+    "**Preflight, first turn only:** confirm the credential established above with \`gh api user\`"
+  then ok "$lang deliver-loop.md preflight uses the probe the credential rule mandates (ESC-211)"
+  else no "$lang deliver-loop.md preflight uses the probe the credential rule mandates (ESC-211)"; fi
+  if says "$out/.claude/commands/deliver-loop.md" \
+    "**Preflight, first turn only:** \`gh auth status\`"
+  then no "$lang deliver-loop.md preflight no longer instructs gh auth status (ESC-211)"
+  else ok "$lang deliver-loop.md preflight no longer instructs gh auth status (ESC-211)"; fi
+  # ESC-210: the ESC-69 unattended contract existed only as a heredoc inside
+  # the LOCAL driver, so deliver-loop.md — the web frontend — told the driver
+  # to send "the addendum" while giving it nothing to send, and web rounds
+  # dispatched workers without the contract. The text is now embedded in the
+  # command file verbatim, and this check pins the two copies together: it
+  # extracts the heredoc from deliver-loop.sh, undoes the shell quoting, and
+  # requires the command file to carry it word for word (whitespace-collapsed,
+  # like every prose check here). Drift in either direction goes red.
+  addendum="$(sed -n "/^UNATTENDED_ADDENDUM='/,/'\$/p" "$out/.claude/scripts/deliver-loop.sh" \
+    | sed -e '1d' -e "s/'\"'\"'/'/g" -e "\$ s/'\$//")"
+  if [[ -n "$addendum" ]]; then
+    ok "$lang deliver-loop.sh still carries the UNATTENDED_ADDENDUM heredoc"
+    if says "$out/.claude/commands/deliver-loop.md" \
+      "$(printf '%s' "$addendum" | tr -s '[:space:]' ' ')"
+    then ok "$lang deliver-loop.md embeds the unattended contract verbatim (ESC-210)"
+    else no "$lang deliver-loop.md embeds the unattended contract verbatim (ESC-210)" \
+      "the shell heredoc and the command file's copy have drifted apart"; fi
+  else
+    no "$lang deliver-loop.sh still carries the UNATTENDED_ADDENDUM heredoc"
+  fi
   # ESC-61: a fresh render's escape ledger is empty, so a rendered GATED
   # document citing any ESC-<n> id cites an entry the project cannot have —
   # escape-refs.sh fails the very first pull request. Template-repo escape
@@ -831,6 +876,38 @@ sys.exit(0 if 'claude -p' not in allow and 'codex exec' not in allow else 1)
   if grep -q 'backlog-append-only.sh' "$out/.github/workflows/ci.yml"; then
     ok "$lang the backlog check runs in CI"
   else no "$lang the backlog check runs in CI"; fi
+
+  # The three files the design layer's lifecycle needs (ESC-203), each with
+  # exactly one writer: what shipped (the driver, from merged pull requests),
+  # what the owner retired (the owner, and only on a pull request they open),
+  # and what an agent merely SUGGESTS retiring (read by the owner and nothing
+  # else). Retiring is the one line in the repository that removes a
+  # requirement instead of meeting it, which is why it carries the strongest
+  # lock the project has.
+  for f in docs/DESIGN.oracle.done.md docs/DESIGN.oracle.retired.md \
+           docs/oracle/retirement-suggestions.md .claude/scripts/record-delivered.sh; do
+    if [[ -f "$out/$f" ]]; then ok "$lang $f ships"
+    else no "$lang $f ships"; fi
+  done
+  if grep -q 'DESIGN.oracle.done.md' "$out/.github/workflows/ci.yml"; then
+    ok "$lang what shipped is held append-only in CI"
+  else no "$lang what shipped is held append-only in CI"; fi
+  if grep -A3 'OWNED_DOCS=' "$out/.github/workflows/ci.yml" | grep -q 'DESIGN.oracle.retired.md'; then
+    ok "$lang only the owner can land a retirement"
+  else no "$lang only the owner can land a retirement"; fi
+  # The suggestions file reaches no machinery in a RENDERED project either —
+  # asserted here and not only against the template, because a carve-out added
+  # by a jinja branch would not show up in a source-tree grep.
+  if grep -rl 'retirement-suggestions' "$out/.github" "$out/.claude/scripts" 2>/dev/null | grep -q .; then
+    no "$lang nothing under .github/ or .claude/scripts/ reads the suggestions"
+  else ok "$lang nothing under .github/ or .claude/scripts/ reads the suggestions"; fi
+  # A fresh project retires NOTHING and has delivered NOTHING: every one of
+  # these skeletons documents its own format in an indented code block, example
+  # id and all, so a rule matching a backticked id anywhere would retire a live
+  # requirement in every generated project on day one.
+  if ( cd "$out" && .github/scripts/coverage.sh 2>&1 | grep -q 'Retired by the owner' ); then
+    no "$lang a fresh render retires nothing"
+  else ok "$lang a fresh render retires nothing"; fi
 
   # The setup a human has to do by hand should be reduced to typing values, so
   # the skeleton ships and the script writes the real file. Both halves are

@@ -29,6 +29,16 @@ set -euo pipefail
 FACTOR=3
 FLOOR=80
 
+# AGENTS.md calls the plan's `## Summary` "one screen, ~40 lines, a hard
+# ceiling" — and for a long time nothing measured it (ESC-213). The review
+# gate measured it by hand twice and twice declined to block, both times
+# noting it had no definition of what counts as a line. This constant and the
+# section below are that definition, made mechanical: every line after the
+# `## Summary` heading up to the next `##` heading, blank lines included.
+# Like the slice estimates above, the ceiling is a tripwire, not a target —
+# the count is reported for the reviewer to judge and never fails the build.
+SUMMARY_CEILING=40
+
 PLAN="${1:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(git rev-parse --show-toplevel)"
@@ -160,6 +170,41 @@ if [[ -n "$PLAN" ]] && git -C "$ROOT" cat-file -e "${BASE_SHA}:${PLAN}" 2>/dev/n
   fi
   [[ -n "${expected# }" ]] && \
     echo "Expected absences (marked *(non-functional)* in the design):${expected}"
+fi
+
+# ------------------------------------------------------ Summary line ceiling
+# Measured on the plan files THIS DIFF adds or edits, read at HEAD — the
+# ceiling is judged when a plan lands, and a plan lands on a docs/ branch
+# where this script runs with no plan argument. (The slice estimates above
+# read the plan at BASE because the diff must not edit its own yardstick; a
+# Summary landing in this very diff has no base version to read, and its
+# length IS the thing under review.) The placeholder skeleton is skipped for
+# the same reason plan-lint.sh skips it: it is guidance, not a plan.
+echo
+CHANGED_PLANS="$(git -C "$ROOT" --literal-pathspecs diff --diff-filter=AM \
+  --name-only "${BASE_SHA}...${HEAD_SHA}" -- 'docs/plans/' \
+  | grep -E '\.md$' | grep -v '/_' || true)"
+if [[ -n "$CHANGED_PLANS" ]]; then
+  echo "Plan Summary length (lines from '## Summary' to the next '##', blanks counted;"
+  echo "AGENTS.md: ~${SUMMARY_CEILING} lines, a hard ceiling — a number for the reviewer, not a gate):"
+  while IFS= read -r pf; do
+    # found=0 distinguishes "no Summary section at all" from "an empty one" —
+    # the first is a fact the reviewer needs, the second is just a count of 0.
+    n="$(git -C "$ROOT" show "${HEAD_SHA}:${pf}" 2>/dev/null \
+      | awk '/^##[[:space:]]+Summary[[:space:]]*$/ { insum = 1; found = 1; next }
+             insum && /^##[[:space:]]/ { insum = 0 }
+             insum { count++ }
+             END { if (!found) print -1; else print count + 0 }')"
+    if [[ "$n" -lt 0 ]]; then
+      echo "  ${pf}: has no '## Summary' section"
+    elif [[ "$n" -gt "$SUMMARY_CEILING" ]]; then
+      echo "  ${pf}: ${n} lines — $(( n - SUMMARY_CEILING )) OVER the ~${SUMMARY_CEILING}-line hard ceiling; not fitting is itself a signal the plan does too much"
+    else
+      echo "  ${pf}: ${n} lines ($(( SUMMARY_CEILING - n )) under the ~${SUMMARY_CEILING}-line ceiling)"
+    fi
+  done <<< "$CHANGED_PLANS"
+else
+  echo "Plan Summary length: no plan file is added or edited by this diff."
 fi
 
 echo

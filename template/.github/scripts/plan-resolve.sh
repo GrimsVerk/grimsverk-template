@@ -93,6 +93,8 @@ DESIGN_DOC="${DESIGN_DOC:-docs/DESIGN.md}"
 # no entry here — it is already inside PLANS_DIR.
 ORACLE_DOC="${ORACLE_DOC:-docs/DESIGN.oracle.md}"
 ORACLE_DIR="${ORACLE_DIR:-docs/oracle}"
+DONE_DOC="${DONE_DOC:-docs/DESIGN.oracle.done.md}"
+RETIRED_DOC="${RETIRED_DOC:-docs/DESIGN.oracle.retired.md}"
 # docs/VISION.md belongs here for exactly the same reasons as the design doc: it
 # is CODEOWNERS-owned, no plan can cover it, and a filled-in one runs to well
 # over a hundred lines. Left out, the single document the whole oracle
@@ -171,6 +173,13 @@ for prefix in "${EXEMPT_PREFIXES[@]}"; do
       case "$path" in
         "$PLANS_DIR"/*|"$DESIGN_DOC"|"$ORACLE_DOC"|"$ORACLE_DIR"/*|"$VISION_DOC") ;;
         "$ACCEPTANCE_DOC"|"$ARCHITECTURE_DOC"|"$RUNS_DIR"/*|"$BACKLOG_DOC") ;;
+        # The ninth and tenth members, added in the same change that created
+        # them rather than a release later (ESC-56's lesson, learned the hard
+        # way): what shipped, which the driver appends at every stop, and what
+        # the owner retired. Both ride along with evidence and planning
+        # branches, and a few lines of either would otherwise evict an
+        # exempt branch from the carve-out it is entitled to.
+        "$DONE_DOC"|"$RETIRED_DOC") ;;
         # The eighth carve-out member, and the first that is machinery rather
         # than a document (ESC-56): a driver that cannot hold App identity
         # asks the server-side opener for its pull request by committing this

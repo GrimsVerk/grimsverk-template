@@ -101,11 +101,18 @@ the credential is fine, the query shape is the problem.
      `--<branch, non-alphanumerics as ->` (e.g. base `run/web` →
      `feat/<slug>--run-web`), exactly as the local driver does, so twin runs
      building the same slugs cannot collide on branch names.
-2. **Preflight, first turn only:** `gh auth status` (on the credential
-   established above);
+2. **Preflight, first turn only:** confirm the credential established above
+   with `gh api user` — the same probe the credential rule mandates, never
+   `gh auth status`, which this step named for three releases while the rule
+   eleven lines up forbade it (ESC-211; ESC-52 is why auth status lies on
+   exactly this platform);
    `.github/scripts/unattended-ready.sh --runtime` (with `RUN_BASE`, above) —
    a refusal ends the run, report it verbatim; `coverage.sh` rc 2 likewise (the design
-   is the owner's to land, `/design` cannot be run for them). Note the
+   is the owner's to land, `/design` cannot be run for them). First turn ONLY:
+   any later re-verification uses `--health --runtime` instead — bare readiness
+   is a START check, and mid-run it refuses on the run's own open PR and on a
+   live worker's worktree, prescribing exactly the removal that would destroy
+   in-flight work (ESC-207; the web lane watched both misfires). Note the
    run-start SHAs of `docs/DESIGN.md` and `docs/VISION.md`, the start time,
    and a PR counter in your working notes.
 3. **Sync and steer-check:** pull the base branch. If either steering
@@ -148,7 +155,8 @@ the credential is fine, the query shape is the problem.
    - **ORACLE / STEWARD / PLAN** — dispatch one worker via
      `.claude/scripts/spawn-worker.sh --role <role> --engine claude --base
      <this run's base>` with the matching command file as its prompt plus the
-     UNATTENDED addendum and the detector's scope; then push the worker
+     UNATTENDED addendum ("The unattended addendum" below — send it verbatim,
+     every clause) and the detector's scope; then push the worker
      branch under a `docs/`-prefixed name (with the lane suffix on a
      non-default base) via `git push origin worker/<id>:docs/<ref>` — the
      worker branch is neither docs-exempt nor slug-resolvable — and open the
@@ -175,6 +183,36 @@ the credential is fine, the query shape is the problem.
      line.
    - **SETUP** — report the reason and end the run.
 
+## The unattended addendum
+
+This is ESC-69's written contract, in full. It used to live only as the
+`UNATTENDED_ADDENDUM` heredoc inside `.claude/scripts/deliver-loop.sh`, which
+the local driver appends to every worker prompt automatically — so this file
+could say "send the addendum" while giving a web driver nothing to send, and
+web rounds dispatched workers without the contract (ESC-210). The text below
+is a verbatim copy of that heredoc, kept identical on purpose: the shell copy
+is what the local driver sends, this copy is what you send, and
+`tests/test-render.sh` fails the template if the two ever drift. Change them
+together or not at all.
+
+Append this to every worker prompt you dispatch, word for word:
+
+```
+UNATTENDED CONTRACT — read this before you finish.
+- NOBODY IS WATCHING. This session is headless and commissioned by a script.
+  Never address a human, never offer a menu or numbered choices, never ask for
+  approval or confirmation, and never wait for one. There is no one to answer.
+- DO NOT PUSH, and do not ask to. Pushing and opening the pull request are the
+  driver's job, and your tool grant excludes them deliberately. Commit your
+  work on your branch and stop there.
+- FINISH BY STATING WHERE THE WORK IS, on the last line, exactly:
+      WORK_ON_BRANCH <branch-name>
+  If you created or switched to a branch of your own, that is the one to name.
+  A driver reads this line; a paragraph addressed to a person it cannot.
+- If you are blocked, say what blocked you in one plain sentence and stop.
+  A blocked worker that reports the blocker is useful; one that waits is not.
+```
+
 ## Container realities
 
 - **Worker fan-out is capped lower here:** hosted containers have fewer cores
@@ -195,13 +233,34 @@ reclaimed, so a report that lives only on disk is a report nobody reads. The
 local driver lands one automatically at every stop; **here, you are the driver,
 so you land it.**
 
+**And the machine record is not optional here (ESC-224).** The web lane of
+the 2026-08-20 experiment left NO machine log at all — every phase,
+iteration and wait survived only as hand-typed prose needing its own parser,
+and half the post-mortem's questions died on it. You run the same emitter
+the local driver runs, at the same moments, throughout the run — not at the
+stop:
+
+    EVENTS_FILE=docs/runs/<timestamp>/events.jsonl \
+    RUN_ID=<timestamp> RUN_BASE=<base> \
+      .claude/scripts/emit-event.sh <kind> key=value ...
+
+once per event as it happens: `start template_version=<from the copier
+answers file>` at run start; `detect iteration=N phase=<PHASE>` with the
+detector's counters after every reading; `dispatch` / `result` around every
+session you commission (the emitter's header lists each kind's required
+fields — it REFUSES a call missing one, and a refusal means you are about to
+drop a fact the next post-mortem will starve for); `merge pr=N` the moment a
+pull request merges; `stop exit_code=N reason=...` as your last event. Your
+prose report is commentary; the stream is the record.
+
 At the run's stop, whatever the reason — done, blocked on the owner, a limit
 reached, a pattern of failures, a setup refusal:
 
 1. Write your run report to `docs/runs/<timestamp>/run.md`, using the same
    timestamp you fixed at run start. It carries what each iteration did, every
    dispatch and its outcome, which stop ended the run and why, and anything that
-   looked anomalous.
+   looked anomalous — commentary beside `events.jsonl`, which you have been
+   writing all along and which lands in the same directory.
 2. Run `.claude/scripts/collect-evidence.sh --run-dir docs/runs/<timestamp>
    --since <run start, RFC3339>`. It gathers the review gate's payloads and
    replies — what the reviewer was shown and what it said — beside the report.

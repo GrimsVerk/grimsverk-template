@@ -31,6 +31,16 @@ name: Open PR
 # pull requests must not trip an owner review, and deleting it would take
 # another App push and another round of CI for no gain.
 #
+# The ride-along has a sting (ESC-212): the merged marker PERSISTS on the base
+# branch, so every branch cut from it starts life carrying a complete, valid
+# request for the PREVIOUS pull request. "The file exists" is therefore not
+# the signal "somebody asked" — the signal is "THIS PUSH WROTE IT". A push
+# whose commits never touch the marker (an evidence branch, a fix pushed
+# before its marker is written) must open nothing, or it opens a pull request
+# titled and described as the last one that merged — and a reviewer reads the
+# description. The freshness guard below enforces exactly that; head->base
+# idempotence alone cannot, because a new branch is a new head.
+#
 # Why the mint is REQUIRED and there is no GITHUB_TOKEN fallback: a pull
 # request created with GITHUB_TOKEN dispatches no workflow runs (the guard
 # the auto-merge header documents), so its required checks would be
@@ -72,6 +82,26 @@ jobs:
           if [ ! -f .pr-request.json ]; then
             echo "wanted=false" >> "$GITHUB_OUTPUT"
             echo "open-pr: no .pr-request.json at this ref; nothing to do."
+            exit 0
+          fi
+          # Freshness guard (ESC-212): the marker also arrives as an inherited
+          # ride-along on every branch cut from a base it merged to, so the
+          # request is only real when the TRIGGERING PUSH wrote the file. The
+          # push event's payload lists, per commit, the paths it added and
+          # modified — read it from there rather than diffing, because the
+          # checkout above is depth-1 and `before` is all-zeros on a new
+          # branch. head_commit is consulted on top of the commits array
+          # because the array truncates on a large push, while the driver's
+          # contract puts the marker in the final commit — which head_commit
+          # always is.
+          touched="$(jq -r '([.head_commit // empty] + (.commits // []))
+              | map((.added // []) + (.modified // [])) | flatten
+              | any(. == ".pr-request.json")' "$GITHUB_EVENT_PATH")"
+          if [ "$touched" != "true" ]; then
+            echo "wanted=false" >> "$GITHUB_OUTPUT"
+            echo "open-pr: .pr-request.json exists but this push did not write it —"
+            echo "open-pr: that is the previous pull request's merged marker riding"
+            echo "open-pr: along from the base branch (ESC-212); nothing to do."
             exit 0
           fi
           echo "wanted=true" >> "$GITHUB_OUTPUT"

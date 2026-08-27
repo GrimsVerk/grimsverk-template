@@ -40,6 +40,25 @@
 # not an override of a refusal — it is a different question set for a
 # different identity, and both sets still refuse loudly on what they check.
 #
+# --start / --health (ESC-207): WHICH QUESTION is being asked. This script was
+# designed as a START check, and the delivery loop's wakes re-ran it mid-run
+# as a health check — a different question, and two of the start-time refusals
+# misfire on it, observed live on a real project. The open-PR refusal fired on
+# the run's OWN pipeline pull request (mid-run, waiting on an open pull
+# request IS the run working — the WAIT phase), and the leftover-worktree
+# refusal fired on a LIVE worker's worktree and prescribed a removal that
+# would have deleted a plan while it was being written. So:
+#   --start   (the default; the current, full behaviour) asks "can a fresh
+#             run start here?" and keeps both refusals.
+#   --health  asks, mid-run, "is this lane still configured to succeed?"
+#             Everything configuration-shaped still runs and still refuses —
+#             tokens, gates, visibility, documents — but an open pull request
+#             on the base is reported as a normal state, and a worktree
+#             refuses only when it shows NO sign of live work this script can
+#             detect (see the debris section).
+# Combine freely with --runtime: a web-session driver's per-wake re-check is
+# `--health --runtime`.
+#
 # Optional env, for tests and odd layouts:
 #   READY_APP_TOKEN_CMD  --runtime only: the command that mints the App token
 #                        (default .claude/scripts/app-token.sh; tests stub it)
@@ -65,10 +84,17 @@ CODEOWNERS_FILE="${CODEOWNERS_FILE:-.github/CODEOWNERS}"
 READY_APP_TOKEN_CMD="${READY_APP_TOKEN_CMD:-.claude/scripts/app-token.sh}"
 
 RUNTIME=0
+# ESC-207: MODE decides which question this run of the script answers — see
+# the header. "start" is the default so every existing caller (deliver-loop.sh
+# preflight, setup-github.sh's read-back suggestion) keeps its exact current
+# behaviour, exit codes and output lines included.
+MODE="start"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --runtime) RUNTIME=1; shift ;;
-    *) echo "unattended-ready: unknown argument: $1 (only --runtime)" >&2; exit 2 ;;
+    --start)   MODE="start"; shift ;;
+    --health)  MODE="health"; shift ;;
+    *) echo "unattended-ready: unknown argument: $1 (--runtime, --start, --health)" >&2; exit 2 ;;
   esac
 done
 
@@ -378,10 +404,21 @@ fi
 # a refusal costs a click, a mid-run stall costs the run. Merge it (a template
 # update is yours to approve — template-sync proves the diff is exactly copier
 # output, so the reading is quick) or close it, then start the run.
+#
+# START-ONLY (ESC-207). Re-run mid-run, this refusal fired on the run's OWN
+# pipeline pull request, one minute after the driver opened it, and told the
+# driver to "merge or close it first" — advice that, followed, destroys the
+# run's in-flight work (and hand-merging is exactly what AGENTS.md forbids).
+# Mid-run, one open pull request on the base is the pipeline WORKING: the
+# detector calls it WAIT. So --health reports it as a normal state.
 OPEN_ON_BASE="$("$GH" api "repos/$REPO/pulls?state=open&base=$RUN_BASE_EFF&per_page=10" \
   --jq '.[] | "#\(.number) \(.head.ref)"' 2>/dev/null || true)"
 if [[ -n "$OPEN_ON_BASE" ]]; then
-  refuse "a pull request is already open against '$RUN_BASE_EFF' ($(printf '%s' "$OPEN_ON_BASE" | tr '\n' ' ')) — the run's first act would be to wait on it, and a template update waits for YOUR review, which no unattended actor can give. Merge or close it first"
+  if [[ "$MODE" == "health" ]]; then
+    ok "a pull request is open against '$RUN_BASE_EFF' ($(printf '%s' "$OPEN_ON_BASE" | tr '\n' ' ')) — mid-run that is the pipeline working; the driver waits on it (WAIT), it is not a fault (ESC-207)"
+  else
+    refuse "a pull request is already open against '$RUN_BASE_EFF' ($(printf '%s' "$OPEN_ON_BASE" | tr '\n' ' ')) — the run's first act would be to wait on it, and a template update waits for YOUR review, which no unattended actor can give. Merge or close it first"
+  fi
 else
   ok "no pull request is open against '$RUN_BASE_EFF' — the run starts on a clear base"
 fi
@@ -398,15 +435,78 @@ fi
 # leftover worktree can hold a worker's finished, unpushed commits — a real
 # plan was salvaged from one as a 562-line patch — so read it before removing
 # it.
+#
+# AND THE MESSAGE MUST NOT OUTRUN THE OBSERVATION (ESC-207). What this script
+# can SEE is only that a worktree exists. An earlier wording asserted "a
+# previous run died mid-dispatch" as fact and prescribed 'git worktree
+# remove' — and then fired on a LIVE worker's worktree, mid-plan, where
+# following the prescription would have deleted the plan while it was being
+# written. A dead run leaves worktrees like these behind; so does a worker
+# that is still RUNNING. Both modes now say what is observed, and removal is
+# never prescribed bare: read first, check for live work, remove only what
+# that reading shows to be dead and drained.
+
+# worktree_live_sign <dir> — print the first sign of LIVE work found in a
+# worktree, and succeed; fail silently when none is detectable. Used by
+# --health only. spawn-worker.sh ships no process lock, so liveness is judged
+# from what git and the filesystem show: uncommitted/untracked files, commits
+# no remote ref has, or a fresh write. Every probe errs toward "live" —
+# `git -C` inside a half-created directory that is not yet a real worktree
+# answers for the surrounding repository, which can only ADD signs of life —
+# because a false "live" costs one more wake, while a false "dead" invites
+# the removal that destroys a plan mid-write.
+worktree_live_sign() {
+  local dir="$1" ahead
+  if [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]]; then
+    echo "uncommitted work"; return 0
+  fi
+  ahead="$(git -C "$dir" rev-list --count HEAD --not --remotes 2>/dev/null)"
+  if [[ "$ahead" =~ ^[0-9]+$ ]] && [[ "$ahead" -gt 0 ]]; then
+    echo "$ahead commit(s) no remote has"; return 0
+  fi
+  if [[ -n "$(find "$dir" -type f -mmin -30 -print -quit 2>/dev/null)" ]]; then
+    echo "files written in the last 30 minutes"; return 0
+  fi
+  return 1
+}
+
 WORKTREES=""
 if [[ -d .worktrees ]]; then
   WORKTREES="$(ls -A .worktrees 2>/dev/null | tr '\n' ' ' | sed 's/ $//')"
 fi
 if [[ -n "$WORKTREES" ]]; then
-  refuse "leftover worktrees under .worktrees/ ($WORKTREES) — a previous run died mid-dispatch and the driver refuses to start on them. READ THEM FIRST (git -C .worktrees/<name> log --oneline; git -C .worktrees/<name> status): one can hold a worker's finished but unpushed work. Then 'git worktree remove' each, or 'git worktree prune' if the directories are already gone"
+  if [[ "$MODE" == "health" ]]; then
+    # Mid-run, a worktree is EXPECTED while a worker runs. Refuse only on the
+    # ones showing no sign of live work at all — and even then the remedy is
+    # to read, never to remove on this script's say-so: the detection is
+    # best-effort, and the cost of a wrong removal is a worker's plan.
+    DEAD_WORKTREES=""
+    for wt in $WORKTREES; do
+      if sign="$(worktree_live_sign ".worktrees/$wt")"; then
+        ok "worktree .worktrees/$wt shows live work ($sign) — a worker may be RUNNING in it; leave it alone (ESC-207)"
+      else
+        DEAD_WORKTREES="${DEAD_WORKTREES:+$DEAD_WORKTREES }$wt"
+      fi
+    done
+    if [[ -n "$DEAD_WORKTREES" ]]; then
+      refuse "worktrees under .worktrees/ ($DEAD_WORKTREES) show no sign of live work this script can detect — READ THEM FIRST (git -C .worktrees/<name> log --oneline; git -C .worktrees/<name> status) and check for live work yourself (running processes, fresh files) before believing that: one can hold a worker's finished but unpushed work. Remove one only after reading shows it dead and drained"
+    fi
+  else
+    refuse "worktrees exist under .worktrees/ ($WORKTREES) and the driver refuses to start on them. That is all this check can SEE — a dead run leaves these behind, and so does a worker still RUNNING right now. READ THEM FIRST (git -C .worktrees/<name> log --oneline; git -C .worktrees/<name> status) and check for live work (running processes, fresh files, uncommitted or unpushed commits): one can hold a worker's finished but unpushed work. Only after reading shows a worktree dead and drained, 'git worktree remove' it — or 'git worktree prune' if the directories are already gone"
+  fi
 else
   ok "no leftover worktrees — no dead run's debris in the way"
 fi
+
+# ---------------------------------------- the owner documents, cross-checked
+# Report-only, never a refusal (ESC-222): design-refs.sh lists every
+# backticked path in the owner documents that resolves to nothing in this
+# tree. A phantom referent discovered here costs the owner a glance; the same
+# phantom discovered by a 3am worker cost a session per phantom downstream,
+# plus the rulings that declared the reconstructions. The documents are the
+# owner's, so this can only ever inform.
+echo
+.github/scripts/design-refs.sh 2>/dev/null || true
 
 # ------------------------------------------------------------------- verdict
 echo

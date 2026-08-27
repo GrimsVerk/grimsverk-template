@@ -123,9 +123,13 @@ mapfile -t HEAD_IDS < <([[ -f "$HEAD_DOC" ]] && ids_in "$HEAD_DOC")
 
 # Evidence that exists at the base commit. Read once; every decision resolves
 # against these two sets.
+# The `|| true` on each grep is load-bearing under `set -e`: a ledger with no
+# ESC ids yet made the first pipeline fail, which aborted this brace group
+# BEFORE the backlog was read — so on a young project every BL citation
+# "did not exist" (latent until the clearance check exercised it).
 mapfile -t HAVE_EVIDENCE < <(
-  { show_base "$LEDGER"  | grep -oE 'ESC-[0-9]+'
-    show_base "$BACKLOG" | grep -oE 'BL-[0-9]+'
+  { show_base "$LEDGER"  | grep -oE 'ESC-[0-9]+' || true
+    show_base "$BACKLOG" | grep -oE 'BL-[0-9]+' || true
   } | sort -u
 )
 has_evidence() {
@@ -192,18 +196,25 @@ for id in "${HEAD_IDS[@]:-}"; do
   is_halt=0
   printf '%s\n' "$block" | head -1 | grep -q 'HALTED' && is_halt=1
 
+  # ONE SCHEMA, WITH HALT AS A KIND, NOT A FORK (ESC-225). The legacy halt
+  # field set stays legal — landed halts cannot be repaired in an append-only
+  # ledger — but a halt written with the full decision schema is equally
+  # legal, so the vocabulary stops forking: new tooling reads one shape.
+  legacy_halt_ok="$is_halt"
   if [[ "$is_halt" -eq 1 ]]; then
     for field in "Date" "Evidence" "Tenet relied on" \
                  "What a decision would have said" "What it needs from the owner"; do
       value="$(printf '%s\n' "$block" \
         | sed -n "s/^[[:space:]]*[-*][[:space:]]*\*\*${field}:\*\*[[:space:]]*//p" | head -1)"
-      if ! printf '%s\n' "$block" | grep -qF "**${field}:**"; then
-        fail "$id is a HALT and has no **${field}:** field"
-      elif [[ -z "$value" ]]; then
-        fail "$id is a HALT with an empty **${field}:** field"
+      if ! printf '%s\n' "$block" | grep -qF "**${field}:**" || [[ -z "$value" ]]; then
+        legacy_halt_ok=0
       fi
     done
+  fi
+  if [[ "$legacy_halt_ok" -eq 1 ]]; then
+    : # the legacy HALT shape, complete — nothing further to check here
   else
+  halt_fails_before=${#PROBLEMS[@]}
 
   # Schema. Each field is asserted to be present AND to say something: a label
   # with nothing after it is the shape a schema check is most often satisfied by
@@ -276,6 +287,24 @@ document the owner removed."
         # decision may legitimately lean on more than one sentence.
         mapfile -t QUOTED < <(printf '%s\n' "$vision_value" \
           | grep -oE '"[^"]+"' | sed 's/^"//; s/"$//')
+        # THE TWO FIELDS CANNOT CITE THE SAME STATEMENT (ESC-234). The against
+        # field exists to force a weighing; a decision quoting one sentence in
+        # both fields has disarmed the check while looking compliant — observed
+        # twice downstream. Compared on normalised quoted spans, new decisions
+        # only, like every schema rule here.
+        against_value="$(printf '%s\n' "$block" \
+          | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Vision statements against:\*\*[[:space:]]*//p' | head -1)"
+        mapfile -t AGAINST_QUOTED < <(printf '%s\n' "$against_value" \
+          | grep -oE '"[^"]+"' | sed 's/^"//; s/"$//')
+        for q in "${QUOTED[@]:-}"; do
+          [[ -z "$q" ]] && continue
+          for aq in "${AGAINST_QUOTED[@]:-}"; do
+            [[ -z "$aq" ]] && continue
+            if [[ "$(printf '%s' "$q" | norm)" == "$(printf '%s' "$aq" | norm)" ]]; then
+              fail "$id quotes the same vision statement in 'relied on' and 'against' — the two fields cannot cite the same sentence; naming the statement that most nearly forbids the decision is the weighing the schema exists to force (ESC-234)"
+            fi
+          done
+        done
         for q in "${QUOTED[@]:-}"; do
           [[ -z "$q" ]] && continue
           q_norm="$(printf '%s' "$q" | norm)"
@@ -338,7 +367,108 @@ next — so a sentence they never wrote makes the lever a decoration."
     fi
   fi
 
-  fi  # end of the non-HALT schema
+  # EVERY NEW DECISION SAYS WHAT BECOMES OF IT (ESC-217). In the 2026-08-20
+  # experiment, 35 of 58 decisions were never planned and nothing could say
+  # whether that was a leak or a judgment: a decision that answers a question
+  # without minting a requirement schedules no work and closes nothing, so it
+  # simply evaporates. The disposition rule makes the outcome explicit at
+  # ruling time — a decision either creates work, retires work, or says in so
+  # many words that there is none:
+  #
+  #   - `- **Requirements added:**` names an id  -> work exists; the steward
+  #     chain and coverage own its closure;
+  #   - `- **Requirements superseded:**` names an id -> work is retired
+  #     (coverage moves it to the awaiting-retirement class, ESC-219);
+  #   - `- **Closure:** <why there is nothing to build>` -> no work, said
+  #     aloud rather than implied by silence.
+  #
+  # A HALT is its own disposition and is checked in its own branch above. The
+  # rule binds NEW decisions only — the ledger is append-only, so a legacy
+  # decision without a disposition cannot be repaired and is not failed.
+  added_says="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Requirements added:\*\*[[:space:]]*//p' \
+    | head -1 | grep -oE '\bR[0-9]+\b' | head -1 || true)"
+  sup_says="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Requirements superseded:\*\*[[:space:]]*//p' \
+    | head -1 | grep -oE '\bR[0-9]+\b' | head -1 || true)"
+  closure_value="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Closure:\*\*[[:space:]]*//p' | head -1)"
+  # CLARIFYING IS A DISPOSITION (ESC-232). A ruling that changes how landed
+  # text reads used to do so invisibly — superseded: (none), nothing named.
+  # No gate can DETECT a reinterpretation; this is the legal way to declare
+  # one, and a declared target must exist: a landed decision, or one landing
+  # in this same pull request.
+  clarifies_value="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Clarifies:\*\*[[:space:]]*//p' | head -1)"
+  has_clarifies=0
+  if printf '%s\n' "$block" | grep -qF "**Clarifies:**"; then
+    ctarget="$(grep -oE '(OD|R)-?[0-9]+' <<<"$clarifies_value" | head -1 || true)"
+    if [[ -z "$ctarget" ]]; then
+      fail "$id has a **Clarifies:** field naming no target — name the OD-<n> or R<n> whose reading this decision changes"
+    elif [[ "$ctarget" == OD-* ]]; then
+      found=0
+      for known in "${BASE_IDS[@]:-}" "${HEAD_IDS[@]:-}"; do
+        [[ "$known" == "$ctarget" ]] && found=1
+      done
+      if [[ "$found" -eq 1 ]]; then has_clarifies=1
+      else fail "$id clarifies $ctarget, which exists in no ledger — a clarification of nothing is a new decision wearing a modest name"
+      fi
+    else
+      has_clarifies=1
+    fi
+  fi
+  if printf '%s\n' "$block" | grep -qF "**Closure:**"; then
+    if [[ -z "$closure_value" ]]; then
+      fail "$id has an empty **Closure:** field — say why there is nothing to build, or drop the field and add a requirement"
+    fi
+  elif [[ -z "$added_says" && -z "$sup_says" && "$is_halt" -eq 0 && "$has_clarifies" -eq 0 ]] \
+    && ! printf '%s\n' "$block" | grep -qF "**Criterion waived:**"; then
+    # A waiver is a disposition too — it changes what the acceptance gate does,
+    # which is this ledger's one directly-effective outcome.
+    fail "$id has no disposition: it adds no requirement, supersedes none, waives nothing, and carries no **Closure:** field. A decision that creates no work must say so — add '- **Closure:** <why there is nothing to build>' — or it evaporates the way 35 of 58 did on 2026-08-20 (ESC-217)"
+  fi
+
+  if [[ "$is_halt" -eq 1 && ${#PROBLEMS[@]} -gt ${halt_fails_before:-0} ]]; then
+    fail "$id is a HALT satisfying NEITHER shape — write either the halt fields (Date, Evidence, Tenet relied on, What a decision would have said, What it needs from the owner) or the full decision schema; the failures above are the full-schema reading"
+  fi
+  fi  # end of the unified schema branch
+
+  # A DECISION DECLARES WHAT IT FASTENS WORK TO, AND THE GATE RESOLVES IT
+  # (ESC-222). Downstream, one ruling bound a requirement to a fixture in no
+  # commit and another to a string in a gitignored file; each phantom cost a
+  # full unattended session plus further rulings declaring reconstructions —
+  # the two longest rulings in that ledger exist only to untangle them. The
+  # optional field:
+  #
+  #     - **Binds:** path:acceptance/S1.sh, ordered:fixtures/variants.csv
+  #
+  # `path:` entries must exist at the BASE COMMIT — the same tree every other
+  # citation here resolves against. `ordered:` entries are the honest other
+  # case: the artifact does not exist yet and the decision ORDERS it, which
+  # is work a plan must deliver, said out loud instead of discovered by the
+  # session that reaches for a file that is not there. The field is optional
+  # because not every decision fastens to an artifact; the PROMPT carries the
+  # duty to declare (oracle.md), and this gate verifies what is declared.
+  binds_line="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Binds:\*\*[[:space:]]*//p' | head -1)"
+  if printf '%s\n' "$block" | grep -qF "**Binds:**"; then
+    if [[ -z "$binds_line" ]]; then
+      fail "$id has an empty **Binds:** field — name what the decision fastens to (path:<existing> / ordered:<to-create>), or drop the field"
+    fi
+    for entry in ${binds_line//,/ }; do
+      [[ -n "$entry" ]] || continue
+      case "$entry" in
+        path:*)
+          bp="${entry#path:}"
+          if ! git -C "$ROOT" cat-file -e "${BASE_SHA}:${bp}" 2>/dev/null; then
+            fail "$id binds path:$bp, which exists in no commit at the base — a ruling fastened to a phantom referent cost a session per phantom downstream (ESC-222). If the decision ORDERS its creation, write 'ordered:$bp' and let a plan deliver it"
+          fi ;;
+        ordered:*) : ;;
+        *)
+          fail "$id has a Binds entry '$entry' with no prefix — every entry is 'path:<existing-at-base>' or 'ordered:<to-be-created>' (ESC-222)" ;;
+      esac
+    done
+  fi
 
   # 1. Evidence must exist at the base commit. Both shapes cite it: a halt is a
   # record of evidence the oracle READ and declined to act on, which is exactly
@@ -379,6 +509,69 @@ done
 TOTAL=${#HEAD_IDS[@]}
 if [[ "$TOTAL" -gt "$MAX_DECISIONS" ]]; then
   fail "$TOTAL decisions, over the cap of $MAX_DECISIONS — this is a runaway-loop backstop, not a real bound; if it has been reached legitimately, the owner raises it"
+fi
+
+# --------------------------- clearances: the LOW fast-path (ESC-226)
+# An item the filer had already resolved — "Risk: LOW … proceeded on the
+# default" — used to cost a full eight-field ruling anyway, because citation
+# from a decision was the only door out of the queue. Downstream that bought
+# dozens of rulings every reader later agreed nobody needed. The fast path:
+#
+#     ## Clearances
+#
+#     - **Cleared:** BL-7 — LOW, default stood: the flag shipped as proposed
+#
+# One line, appended under a `## Clearances` heading (never bare at the end
+# of the file — a bare trailing line would extend the last decision's block
+# and trip the append-only check). The detector already counts any cited id
+# as metabolised, so a clearance closes the item the moment it lands. The
+# rules that keep the fast path from becoming a trapdoor:
+#   - the id exists in the backlog at the base commit — a clearance closes a
+#     real filed item, it cannot invent one;
+#   - the item is not HIGH — a HIGH is ruled, never cleared;
+#   - the one line of WHY is present — it is the whole price;
+#   - landed clearance lines are immutable, like everything else here.
+clearance_lines() { grep -E '^[-*] \*\*Cleared:\*\*' "$1" 2>/dev/null || true; }
+if [[ -f "$HEAD_DOC" ]]; then
+  while IFS= read -r cl; do
+    [[ -n "$cl" ]] || continue
+    grep -qxF -- "$cl" "$HEAD_DOC" \
+      || fail "a landed clearance line was modified or removed — clearances are append-only: '$cl'"
+  done < <(clearance_lines "$BASE_DOC")
+  while IFS= read -r cl; do
+    [[ -n "$cl" ]] || continue
+    cid="$(grep -oE '(ESC|BL)-[0-9]+' <<<"$cl" | head -1 || true)"
+    if [[ -z "$cid" ]]; then
+      fail "a clearance line names no BL or ESC id: '$cl'"
+      continue
+    fi
+    if ! has_evidence "$cid"; then
+      fail "clearance of $cid: no such item in the ledgers at the base commit — a clearance closes a real filed item, it cannot invent one"
+      continue
+    fi
+    # An ESC clearance is "read, and there is nothing to do" (ESC-231) — the
+    # committed middle state between "unread" and "fixed with a check"
+    # (docs/escapes.done.md still owns the second). No HIGH rule applies:
+    # escape rows carry no risk class. It grants nothing new — the oracle
+    # could always silence an escape by citing it from a decision; this is
+    # the cheap spelling, with the reason mandatory and the line immutable.
+    if [[ "$cid" == ESC-* ]]; then
+      : # existence and the reason check below are the whole contract
+    elif show_base "$BACKLOG" | awk -v id="$cid" '
+        $0 ~ "^- \\*\\*" id "\\*\\*" { inb = 1; print; next }
+        inb && (/^- / || /^## /)             { inb = 0 }
+        inb                                  { print }' \
+      | grep -qE '(^|[^A-Za-z0-9_])HIGH([^A-Za-z0-9_]|$)'; then
+      fail "clearance of $cid: the item is classified HIGH — a HIGH is ruled, never cleared; the one-line path is for defaulted LOW items only (ESC-226)"
+      continue
+    fi
+    rest="${cl#*Cleared:\*\*}"
+    rest="${rest//$cid/}"
+    rest="$(printf '%s' "$rest" | tr -cd '[:alnum:]')"
+    if [[ "${#rest}" -lt 5 ]]; then
+      fail "clearance of $cid says nothing — one line of why is the whole price of the fast path; pay it"
+    fi
+  done < <(clearance_lines "$HEAD_DOC")
 fi
 
 # ------------------------------------------------------- handoffs, per run

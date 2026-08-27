@@ -1,0 +1,40 @@
+# Design — delivered requirements — {{ project_name }}
+
+One line per requirement id that has been **built and merged**. Append only;
+nothing here is ever edited.
+
+## What this is for
+
+A planner could not tell what had actually been built. `coverage.sh` says which
+requirements a plan CLAIMS — and its own report says so in as many words:
+"covered means PLANNED, not delivered and not verified." A plan's `status:`
+field was the nearest thing to an answer and it is set by hand, so on a real
+project every plan still read `status: draft` long after its work had shipped.
+
+So a steward planning the next piece had no way to know which requirements were
+already live, and nothing in the repository could tell it. That is what this
+file answers, and it answers it from the one thing that cannot be stale: a
+merged pull request.
+
+**The driver writes it.** `.claude/scripts/record-delivered.sh` reads the
+`feat/<slug>` pull requests that have MERGED into the run's base, maps each slug
+to the plan carrying it, and appends that plan's `covers:` ids. Nobody types a
+line here, which is the point — a hand-maintained record of what shipped is a
+record of what somebody remembered to write down.
+
+## Delivered is not finished
+
+A delivered requirement stays a requirement. The system has to go on satisfying
+it, and the day it stops is a regression. Nothing leaves the design because it
+was built — that is [`DESIGN.oracle.retired.md`](DESIGN.oracle.retired.md), it
+is a different question, and only the owner answers it.
+
+## Format
+
+One line each, and the id in backticks exactly as the design spells it:
+
+    - `R<n>` — delivered — YYYY-MM-DD — PR #<n>, plan `<slug>`
+
+---
+
+_(nothing yet)_

@@ -137,6 +137,10 @@ jobs:
         run: |
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
             template/.github/scripts/backlog-append-only.sh
+      - name: Landed run evidence is never rewritten
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            template/.github/scripts/runs-append-only.sh
       - name: Oracle decisions are append-only and evidence-backed
         run: |
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \

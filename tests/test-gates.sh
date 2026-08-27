@@ -282,6 +282,74 @@ out="$( cd "$R" && BASE_SHA="$BASE2" HEAD_SHA="$(git rev-parse HEAD)" \
 expect_contains "malformed plan produces a loud failure" "$out" "PLAN PARSE FAILED"
 expect_contains "says the gate stopped working" "$out" "gate that stopped working"
 
+# --------------- the Summary ceiling is measured and reported, not enforced
+# ESC-213: AGENTS.md calls the plan Summary "~40 lines, a hard ceiling", and
+# nothing measured it — the review gate measured it by hand twice and twice
+# declined to block, both times noting it had no definition of what counts as
+# a line. plan-metrics.sh now counts every line from `## Summary` to the next
+# `##` heading (blanks included) for each plan the diff adds or edits, read at
+# HEAD — the ceiling is judged when the plan itself lands, on a docs/ branch
+# where the script runs with no plan argument — and reports the delta for the
+# reviewer to judge. A number, never a failure: the script still exits 0,
+# matching how the line-estimate tripwire is treated.
+git -C "$R" switch -q main
+SUMBASE="$(git -C "$R" rev-parse HEAD)"
+git -C "$R" switch -qc docs/summary-ceiling
+{
+  printf -- '---\nslug: summary-ceiling\ncovers: [R1]\n---\n# Big — Plan\n\n## Summary\n'
+  seq 1 50 | sed 's/^/decision line /'
+  printf '\n## Slice 1 — thing\n- **Files:** `src/demo_app/s.py`\n- **Estimate:** ~10 lines\n'
+} > "$R/docs/plans/summary-ceiling.md"
+# The placeholder skeleton must stay invisible to the count even when a diff
+# touches it — it is guidance, not a plan (same carve-out as plan-lint.sh).
+printf '\n' >> "$R/docs/plans/_TEMPLATE.md"
+commit_all "Add a plan with an oversized Summary"
+out="$( cd "$R" && BASE_SHA="$SUMBASE" HEAD_SHA="$(git rev-parse HEAD)" \
+  .github/scripts/plan-metrics.sh 2>&1 )"
+rc=$?
+expect_rc "an oversized Summary still exits 0 — a report, not a gate" 0 "$rc"
+# 50 content lines plus the blank line before the next heading: blanks count,
+# and the output says so, so the definition is mechanical rather than argued.
+expect_contains "the Summary is counted at HEAD" "$out" "summary-ceiling.md: 51 lines"
+expect_contains "and the ceiling delta is reported" "$out" "11 OVER the ~40-line hard ceiling"
+expect_not_contains "the placeholder template is not measured" "$out" "_TEMPLATE"
+
+# Green side: shrink the Summary under the ceiling; the same run must report
+# the headroom instead of the overrun. And a plan with no Summary at all is a
+# fact the reviewer needs, not a zero.
+{
+  printf -- '---\nslug: summary-ceiling\ncovers: [R1]\n---\n# Big — Plan\n\n## Summary\n'
+  seq 1 10 | sed 's/^/decision line /'
+  printf '\n## Slice 1 — thing\n- **Files:** `src/demo_app/s.py`\n- **Estimate:** ~10 lines\n'
+} > "$R/docs/plans/summary-ceiling.md"
+cat > "$R/docs/plans/summaryless.md" <<'EOF'
+---
+slug: summaryless
+covers: [R1]
+---
+# Summaryless — Plan
+
+## Slice 1 — thing
+- **Files:** `src/demo_app/t.py`
+- **Estimate:** ~10 lines
+EOF
+commit_all "Shrink the Summary and add a summaryless plan"
+out="$( cd "$R" && BASE_SHA="$SUMBASE" HEAD_SHA="$(git rev-parse HEAD)" \
+  .github/scripts/plan-metrics.sh 2>&1 )"
+expect_contains "a Summary under the ceiling reports its headroom" "$out" \
+  "summary-ceiling.md: 11 lines (29 under the ~40-line ceiling)"
+expect_not_contains "and is not flagged as over" "$out" "OVER the"
+expect_contains "a plan without a Summary is said out loud" "$out" \
+  "summaryless.md: has no '## Summary' section"
+
+# A diff that lands no plan says so rather than going silent — silence is the
+# shape ESC-213 had before this section existed.
+out="$( cd "$R" && BASE_SHA="$SUMBASE" HEAD_SHA="$SUMBASE" \
+  .github/scripts/plan-metrics.sh 2>&1 )"
+expect_contains "a plan-free diff reports the absence" "$out" \
+  "no plan file is added or edited by this diff"
+git -C "$R" switch -q main
+
 # ------------------------- reviewer sees BASE rules, not the PR's edited ones
 git -C "$R" switch -q main
 printf 'PLACEHOLDER-RULE: tests are mandatory\n' >> "$R/AGENTS.md"

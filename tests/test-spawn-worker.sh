@@ -49,6 +49,9 @@ case "${STUB_MODE:-commit}" in
   dirty)  echo "half-finished" > worker-artifact.txt ;;
   noop)   : ;;
   fail)   echo "engine blew up" >&2; exit 7 ;;
+  # The engine's allowance stop, verbatim from the live run that hit it
+  # (ESC-208): an ordinary exit 1 whose real cause is one line of output.
+  limit)  echo "You've hit your session limit · resets 3:20pm (UTC)"; exit 1 ;;
 esac
 exit 0
 STUB
@@ -192,10 +195,25 @@ expect_contains "and the plan linter" "$out" "Bash(.github/scripts/plan-lint.sh:
 expect_contains "a denied git switch no longer costs the commit" "$out" \
   "Bash(git switch:*)"
 
+# ESC-214: a grant that lets a role CREATE a file must cover removing it. The
+# steward abandoned scratch it could not delete — no rm, no mv in its grant —
+# and an uncommitted leftover makes the tree dirty, which is the state the
+# driver refuses to start on: one tidy-minded session blocked the next run.
+# The sandbox already scopes both commands to the worker's own worktree.
+expect_contains "the steward may remove a file it created (ESC-214)" "$out" \
+  "Bash(rm:*)"
+expect_contains "and rename one" "$out" "Bash(mv:*)"
+expect_contains "the oracle may clean up after itself too" \
+  "$(role_cmd oracle)" "Bash(rm:*)"
+expect_contains "and so may the default writing worker" \
+  "$("$SPAWN" --id x --prompt hi --engine claude --print-command 2>&1)" "Bash(rm:*)"
+
 for role in reviewer explore; do
   out="$(role_cmd "$role")"
   expect_not_contains "the $role cannot write" "$out" "Write("
   expect_not_contains "the $role cannot commit" "$out" "git commit"
+  # Read-only roles create nothing, so they get no cleanup grant (ESC-214).
+  expect_not_contains "the $role cannot delete" "$out" "Bash(rm"
 done
 expect_contains "explore runs at low effort" "$(role_cmd explore)" "low"
 
@@ -237,7 +255,10 @@ else no "the worker branch exists"; fi
 # worker was refused every write there and could not be told — it produced an
 # empty branch and exited 0. This assertion is the whole reason that regression
 # cannot come back quietly.
-expect_contains "the worktree lives under .worktrees/" "$out" "/.worktrees/ok-1"
+# The reported path is repository-RELATIVE since ESC-201, so this anchors on the
+# start of the field rather than on a leading slash. The location itself is
+# proved on disk two lines down, which is the stronger of the two checks anyway.
+expect_contains "the worktree lives under .worktrees/" "$out" "worktree=.worktrees/ok-1"
 expect_not_contains "the worktree is not under .claude/" "$out" ".claude/worktrees"
 if [[ -d "$R/.worktrees/ok-1" ]]; then ok "the worktree directory was created"
 else no "the worktree directory was created"; fi
@@ -272,6 +293,28 @@ expect_contains "distinguishes it from writing nothing" "$out" "uncommitted path
 # ------------------------------------------------ the engine's own exit passes through
 out="$(STUB_MODE=fail spawn --id fail-1 --prompt "blow up" --engine codex)"
 expect_rc "an engine failure propagates its exit code" 7 $?
+
+# ------------------ ESC-208: an exhausted allowance is a documented stop
+# The first worker failure of a 21-iteration live run died on "You've hit your
+# session limit" and reported a generic exit=1 commits=0. The cause was one
+# grep away in the worker's own log and nobody was told to look, so a driver
+# would treat the engine's allowance as a retryable crash and dispatch
+# straight back into it. The script now reads its own log and reserves exit 75
+# (EX_TEMPFAIL) for this stop, with the classification on the result line the
+# driver actually collects.
+out="$(STUB_MODE=limit spawn --id limit-1 --prompt "hi" --engine codex)"
+expect_rc "an exhausted allowance exits 75, not the engine's own code" 75 $?
+expect_contains "and the result line says so" "$out" "stop=allowance"
+expect_contains "and the diagnosis calls it a stop, not a crash" "$out" \
+  "documented stop"
+expect_contains "the result line still reports the engine's own exit" "$out" "exit=1"
+
+# An ordinary engine failure stays an ordinary engine failure: its own exit
+# code, no allowance marker — a distinct code means nothing if everything
+# earns it.
+out="$(STUB_MODE=fail spawn --id limit-2 --prompt "hi" --engine codex)"
+expect_rc "a plain engine failure still propagates its own code" 7 $?
+expect_not_contains "and is not mislabelled as an allowance stop" "$out" "stop=allowance"
 
 # ----------------------------------------------------------------- preflight
 # `command -v` said the engine existed; it said nothing about whether the engine
@@ -327,5 +370,56 @@ START="$(git -C "$R" rev-parse HEAD)"
 out="$(STUB_MODE=noop spawn --id moved-1 --prompt "nothing" --engine codex --base "$START")"
 expect_rc "a moved base cannot disguise an empty worker" 3 $?
 git -C "$R" switch -q main
+
+# ------------- ESC-201: nothing this script prints carries a machine path
+# The result line is not a debug print. `deliver-loop.sh` appends it verbatim to
+# the run report, which is committed, pushed and merged — so `worktree=` wrote
+# the operator's absolute path, and with it their home directory and the root
+# they keep repositories under, into a permanent public-shaped record. Observed
+# live: four such lines in one merged run report on a real project. The template
+# wrote them, so no amount of operator discipline prevents it.
+#
+# The repository-relative half is the only part that carries meaning to a later
+# reader anyway — every reader of that report is standing in the repository.
+#
+# Asserted against EVERY line the script prints rather than against the one
+# field that was wrong, because the leak is a class, not an instance: the same
+# absolute root reaches stderr through the log path and the empty-worker
+# diagnosis, and those are copied into the run's committed worker evidence too.
+git -C "$R" switch -q main
+out="$(spawn --id pathy-1 --prompt "do the thing" --engine codex)"
+expect_rc "a committing worker still succeeds" 0 $?
+expect_not_contains "no line carries the absolute repository root" "$out" "$R"
+expect_contains "the worktree is reported relative to the repository" "$out" \
+  "worktree=.worktrees/pathy-1"
+
+# The same on the two failure paths, which are the ones a person actually reads
+# — and the ones whose text is copied into the run's committed evidence.
+out="$(STUB_MODE=noop spawn --id pathy-2 --prompt "nothing" --engine codex)"
+expect_rc "an empty worker still fails" 3 $?
+expect_not_contains "the empty-worker diagnosis carries no machine path" "$out" "$R"
+expect_contains "and still says where the worktree is" "$out" ".worktrees/pathy-2"
+expect_contains "and still says where the log is" "$out" \
+  ".claude/orchestration-logs/pathy-2.log"
+
+out="$(STUB_MODE=fail spawn --id pathy-3 --prompt "blow up" --engine codex)"
+expect_rc "a failing engine still fails" 7 $?
+expect_not_contains "the engine-failure line carries no machine path" "$out" "$R"
+expect_contains "and still points at the log" "$out" \
+  ".claude/orchestration-logs/pathy-3.log"
+
+# ---- the single-argument cap is a refusal, never a cryptic death (ESC-224)
+# The engine receives the prompt as one argv string, and Linux caps one at
+# ~128 KiB. On a live analysis run, 8 of 14 workers died INSIDE exec with
+# "Argument list too long" — after printing a plausible header a reader
+# mistook for a result. An oversized prompt is refused up front, with the
+# remedy in the message. Delivered by --prompt-file, which is also the only
+# way a caller can even carry a prompt this size.
+BIGPROMPT="$WORK/big.prompt"
+head -c 150000 /dev/zero | tr '\0' 'a' > "$BIGPROMPT"
+out="$("$SPAWN" --id big-1 --prompt-file "$BIGPROMPT" --engine codex --print-command 2>&1)" && rc=0 || rc=$?
+expect_rc "a prompt over the argv cap is refused" 2 "$rc"
+expect_contains "and the refusal names the cap" "$out" "128 KiB"
+expect_contains "and the remedy" "$out" "Split the command file"
 
 summary

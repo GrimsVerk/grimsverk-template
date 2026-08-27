@@ -49,6 +49,31 @@ wrong, write a **new** decision that names the old id and says what replaced it
 This is the rule that stops an oracle quietly revising yesterday's ruling, where
 the diff would read as an edit rather than as a reversal.
 
+**Nothing here retires a requirement.** Because this page is append-only, a
+requirement that turns out wrong stays on it forever and goes on reading like a
+live requirement of the design. Taking one out of the design is the **owner's**,
+in [`DESIGN.oracle.retired.md`](DESIGN.oracle.retired.md), on a pull request
+they open themselves — that file is the only thing `coverage.sh` subtracts.
+
+Naming an id on a `**Requirements superseded:**` line says what this decision's
+new requirement *replaces*. It does not retire it, does not excuse it from the
+coverage report, and does not stop a planner being dispatched for it. Say so to
+the owner instead, in
+[`oracle/retirement-suggestions.md`](oracle/retirement-suggestions.md), which
+nothing but the owner reads.
+
+That is deliberate. A suggestion that could excuse a requirement from the work
+list would let an agent take work off its own list by declaring the work
+unnecessary, and a suggestion that could stop a run would be a veto held by the
+party whose job is to keep working. So the requirement stays live and gets built
+as normal until the owner decides otherwise — even if that means work later
+reversed, which is cheaper than a run that stalls at 3am on a judgement nobody
+is awake to make.
+
+**What DID ship** is recorded in
+[`DESIGN.oracle.done.md`](DESIGN.oracle.done.md), written by the driver from
+merged pull requests. A planner reads it to find out what is already live.
+
 ## The schema
 
 Every decision is a `##` heading with the id, then these eight fields:

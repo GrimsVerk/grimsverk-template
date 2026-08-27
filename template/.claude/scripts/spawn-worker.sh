@@ -66,14 +66,33 @@
 # branch against its base commit and exits 3 when there are no commits — an
 # empty branch fails loudly at the primitive instead of quietly at the top.
 #
+# AN EXHAUSTED ALLOWANCE IS A DOCUMENTED STOP, NOT A CRASH (ESC-208).
+#
+# The first worker failure of a 21-iteration live run died on "You've hit your
+# session limit · resets 3:20pm (UTC)" — and reported a generic exit=1
+# commits=0. The distinguishing string was one grep away in the worker's own
+# log, and the driver was never told to look, so the engine's usage allowance
+# read as a retryable crash: an unattended loop would have dispatched straight
+# back into the same exhausted allowance, repeatedly, with no stop. So after
+# the engine returns this script greps the worker's log for the known
+# allowance messages and turns a match into exit 75 with `stop=allowance` on
+# the result line — a stop the driver can document ("stopped on the engine
+# allowance, resets at <time>") rather than retry. The message patterns live
+# in ONE place below (ALLOWANCE_PATTERNS), so a new engine adds its spelling
+# there and nowhere else.
+#
 # On success it leaves the worktree and branch in place and prints:
-#   WORKER_RESULT id=<id> branch=<branch> worktree=<path> engine=<engine>
+#   WORKER_RESULT id=<id> branch=<branch> worktree=<repo-relative path> engine=<engine>
 #                 exit=<engine exit code> commits=<n>
 #
 # Exit codes:
 #   0  the engine succeeded and the branch carries at least one commit
 #   2  a setup fault (bad arguments, unusable engine, worktree collision)
 #   3  the engine exited 0 but committed nothing — see above
+#   75 the engine died on an exhausted usage allowance — see above. 75 is
+#      sysexits' EX_TEMPFAIL ("try again later"), which is exactly what an
+#      allowance reset is, and it sits outside the small codes engines
+#      themselves exit with.
 #   *  otherwise, the engine's own exit code
 #
 # Logs (stdout+stderr of the worker) go to .claude/orchestration-logs/<id>.log
@@ -132,6 +151,17 @@ if [[ -z "$PROMPT" ]]; then
 fi
 [[ -n "$PROMPT" ]] || die "prompt is empty"
 
+# THE SINGLE-ARGUMENT CAP IS A REFUSAL, NEVER A CRYPTIC DEATH (ESC-224's
+# dispatch-hygiene half). The engine still receives the prompt as one argv
+# string, and Linux caps a single argv string at ~128 KiB — a prompt over it
+# dies inside exec with "Argument list too long", AFTER this script has
+# already printed a plausible-looking header. Observed live: 8 of 14 workers
+# in one analysis run died exactly there, each leaving a header-only log a
+# reader mistook for a result. Refuse here, loudly, with the remedy.
+if [[ "${#PROMPT}" -gt 100000 ]]; then
+  die "the prompt is ${#PROMPT} bytes — over the ~128 KiB single-argument cap the engine exec would die on (silently, after the header). Split the command file, or trim what the dispatcher appends; a prompt this size is also a prompt no session reads well"
+fi
+
 # What a worker is allowed to run, when the engine is `claude`.
 #
 # A whitelist, and short on purpose: write files, run the suite, commit. Nothing
@@ -157,7 +187,18 @@ BUILD_TOOLS=(
   "Bash(swiftformat:*)" "Bash(swiftlint:*)"
   "Bash(xcodegen:*)" "Bash(xcodebuild:*)"
 )
-ALLOWED_TOOLS=("${GIT_TOOLS[@]}" "${BUILD_TOOLS[@]}")
+# A grant that lets a role CREATE a file must also cover removing or renaming
+# it (ESC-214). The steward's grant did not: it abandoned scratch it could not
+# delete — no rm, no mv — and had to leave a "NOT A PLAN, delete this file"
+# note inside the file instead. An uncommitted leftover makes the tree dirty,
+# and a dirty tree is the state the driver refuses to start on, so one
+# tidy-minded session blocked the next run. Plain `rm`/`mv` is the minimal,
+# sandbox-respecting form: the workspace-level sandbox already confines both
+# to the worker's own worktree, so the grant adds cleanup, not reach. Granted
+# to every role that can write (the default worker list, the oracle, the
+# steward) and to no read-only role, which creates nothing to clean up.
+CLEANUP_TOOLS=("Bash(rm:*)" "Bash(mv:*)")
+ALLOWED_TOOLS=("${GIT_TOOLS[@]}" "${BUILD_TOOLS[@]}" "${CLEANUP_TOOLS[@]}")
 PERM_MODE="acceptEdits"
 
 # ROLES — model, effort, and reach, per kind of work.
@@ -220,6 +261,8 @@ ORACLE_TOOLS=(
   "Edit(docs/DESIGN.oracle.md)"
   "Edit(docs/oracle/**)"
   "${GIT_TOOLS[@]}"
+  # The oracle writes files (the handoff), so it can also remove one (ESC-214).
+  "${CLEANUP_TOOLS[@]}"
 )
 STEWARD_TOOLS=(
   "Read" "Grep" "Glob"
@@ -237,6 +280,10 @@ STEWARD_TOOLS=(
   "Bash(.github/scripts/plan-parse.sh:*)"
   "Bash(.github/scripts/plan-lint.sh:*)"
   "${GIT_TOOLS[@]}"
+  # The role whose missing cleanup grant was observed live (ESC-214): a
+  # steward that replaced a plan could only rewrite the old file in place,
+  # never remove it, and left the worktree dirty for the next run to trip on.
+  "${CLEANUP_TOOLS[@]}"
 )
 READ_ONLY_TOOLS=("Read" "Grep" "Glob")
 
@@ -425,6 +472,20 @@ BRANCH="worker/${SAFE_ID}"
 WORKTREE="${REPO_ROOT}/.worktrees/${SAFE_ID}"
 LOG_DIR="${REPO_ROOT}/.claude/orchestration-logs"
 LOG_FILE="${LOG_DIR}/${SAFE_ID}.log"
+
+# THE SAME TWO PATHS, RELATIVE TO THE REPOSITORY, FOR EVERYTHING THIS SCRIPT
+# PRINTS (ESC-201). The absolute forms above are for the filesystem; they must
+# never be the ones written down. The result line is not a debug print —
+# `deliver-loop.sh` appends it verbatim to the run report, which is committed,
+# pushed and merged — so printing the absolute worktree wrote the operator's
+# home directory and the root they keep repositories under into a permanent
+# record. Observed live: four such lines in one merged run report.
+#
+# Relative is also simply the better line. Every reader of that report is
+# standing in the repository, so `.worktrees/<id>` is the part that carries
+# meaning and the prefix is the part that carries only the operator.
+WORKTREE_REL=".worktrees/${SAFE_ID}"
+LOG_FILE_REL=".claude/orchestration-logs/${SAFE_ID}.log"
 BASE="${BASE:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)}"
 
 # Pin the base to a commit now. The branch it names can move while the worker
@@ -473,6 +534,30 @@ set +e
 RC=$?
 set -e
 
+# Did the engine die on its usage allowance? (ESC-208.) The engine reports the
+# stop in its output — which is this log — and exits with an ordinary failure
+# code, so without reading the log the exhaustion is indistinguishable from a
+# crash and a driver retries straight back into it. THE PATTERNS LIVE HERE AND
+# ONLY HERE: one line per message class, so a new engine adds its spelling to
+# this list and nothing else changes. Matched case-insensitively as fixed
+# strings against the worker's own log.
+ALLOWANCE_PATTERNS=(
+  "hit your session limit"   # claude: "You've hit your session limit · resets <time>"
+  "hit your usage limit"     # claude: the weekly spelling of the same stop
+  "usage limit reached"      # codex: UNVERIFIED spelling (no codex on the
+                             # machine this was written on), kept because a
+                             # miss here costs only the generic exit path
+)
+ALLOWANCE_HIT=0
+if [[ "$RC" -ne 0 ]]; then
+  for pat in "${ALLOWANCE_PATTERNS[@]}"; do
+    if grep -qiF -- "$pat" "$LOG_FILE" 2>/dev/null; then
+      ALLOWANCE_HIT=1
+      break
+    fi
+  done
+fi
+
 # Did the worker actually produce anything? An agent refused every write, or one
 # that edited files and stopped without committing, exits 0 all the same.
 COMMITS="$(git -C "$WORKTREE" rev-list --count "${BASE_SHA}..HEAD" 2>/dev/null || echo 0)"
@@ -492,10 +577,25 @@ if [[ "$ACTUAL_BRANCH" != "$BRANCH" ]]; then
   echo "spawn-worker[$ID]: the worker moved its work to '$ACTUAL_BRANCH' (this script created '$BRANCH'); reporting the branch that carries the commits" >&2
 fi
 
-echo "WORKER_RESULT id=${ID} branch=${ACTUAL_BRANCH} worktree=${WORKTREE} engine=${ENGINE} exit=${RC} commits=${COMMITS}"
+# `stop=allowance` on the result line, so the cause travels with the line the
+# driver actually collects instead of staying one grep away in the log
+# (ESC-208). exit= keeps the ENGINE's own code — the field is documented as
+# the engine exit — and this script's exit status carries the classification.
+RESULT_EXTRA=""
+[[ "$ALLOWANCE_HIT" -eq 1 ]] && RESULT_EXTRA=" stop=allowance"
+echo "WORKER_RESULT id=${ID} branch=${ACTUAL_BRANCH} worktree=${WORKTREE_REL} engine=${ENGINE} exit=${RC} commits=${COMMITS}${RESULT_EXTRA}"
+
+if [[ "$ALLOWANCE_HIT" -eq 1 ]]; then
+  # Before the generic failure path, so the allowance never reads as a crash.
+  # A DISTINCT code (75, EX_TEMPFAIL — see the header), because the driver's
+  # choice differs: a crash is retryable, an exhausted allowance is a
+  # documented stop until it resets — the log names the reset time (ESC-208).
+  echo "spawn-worker[$ID]: the engine's usage allowance is exhausted — a documented stop, not a crash. The reset time is in the log (see $LOG_FILE_REL)" >&2
+  exit 75
+fi
 
 if [[ "$RC" -ne 0 ]]; then
-  echo "spawn-worker[$ID]: engine exited $RC (see $LOG_FILE)" >&2
+  echo "spawn-worker[$ID]: engine exited $RC (see $LOG_FILE_REL)" >&2
   exit "$RC"
 fi
 
@@ -504,8 +604,8 @@ if [[ "$COMMITS" -eq 0 ]]; then
     echo "spawn-worker[$ID]: the engine exited 0 but committed nothing."
     echo
     echo "  branch:   $BRANCH (no commits since ${BASE_SHA:0:12})"
-    echo "  worktree: $WORKTREE"
-    echo "  log:      $LOG_FILE"
+    echo "  worktree: $WORKTREE_REL"
+    echo "  log:      $LOG_FILE_REL"
     if [[ "$DIRTY" -gt 0 ]]; then
       echo
       echo "There are $DIRTY uncommitted path(s) in the worktree, so the worker did"

@@ -105,6 +105,32 @@ jobs:
         run: |
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
             .github/scripts/backlog-append-only.sh
+      - name: What shipped and what the owner retired are append-only
+        # docs/DESIGN.oracle.done.md is what lets an append-only ledger retire a
+        # requirement at all: the decision stays on its page forever, so the
+        # design's CURRENT shape has to be recorded somewhere else. coverage.sh
+        # subtracts what this file names, so a line here removes a requirement
+        # from the universe every later report is judged against — which is
+        # exactly the kind of line that must not be quietly reworded afterwards.
+        #
+        # Same script as the backlog's ledgers, with the id shape it carries.
+        # coverage.sh refuses a line here that no landed decision backs, so
+        # authority stays in the ledger and this file stays a record of it.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+          LEDGERS="docs/DESIGN.oracle.done.md docs/DESIGN.oracle.retired.md" \
+          ID_PATTERN="R[0-9]+" \
+            .github/scripts/backlog-append-only.sh
+      - name: Landed run evidence is never rewritten
+        # docs/runs/ is what every later analysis stands on. Downstream, a
+        # cleanup commit edited three run reports in place four days after the
+        # runs, so a branch-tip reader silently got post-hoc text where primary
+        # evidence used to be (ESC-223). Append-only at file granularity: new
+        # files land freely, landed ones are immutable, corrections are new
+        # files that cite the old.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            .github/scripts/runs-append-only.sh
       - name: Oracle decisions are append-only and evidence-backed
         # docs/DESIGN.oracle.md is the one design document an agent may write
         # unattended, so it is deliberately NOT behind CODEOWNERS — ownership
@@ -130,11 +156,18 @@ jobs:
         # An agent may still write both documents and push the branch; what it
         # may not do is open the pull request. Plans, the oracle ledger and the
         # handoffs are untouched by this.
+        #
+        # docs/DESIGN.oracle.retired.md is guarded here for a sharper reason
+        # than the other two (ESC-203). A line in it REMOVES a requirement from
+        # what the project has to satisfy — the one route to a green pipeline
+        # that costs a sentence instead of work. An agent may write the line and
+        # push the branch; opening the pull request is the owner's.
         env:
           PR_AUTHOR: {% raw %}${{ github.event.pull_request.user.login }}{% endraw %}
         run: |
           BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
           HEAD_SHA="$(git rev-parse HEAD)" \
+          OWNED_DOCS="docs/DESIGN.md docs/VISION.md docs/DESIGN.oracle.retired.md" \
             .github/scripts/owner-authored.sh
       - name: The vision must be finished before work is planned
         # Fires only on a pull request that adds or edits a plan, because that
