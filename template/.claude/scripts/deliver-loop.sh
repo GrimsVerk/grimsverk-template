@@ -1353,6 +1353,25 @@ wait_on_pr() { # wait_on_pr <number> <headref>
         # The factory's own output becomes evidence (ESC-223): the merge is
         # recorded the moment it is known, never reconstructed later.
         emit merge pr="$pr" headref="$headref"
+        # A MERGE INTO A NON-DEFAULT BASE IS TAGGED (ESC-223's other half).
+        # Downstream, +541 lines of merged product code became reachable from
+        # zero refs when its run base was force-rebuilt, and nothing reported
+        # it — found days later in the object store. The default branch is
+        # protected by its own permanence; a side base is not, so its merges
+        # get a tag that survives the base. Best-effort like every recorder:
+        # a failed tag is a logged hole, never a stopped run.
+        if [[ -n "$DEFAULT_BRANCH" && "$RUN_BASE" != "$DEFAULT_BRANCH" ]]; then
+          local msha=""
+          git fetch -q origin "$RUN_BASE" 2>/dev/null || true
+          msha="$(git rev-parse -q --verify FETCH_HEAD 2>/dev/null || true)"
+          [[ -n "$msha" ]] || msha="$(git rev-parse -q --verify "origin/$RUN_BASE" 2>/dev/null || true)"
+          if [[ -n "$msha" ]] && git tag -f "evidence/$RUN_BASE/pr-$pr" "$msha" 2>/dev/null \
+             && git push -q -f origin "refs/tags/evidence/$RUN_BASE/pr-$pr" 2>/dev/null; then
+            log "tagged the merge: evidence/$RUN_BASE/pr-$pr -> ${msha:0:12} (a side base can be rebuilt; the tag survives it)"
+          else
+            log "could NOT tag PR #$pr's merge on side base $RUN_BASE — if this base is ever rebuilt, that merge is only in the object store (ESC-223)"
+          fi
+        fi
         return 0
       }
       [[ "$state" == "CLOSED" ]] && { log "PR #$pr closed unmerged — investigate"; return 0; }

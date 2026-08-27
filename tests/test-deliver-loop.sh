@@ -813,6 +813,38 @@ git -C "$R" switch -q main
 git -C "$R" branch -qD run/web 2>/dev/null || true
 git -C "$R" branch -qD "feat/sqlite-store--run-web" 2>/dev/null || true
 
+# ---- ESC-223: a merge into a NON-DEFAULT base is tagged, and survives it
+# Downstream, +541 lines of merged product code became reachable from zero
+# refs when its run base was force-rebuilt, and no record named it. The
+# default branch is protected by its own permanence; a side base is not, so
+# its merges get a remote tag that outlives the base.
+reset_pr_run
+git -C "$R" branch -f run/web main
+git -C "$R" switch -q run/web
+git -C "$R" push -q origin run/web
+out="$(run_loop STUB_OPEN_PR="31 feat/tagme" STUB_OPEN_PR_BASE=run/web \
+        STUB_CHECKS_RC=0 STUB_PR_STATE=MERGED PR_CREATE_LOG="$PRLOG" \
+        CLAUDE_LOG="$ORCHLOG" -- --base run/web --max-iterations 1)"
+expect_contains "the side-base merge is seen" "$out" "PR #31 merged"
+expect_contains "and tagged, said aloud" "$out" "evidence/run/web/pr-31"
+if git -C "$ORIGIN" tag -l 'evidence/run/web/pr-31' | grep -q .; then
+  ok "the tag reached the remote — a base rebuild cannot orphan the merge now"
+else
+  no "the tag reached the remote — a base rebuild cannot orphan the merge now" \
+     "$(git -C "$ORIGIN" tag -l)"
+fi
+git -C "$R" switch -q main
+git -C "$R" branch -qD run/web 2>/dev/null || true
+git -C "$R" push -q origin --delete run/web 2>/dev/null || true
+
+# The default base needs no tag — its permanence is the protection.
+reset_pr_run
+out="$(run_loop STUB_OPEN_PR="32 feat/plain" STUB_OPEN_PR_BASE=main \
+        STUB_CHECKS_RC=0 STUB_PR_STATE=MERGED PR_CREATE_LOG="$PRLOG" \
+        CLAUDE_LOG="$ORCHLOG" -- --max-iterations 1)"
+expect_contains "a default-base merge is still recorded" "$out" "PR #32 merged"
+expect_not_contains "and not tagged" "$out" "evidence/main"
+
 # ---- opening twice
 # An attended session that already opened one, or an iteration retried after a
 # timeout, is a harmless race. A driver that hard-failed there would turn it
