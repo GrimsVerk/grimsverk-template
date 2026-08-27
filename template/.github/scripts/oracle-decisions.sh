@@ -287,6 +287,24 @@ document the owner removed."
         # decision may legitimately lean on more than one sentence.
         mapfile -t QUOTED < <(printf '%s\n' "$vision_value" \
           | grep -oE '"[^"]+"' | sed 's/^"//; s/"$//')
+        # THE TWO FIELDS CANNOT CITE THE SAME STATEMENT (ESC-234). The against
+        # field exists to force a weighing; a decision quoting one sentence in
+        # both fields has disarmed the check while looking compliant — observed
+        # twice downstream. Compared on normalised quoted spans, new decisions
+        # only, like every schema rule here.
+        against_value="$(printf '%s\n' "$block" \
+          | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Vision statements against:\*\*[[:space:]]*//p' | head -1)"
+        mapfile -t AGAINST_QUOTED < <(printf '%s\n' "$against_value" \
+          | grep -oE '"[^"]+"' | sed 's/^"//; s/"$//')
+        for q in "${QUOTED[@]:-}"; do
+          [[ -z "$q" ]] && continue
+          for aq in "${AGAINST_QUOTED[@]:-}"; do
+            [[ -z "$aq" ]] && continue
+            if [[ "$(printf '%s' "$q" | norm)" == "$(printf '%s' "$aq" | norm)" ]]; then
+              fail "$id quotes the same vision statement in 'relied on' and 'against' — the two fields cannot cite the same sentence; naming the statement that most nearly forbids the decision is the weighing the schema exists to force (ESC-234)"
+            fi
+          done
+        done
         for q in "${QUOTED[@]:-}"; do
           [[ -z "$q" ]] && continue
           q_norm="$(printf '%s' "$q" | norm)"
@@ -375,11 +393,35 @@ next — so a sentence they never wrote makes the lever a decoration."
     | head -1 | grep -oE '\bR[0-9]+\b' | head -1 || true)"
   closure_value="$(printf '%s\n' "$block" \
     | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Closure:\*\*[[:space:]]*//p' | head -1)"
+  # CLARIFYING IS A DISPOSITION (ESC-232). A ruling that changes how landed
+  # text reads used to do so invisibly — superseded: (none), nothing named.
+  # No gate can DETECT a reinterpretation; this is the legal way to declare
+  # one, and a declared target must exist: a landed decision, or one landing
+  # in this same pull request.
+  clarifies_value="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Clarifies:\*\*[[:space:]]*//p' | head -1)"
+  has_clarifies=0
+  if printf '%s\n' "$block" | grep -qF "**Clarifies:**"; then
+    ctarget="$(grep -oE '(OD|R)-?[0-9]+' <<<"$clarifies_value" | head -1 || true)"
+    if [[ -z "$ctarget" ]]; then
+      fail "$id has a **Clarifies:** field naming no target — name the OD-<n> or R<n> whose reading this decision changes"
+    elif [[ "$ctarget" == OD-* ]]; then
+      found=0
+      for known in "${BASE_IDS[@]:-}" "${HEAD_IDS[@]:-}"; do
+        [[ "$known" == "$ctarget" ]] && found=1
+      done
+      if [[ "$found" -eq 1 ]]; then has_clarifies=1
+      else fail "$id clarifies $ctarget, which exists in no ledger — a clarification of nothing is a new decision wearing a modest name"
+      fi
+    else
+      has_clarifies=1
+    fi
+  fi
   if printf '%s\n' "$block" | grep -qF "**Closure:**"; then
     if [[ -z "$closure_value" ]]; then
       fail "$id has an empty **Closure:** field — say why there is nothing to build, or drop the field and add a requirement"
     fi
-  elif [[ -z "$added_says" && -z "$sup_says" && "$is_halt" -eq 0 ]] \
+  elif [[ -z "$added_says" && -z "$sup_says" && "$is_halt" -eq 0 && "$has_clarifies" -eq 0 ]] \
     && ! printf '%s\n' "$block" | grep -qF "**Criterion waived:**"; then
     # A waiver is a disposition too — it changes what the acceptance gate does,
     # which is this ledger's one directly-effective outcome.
@@ -498,16 +540,24 @@ if [[ -f "$HEAD_DOC" ]]; then
   done < <(clearance_lines "$BASE_DOC")
   while IFS= read -r cl; do
     [[ -n "$cl" ]] || continue
-    cid="$(grep -oE 'BL-[0-9]+' <<<"$cl" | head -1 || true)"
+    cid="$(grep -oE '(ESC|BL)-[0-9]+' <<<"$cl" | head -1 || true)"
     if [[ -z "$cid" ]]; then
-      fail "a clearance line names no BL id: '$cl'"
+      fail "a clearance line names no BL or ESC id: '$cl'"
       continue
     fi
     if ! has_evidence "$cid"; then
-      fail "clearance of $cid: no such item in $BACKLOG at the base commit — a clearance closes a real filed item, it cannot invent one"
+      fail "clearance of $cid: no such item in the ledgers at the base commit — a clearance closes a real filed item, it cannot invent one"
       continue
     fi
-    if show_base "$BACKLOG" | awk -v id="$cid" '
+    # An ESC clearance is "read, and there is nothing to do" (ESC-231) — the
+    # committed middle state between "unread" and "fixed with a check"
+    # (docs/escapes.done.md still owns the second). No HIGH rule applies:
+    # escape rows carry no risk class. It grants nothing new — the oracle
+    # could always silence an escape by citing it from a decision; this is
+    # the cheap spelling, with the reason mandatory and the line immutable.
+    if [[ "$cid" == ESC-* ]]; then
+      : # existence and the reason check below are the whole contract
+    elif show_base "$BACKLOG" | awk -v id="$cid" '
         $0 ~ "^- \\*\\*" id "\\*\\*" { inb = 1; print; next }
         inb && (/^- / || /^## /)             { inb = 0 }
         inb                                  { print }' \
