@@ -662,3 +662,29 @@ What was *not* re-verifiable from here is stated as such in the text: web
 timings are reconstructed tier throughout, the anvil round-3.2 gate story is
 the ledger's own account, and the "zero product code" framing is the task
 brief's, qualified by H024's confirmed exception.
+
+## Appendix D — implementation record (2026-08-27)
+
+This plan is implemented. All three stages landed on this branch, the
+template's own way: thirteen ratchet stubs first (ESC-217..ESC-229), then
+three slice plans (`docs/plans/loop-economy.md`,
+`docs/plans/grounding-and-evidence.md`, `docs/plans/lexicon-and-rehearsal.md`,
+all now `status: merged`), then eleven implementation slices — each with
+blind-written tests where the behaviour allowed it, each red observed before
+its fix, the full suite, the shellcheck sweep, the workflow lint and the
+governance render check green at the end, and the thirteen escape rows
+completed with their demonstrated checks.
+
+What §5's table asked for now exists to measure: the rehearsal
+(`tests/test-loop-economy.sh`) shows a clean project reaching the build phase
+at reading three of seven; the supersession livelock replays as a no-dispatch
+note on the owner's desk; a superseded id, a fenced target, a repeated ask, a
+version bump and a lost merge each end typed and recorded instead of burning
+sessions. The metrics themselves await what `docs/synthesis.md` has called
+for all along: the App, and one watched live run — which is now also this
+plan's acceptance run.
+
+Two findings sharpened during implementation and are recorded where they
+bit: the evidence-collection grep bug a young ledger triggers (fixed in
+lexicon-2's commit), and ESC-229's bound turning out already pinned by an
+existing fixture (closed as already protected).
