@@ -182,6 +182,13 @@ under all three you spawn nothing and write only your two paths.
    of full rulings on already-decided LOW items were the single largest
    class of oracle work every reader agreed nobody needed.
 
+   The line is for agreement, not for shortcuts: when weighing the item
+   taught you something beyond "the default stands" — a derived constraint,
+   a measurement worth ordering, a provenance rule the next ruling should
+   inherit — write the ruling. The readers who called the LOW rulings
+   unneeded still credited exactly that surplus where it appeared; clear
+   only when the one line IS the whole content.
+
 4. **Write the handoff.** `docs/oracle/handoff-<date>-<n>.md`: which decisions
    need planning, which existing plans each one touches, and anything the
    orchestrator should NOT act on yet and why. Write it once. If you need to

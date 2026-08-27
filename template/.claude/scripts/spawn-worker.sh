@@ -151,6 +151,17 @@ if [[ -z "$PROMPT" ]]; then
 fi
 [[ -n "$PROMPT" ]] || die "prompt is empty"
 
+# THE SINGLE-ARGUMENT CAP IS A REFUSAL, NEVER A CRYPTIC DEATH (ESC-224's
+# dispatch-hygiene half). The engine still receives the prompt as one argv
+# string, and Linux caps a single argv string at ~128 KiB — a prompt over it
+# dies inside exec with "Argument list too long", AFTER this script has
+# already printed a plausible-looking header. Observed live: 8 of 14 workers
+# in one analysis run died exactly there, each leaving a header-only log a
+# reader mistook for a result. Refuse here, loudly, with the remedy.
+if [[ "${#PROMPT}" -gt 100000 ]]; then
+  die "the prompt is ${#PROMPT} bytes — over the ~128 KiB single-argument cap the engine exec would die on (silently, after the header). Split the command file, or trim what the dispatcher appends; a prompt this size is also a prompt no session reads well"
+fi
+
 # What a worker is allowed to run, when the engine is `claude`.
 #
 # A whitelist, and short on purpose: write files, run the suite, commit. Nothing

@@ -877,7 +877,7 @@ cat > "$WORK/bin/spawn-worker-moved" <<'STUB'
 #!/usr/bin/env bash
 id=""; while [[ $# -gt 0 ]]; do
   [[ "$1" == "--id" ]] && id="$2"
-  [[ "$1" == "--prompt" ]] && printf '%s\n' "$2" >> "${SPAWN_PROMPT_LOG:-/dev/null}"
+  [[ "$1" == "--prompt-file" ]] && cat "$2" >> "${SPAWN_PROMPT_LOG:-/dev/null}"
   shift
 done
 # The work lands on a branch of the worker's OWN choosing, not worker/<id>.

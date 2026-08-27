@@ -1205,9 +1205,17 @@ run_worker() { # run_worker <id> <role> <prompt> <docs-ref> <pr-title>
   emit dispatch iteration="${ITER:-0}" phase="${PHASE:-unknown}" worker="$id" \
     role="$role" prompt_sha="$psha"
   local out_file="$STATE_DIR/worker-$id.out"
+  # BY FILE, NEVER BY ARGV (ESC-224's dispatch-hygiene half). A prompt passed
+  # as one argument dies at ~128 KiB inside exec — `timeout: Argument list
+  # too long` — after enough of the dispatch has happened to leave a
+  # plausible header-only log. Observed live on an analysis harness whose
+  # prompts reached 163 KB. The file also survives as the run's own record of
+  # what was actually asked, beside the prompt_sha the event stream carries.
+  local prompt_file="$STATE_DIR/worker-$id.prompt"
+  printf '%s' "$prompt" > "$prompt_file"
   local wrc=0
   timeout "$SESSION_TIMEOUT" "$SPAWN" --id "$id" --role "$role" \
-       --engine "$ENGINE" --base "$RUN_BASE" --prompt "$prompt" \
+       --engine "$ENGINE" --base "$RUN_BASE" --prompt-file "$prompt_file" \
        > "$out_file" 2>&1 || wrc=$?
   if [[ "$wrc" -ne 0 ]]; then
     cat "$out_file" >> "$STATE_DIR/run.md"

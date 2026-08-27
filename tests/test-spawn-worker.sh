@@ -408,4 +408,18 @@ expect_not_contains "the engine-failure line carries no machine path" "$out" "$R
 expect_contains "and still points at the log" "$out" \
   ".claude/orchestration-logs/pathy-3.log"
 
+# ---- the single-argument cap is a refusal, never a cryptic death (ESC-224)
+# The engine receives the prompt as one argv string, and Linux caps one at
+# ~128 KiB. On a live analysis run, 8 of 14 workers died INSIDE exec with
+# "Argument list too long" — after printing a plausible header a reader
+# mistook for a result. An oversized prompt is refused up front, with the
+# remedy in the message. Delivered by --prompt-file, which is also the only
+# way a caller can even carry a prompt this size.
+BIGPROMPT="$WORK/big.prompt"
+head -c 150000 /dev/zero | tr '\0' 'a' > "$BIGPROMPT"
+out="$("$SPAWN" --id big-1 --prompt-file "$BIGPROMPT" --engine codex --print-command 2>&1)" && rc=0 || rc=$?
+expect_rc "a prompt over the argv cap is refused" 2 "$rc"
+expect_contains "and the refusal names the cap" "$out" "128 KiB"
+expect_contains "and the remedy" "$out" "Split the command file"
+
 summary

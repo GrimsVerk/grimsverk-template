@@ -688,3 +688,68 @@ Two findings sharpened during implementation and are recorded where they
 bit: the evidence-collection grep bug a young ledger triggers (fixed in
 lexicon-2's commit), and ESC-229's bound turning out already pinned by an
 existing fixture (closed as already protected).
+
+## Appendix E — the qualitative deep-read (2026-08-27, after implementation)
+
+The six `postmortem/qualitative/` arms were read in full only after the
+implementation landed — this plan had leaned on `SYNTHESIS.md`'s digest of
+them. A freshness check first: **no post-mortem branch gained a commit after
+this plan's reading** (the newest, `postmortem_backlog_lifecycle@1a03148`, is
+the one read), so nothing here is *newer* data — it is detail the digest
+dropped. One correction to the record: `SYNTHESIS.md` says the opus_5_xhigh
+arm never finished Phase C; its own `state.json` and a 13 KB `findings.md`
+say it did, after a resume.
+
+**What the deep read validated.** The brake being machine-read is exactly
+the lesson of the OD-20 failure ("addressed to a shell script that reads no
+ledger"); the clearance staying optional preserves the surplus readers
+credited in the better LOW rulings (now said explicitly in `oracle.md`); the
+halt-tightening this plan deliberately did not do is contested between arms,
+so not doing it was right.
+
+**What it surfaced that the plan had not built.** Two items were owed by W6
+and are now implemented with this appendix: the worker prompt travels by
+file, never argv (the ~128 KiB single-argument exec death that killed 8 of
+14 workers in one analysis run, leaving plausible header-only logs), and
+`spawn-worker.sh` refuses an over-cap prompt loudly with the remedy named.
+
+**Open findings, recorded for the owner — none built unprompted:**
+
+1. *Evidence intake sweeps in non-questions.* The detector hands the oracle
+   every uncited BL id anywhere in the backlog — owner-filed Proposed items
+   included, which the rules say are never coded unprompted. Candidate:
+   section-aware intake (Uncertainties section + escapes only).
+2. *No committed dismissal for escapes.* A read-and-declined ESC id
+   re-arrives on every machine forever (the processed file is gitignored;
+   `escapes.done.md` requires a check that exists). Candidate: extend the
+   clearance line to ESC ids — an authority widening, so the owner's call.
+3. *Reinterpretation without supersession.* Rulings materially re-read a
+   landed requirement's or ruling's prose while recording superseded:
+   (none). Candidate: a `Clarifies: OD-n` disposition the schema recognises.
+4. *Obligations minted in prose.* Rulings stash requirements in Rationale
+   text to avoid "spending ids"; measurements are cited as evidence with
+   uncommitted inputs; requirement scope generalises past the measured case
+   (the corpus's one unanimous exceedance). Candidates: prompt duties plus,
+   for measurements, "evidence commits its inputs" as a rule.
+5. *Self-cancelling vision citation.* The relied-on and against fields can
+   quote the same statement, disarming the anti-searching check. Candidate:
+   a one-line gate lint.
+6. *No queue for vision gaps or oracle discoveries.* "The vision never says
+   who this is for" recurs and dies in worker logs; a bug the oracle finds
+   itself is citable by nobody. Candidates: a vision-gaps suggestions file
+   (owner-read, like retirement-suggestions), and letting the oracle file a
+   Proposed backlog item for discoveries — the second widens the oracle's
+   write surface, so the owner's call.
+7. *Smaller:* halts name compliant alternatives but never weigh plain
+   refusal, and a handoff's "do not act" list can block work invisibly; two
+   rulings bound the same R id to two plans; twin lanes re-pay for
+   identical rulings; risk classes drift between filers.
+
+**Evidence caveats the deep read adds** (they do not change this plan's
+structural basis, which leaned on unanimous stories and confirmed
+hypotheses): all six arms were quota-killed and resumed, and in one arm
+every categorical disagreement involves a resumed reader; paired-reader
+agreement often reflects shared shard context, not corroboration; ruling
+line-counts were never counted under a shared rule (gaps to 180% between
+readers of the same ruling); 15 of 37 rulings were judged with no review
+evidence, all 11 web payloads being tombstones.
