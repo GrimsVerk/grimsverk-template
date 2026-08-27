@@ -570,6 +570,17 @@ to protect, which is why W7's fixture project should be drafted *with* Stage
   alternative (a separate work-state file) is cleaner to parse but adds a
   document that can drift from the ledger it mirrors.
 
+### Rulings so far (2026-08-27)
+
+- **Q2 — ruled.** The owner accepted the recommendation: the oracle closes
+  defaulted-LOW items with a one-line citation at its next pass. The
+  "only the oracle metabolises evidence" invariant stands.
+- **Q3 — ruled.** The owner accepted the recommendation: closure state lives
+  inside `docs/DESIGN.oracle.md` entries, append-only, read by the detector.
+  No new ledger.
+- **Q1 — open, under discussion.** The owner asked for the per-target brake
+  and the halt question to be laid out in full before ruling.
+
 ---
 
 ## Appendix A — finding → workstream traceability
