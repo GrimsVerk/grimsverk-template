@@ -1089,6 +1089,78 @@ rm -f "$R/.copier-answers.yml" "$R"/bumped-*.txt
 git -C "$R" branch --list 'worker/*' --format='%(refname:short)' \
   | xargs -r git -C "$R" branch -qD 2>/dev/null || true
 
+# ---- ESC-235: a handoff's Discoveries reach the backlog, by the driver's hand
+# The oracle may not write the backlog and may not rule on what no logged
+# evidence covers, so a defect it DISCOVERED was citable by nobody. The
+# driver transcribes the handoff's `## Discoveries` section into
+# docs/BACKLOG.md as Proposed items at the stop — on the evidence branch,
+# provenance named, never twice for one handoff.
+reset_pr_run
+PRE_SEED235="$(git -C "$R" rev-parse main)"
+mkdir -p "$R/docs/oracle"
+cat > "$R/docs/oracle/handoff-2026-08-27-9.md" <<'EOF'
+# Handoff
+
+## What needs planning
+
+Nothing here.
+
+## Discoveries
+
+- converting 1e305 km to mm prints inf — an overflow no logged evidence covers
+- the batch reader accepts a negative count and loops
+EOF
+cat >> "$R/docs/BACKLOG.md" <<'EOF'
+
+## Uncertainties awaiting oracle ruling
+
+- **BL-81** — engine choice? — proposed: sqlite — HIGH: schema.
+EOF
+git -C "$R" add -A && git -C "$R" commit -qm "seed a handoff with discoveries and an unruled HIGH"
+# PUSHED, not just ref-set: the evidence branch is cut from the freshly
+# FETCHED remote tip (ESC-70), so a seed that exists only in the local
+# tracking ref is erased by the fetch before the transcription can see it.
+git -C "$R" push -q origin main
+git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse main)"
+git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' \
+  | xargs -r git -C "$R" branch -qD 2>/dev/null || true
+cat > "$WORK/bin/spawn-worker-dead235" <<'STUB'
+#!/usr/bin/env bash
+echo "Execution error"
+exit 3
+STUB
+chmod +x "$WORK/bin/spawn-worker-dead235"
+out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-dead235" \
+        STUB_MERGED_REFS="$BUILT" PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" \
+        -- --max-iterations 9)"
+expect_contains "the driver announces the transcription" "$out" \
+  "transcribed the Discoveries"
+tref="$(git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' | tail -1)"
+tbacklog="$(git -C "$R" show "$tref:docs/BACKLOG.md" 2>/dev/null)"
+expect_contains "the discovery is a Proposed backlog item on the evidence branch" \
+  "$tbacklog" "overflow no logged evidence covers"
+expect_contains "and the second one too" "$tbacklog" "negative count"
+expect_contains "with a minted id" "$tbacklog" "- **BL-82**"
+expect_contains "and the driver named as the transcriber, not the oracle" \
+  "$tbacklog" "filed by: the delivery driver"
+expect_contains "and the handoff it came from" "$tbacklog" "handoff-2026-08-27-9.md"
+# Idempotence across runs: once the evidence merges (simulated by adopting the
+# landed backlog on main), a later stop transcribes nothing new.
+git -C "$R" show "$tref:docs/BACKLOG.md" > "$R/docs/BACKLOG.md"
+git -C "$R" add -A && git -C "$R" commit -qm "simulate the evidence pull request merging"
+git -C "$R" push -q origin main
+git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse main)"
+out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-dead235" \
+        STUB_MERGED_REFS="$BUILT" PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" \
+        -- --max-iterations 9)"
+expect_not_contains "a transcribed handoff is not transcribed twice" "$out" \
+  "transcribed the Discoveries"
+git -C "$R" switch -q main
+git -C "$R" reset -q --hard "$PRE_SEED235"
+git -C "$R" push -qf origin main
+git -C "$R" update-ref refs/remotes/origin/main "$PRE_SEED235"
+rm -f "$R/docs/oracle/handoff-2026-08-27-9.md"
+
 # ---- ESC-75: a stop the run did not choose is never reported as success
 # Round 3.3 died five minutes in with its only worker's engine dead, and the
 # landed report said "exit code 0" — the success code — with no reason, under

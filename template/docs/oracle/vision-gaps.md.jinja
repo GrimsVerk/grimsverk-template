@@ -1,0 +1,44 @@
+# Vision gaps — for the owner — {{ project_name }}
+
+Places the vision went silent when a decision needed it, recorded by the
+agents who hit the silence. Append only.
+
+## Nothing reads this file
+
+Not `coverage.sh`. Not `deliver-phase.sh`. Not any gate, any workflow, or any
+other role's prompt. **The owner reads it, and nobody else.** The same test
+that holds [`retirement-suggestions.md`](retirement-suggestions.md) to this
+guarantee holds this file to it: if any script or command file ever starts
+reading this path, CI fails.
+
+The reason is the same as over there. A recorded gap must never be able to
+stop a run, refuse a phase, or excuse a decision from citing what vision there
+is — a gap observation that carried mechanical weight would be a veto with
+extra steps. The vision is the owner's; the loop keeps moving on what exists;
+this file is where the silence stops being invisible.
+
+Why it exists: on the 2026-08-20 experiment, the observation "the vision never
+says who the output is FOR" recurred across five separate rulings — and lived
+only in worker logs that died with their containers. The owner, who is told to
+steer by editing vision sentences, never learned which sentences were missing.
+
+## Writing one
+
+Append, when a decision had to reach for a vision statement that was not
+there — the schema's honest opt-out, `(no vision statement decided this)`, is
+the moment this file is for. Say what question needed deciding, what sentence
+would have decided it, and which decisions have already guessed in its absence.
+
+    ## <one line: the question the vision does not answer>
+
+    - **Date:** YYYY-MM-DD
+    - **Surfaced by:** OD-<n> (and any repeats)
+    - **A sentence that would decide it:** "<draft the owner can edit or reject>"
+    - **Decided without it so far:** <what was guessed, and where>
+
+To act on one, the owner edits `docs/VISION.md` on a pull request they open
+themselves. To reject one, they do nothing.
+
+---
+
+_(nothing yet)_

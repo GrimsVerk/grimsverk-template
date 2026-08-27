@@ -753,6 +753,51 @@ for _sig in TERM INT HUP; do
 done
 unset _sig
 
+# ---------------------------- discoveries reach the backlog (ESC-235)
+# The oracle may not write the backlog and may not rule on what no logged
+# evidence covers — both limits are correct, and together they made a defect
+# the oracle DISCOVERED citable by nobody: a real overflow bug lived and died
+# in a worker log. The handoff's `## Discoveries` section is the oracle's
+# outbox; this transcribes every line of it into docs/BACKLOG.md as a
+# Proposed item, mechanically, with provenance — the oracle gains no write
+# surface, and the append travels with the run's evidence pull request
+# through the same gates as everything else. Idempotent per handoff: a
+# handoff whose basename the backlog already names is done. Appended under
+# its own `## ` heading, never into an existing section — an insertion is
+# not an append, and a fresh heading also ends the Uncertainties section so
+# section-aware intake (ESC-230) correctly treats these as Proposed.
+transcribe_discoveries() {
+  [[ -d docs/oracle ]] || return 0
+  local hf base next_bl entries
+  for hf in docs/oracle/handoff-*.md; do
+    [[ -f "$hf" ]] || continue
+    base="$(basename "$hf")"
+    grep -q '^## Discoveries' "$hf" || continue
+    grep -qF -- "$base" docs/BACKLOG.md 2>/dev/null && continue
+    entries="$(awk '/^## Discoveries/{insec=1; next} /^## /{insec=0} insec && /^[-*] /' "$hf")"
+    [[ -n "$entries" ]] || continue
+    # Two steps, because under pipefail the missing done-ledger fails the
+    # whole pipeline AFTER tail has printed, and an `|| echo 0` then prints a
+    # second number into the arithmetic.
+    next_bl="$(cat docs/BACKLOG.md docs/BACKLOG.done.md 2>/dev/null \
+      | grep -oE 'BL-[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1 || true)"
+    next_bl="$(( ${next_bl:-0} + 1 ))"
+    {
+      echo
+      echo "## Proposed (oracle discoveries — transcribed by the driver from $base, run $RUN_ID)"
+      echo
+      while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        printf -- '- **BL-%s** — %s\n  filed by: the delivery driver, transcribing the oracle'"'"'s handoff (the oracle cannot file; ESC-235)\n' \
+          "$next_bl" "$(sed 's/^[-*][[:space:]]*//' <<<"$line")"
+        next_bl=$((next_bl + 1))
+      done <<<"$entries"
+    } >> docs/BACKLOG.md
+    log "transcribed the Discoveries of $base into docs/BACKLOG.md as Proposed items"
+  done
+  return 0
+}
+
 land_evidence() {
   local rc=$?
   [[ "$LANDED" -eq 1 ]] && return "$rc"
@@ -898,6 +943,8 @@ land_evidence() {
     # silently blocks the step after it.
     git add "$RUN_DIR" 2>/dev/null || true
     git add docs/DESIGN.oracle.done.md 2>/dev/null || true
+    transcribe_discoveries
+    git add docs/BACKLOG.md 2>/dev/null || true
     if git diff --cached --quiet 2>/dev/null; then
       echo "deliver-loop: nothing to land."
     elif ! git commit -q -m "Run evidence for $RUN_ID" 2>/dev/null; then
@@ -1547,7 +1594,8 @@ while :; do
 
   # What next? Recomputed from the world, never remembered.
   PHASE=""; PR=""; HEADREF=""; UNRULED=""; UNCITED=""; ODS=""; REQS=""; SLUG=""; REASON=""
-  CRITERIA=""; OPEN_DECISIONS=""; UNBUILT_PLANS=""; EVIDENCE=""; BRAKED=""; rc=0
+  CRITERIA=""; OPEN_DECISIONS=""; UNBUILT_PLANS=""; EVIDENCE=""; BRAKED=""
+  PROPOSED_SKIPPED=""; rc=0
   while IFS='=' read -r k v; do
     case "$k" in
       PHASE) PHASE="$v" ;; PR) PR="$v" ;; HEADREF) HEADREF="$v" ;;
@@ -1558,6 +1606,7 @@ while :; do
       UNBUILT_PLANS) UNBUILT_PLANS="$v" ;;
       EVIDENCE) EVIDENCE="$v" ;;
       BRAKED) BRAKED="$v" ;;
+      PROPOSED_SKIPPED) PROPOSED_SKIPPED="$v" ;;
     esac
   done < <(GH="$GH" PROCESSED_FILE="$PROCESSED_FILE" RUN_BASE="$RUN_BASE" "$PHASE_SH")
   [[ -n "$PHASE" ]] || die "phase detection failed"
@@ -1580,7 +1629,7 @@ while :; do
   # way in run.md while it is happening — 2026-08-20's runs ended with 35 of 58
   # decisions never planned and no line anywhere that could have said so.
   if [[ -n "$OPEN_DECISIONS$UNBUILT_PLANS$EVIDENCE" ]]; then
-    log "economy: decisions open ${OPEN_DECISIONS:-?}, plans unbuilt ${UNBUILT_PLANS:-?}, evidence waiting ${EVIDENCE:-?}"
+    log "economy: decisions open ${OPEN_DECISIONS:-?}, plans unbuilt ${UNBUILT_PLANS:-?}, evidence waiting ${EVIDENCE:-?}${PROPOSED_SKIPPED:+, proposed items waiting for a citation $PROPOSED_SKIPPED}"
   fi
   # The oracle's per-target brake, said LOUDLY every iteration it holds
   # (ESC-221): a fenced target is routed around, never silently dropped.
