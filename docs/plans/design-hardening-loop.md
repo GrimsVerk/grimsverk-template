@@ -1,6 +1,6 @@
 ---
 slug: design-hardening-loop
-status: draft
+status: merged
 created: 2026-08-27
 design: docs/proposals/design-hardening-loop.md (graduated by this plan) — the owner's in-session rulings, recorded under Uncertainties below
 covers: [R2, R3, R9]
