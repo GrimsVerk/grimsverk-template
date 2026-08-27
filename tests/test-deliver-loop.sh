@@ -722,6 +722,17 @@ git -C "$R" add -A >/dev/null 2>&1; git -C "$R" commit -qm "before the pr tests"
 # happening.
 ORIGIN="$WORK/origin.git"
 git init -q --bare "$ORIGIN"
+# Auto-gc OFF, and not as tuning: receive.autogc detaches a background
+# `git gc --auto` inside this shared origin after a push, and on a slow
+# runner that gc prunes loose objects WHILE a later scenario clones or
+# pushes. Observed on CI as three different failures of this file on three
+# runs — a clone dying mid-object-copy ("failed to copy file ...
+# objects/..."), an evidence push failing into the ESC-204 buffer note, and
+# both ESC-220 pushes failing so the wrong rc-5 guard fired. One cause, a
+# race with background gc; a fixture origin has no use for gc at all.
+git -C "$ORIGIN" config receive.autogc false
+git -C "$ORIGIN" config gc.auto 0
+git -C "$ORIGIN" config gc.autoDetach false
 git -C "$R" remote add origin "$ORIGIN" 2>/dev/null || git -C "$R" remote set-url origin "$ORIGIN"
 git -C "$R" push -q origin main
 
