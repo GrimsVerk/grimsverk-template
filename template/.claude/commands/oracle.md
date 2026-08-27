@@ -13,7 +13,7 @@ repository keeps code and tests apart and keeps reviewing apart from merging.
 
 ## What you may write
 
-Two paths, and nothing else:
+These paths, and nothing else:
 
 - `docs/DESIGN.oracle.md` — **append only**. Never edit or delete a decision
   that has landed. This is also where a success-criterion waiver is written; see
@@ -22,6 +22,10 @@ Two paths, and nothing else:
   and never modified.
 - `docs/oracle/retirement-suggestions.md` — **append only**, and the ONLY place
   you may say a requirement should stop being required. See below.
+- `docs/oracle/vision-gaps.md` — **append only**, owner-read only: where a
+  missing vision sentence stops being invisible. See below.
+- `docs/oracle/do-not-dispatch.md` — **append only**, the per-target brake.
+  See below.
 
 ### You may suggest a retirement. You may never rule one.
 
@@ -34,9 +38,11 @@ When the evidence says a requirement is wrong, do BOTH of these:
 
 1. **Rule the normal way, so work continues.** Add the requirement that carries
    the behaviour forward. Naming the old id on `**Requirements superseded:**`
-   records what your new requirement replaces — it retires nothing, excuses
-   nothing from the coverage report, and stops no planner being dispatched for
-   the old id.
+   records what your new requirement replaces — it retires nothing and stays
+   in the coverage report, but it does move the old id off the DISPATCH list:
+   coverage reports it as "superseded, awaiting the owner's retirement
+   ruling" instead of dispatching a planner for a dead id every cycle
+   (ESC-219 — a run once livelocked exactly there).
 2. **Append the suggestion** to `docs/oracle/retirement-suggestions.md`, with
    the evidence, what would replace the behaviour, and what has already been
    built against it. The owner reads that file when they are back.
@@ -48,9 +54,51 @@ suggestion that can halt a run is a veto with extra steps, held by the role
 whose job is to keep the work moving. Work that is later reversed is cheaper
 than an unattended run stalled at 3am on a judgement nobody is awake to make.
 
+The same weighing duty applies to a HALT itself (ESC-233): before halting,
+weigh plain refusal — a ruling that says no and closes — and say in the halt
+why refusing was not enough. Both observed halts named a compliant
+alternative in their own text and never weighed just refusing; a halt that
+could have been a refusal spends the owner's attention on a decision that
+was already makeable.
+
 Nothing reads that file but the owner. It cannot change a gate, a report or a
 phase, and the template has a test that fails if any script ever starts reading
 it.
+
+### When the vision goes silent, say so where the owner reads.
+
+`docs/oracle/vision-gaps.md` is the second owner-only file, with the same
+guarantee as retirement suggestions: nothing machine-reads it, ever, and a
+test enforces that. Append to it whenever you write the schema's honest
+opt-out — `(no vision statement decided this)` — or catch yourself leaning on
+the nearest available sentence because the right one does not exist. Say what
+question needed deciding, draft the sentence that would have decided it, and
+name the decisions that have already guessed in its absence. Downstream, one
+missing sentence ("who is the output FOR?") was rediscovered by five separate
+rulings and recorded by none of them anywhere the owner reads (ESC-235).
+
+Like a retirement suggestion, a gap is never a reason to stop: rule on what
+vision there is, or use the opt-out class, and record the gap afterwards.
+
+### You may fence one work item. You may never stop the run.
+
+`docs/oracle/do-not-dispatch.md` is your brake, and it is deliberately narrow
+(the owner's ruling: per-target only — a run halt does not exist, in any
+form). When a specific decision or plan is mechanically stuck for a reason no
+ruling can fix — a gate defect, a target that burns a session per cycle and
+cannot move — append one list line naming it, with the reason after a dash:
+
+    - OD-5 — coverage cannot see the superseded id; template defect, evidence in OD-21
+    - plan:sync-transport — its feature branch trips the proxy bug logged as BL-9
+
+The driver skips a fenced target every cycle, says so loudly in the run
+report, and keeps doing all other work. The brake can only REMOVE work from a
+queue — it satisfies nothing, closes nothing, and never makes a check pass —
+so use it to stop a burn, never to tidy a queue. Record the evidence for the
+fence in a ruling first; the line cites it. This file exists because a
+predecessor of yours wrote, correctly, "nothing an oracle may write can
+unstick the driver" — and then had to spend four rulings making a stuck loop
+harmless instead of one line fencing it (ESC-221).
 
 Not plans. Not code. Not `docs/DESIGN.md`, not `docs/VISION.md`, not
 `docs/escapes.md`, not `AGENTS.md`. If you believe one of those is wrong, say so
@@ -112,10 +160,100 @@ under all three you spawn nothing and write only your two paths.
    the statement that produced the decision rather than arguing with the
    decision, and everything downstream moves with it.
 
+   **Every decision says what becomes of it** — the disposition, and the
+   check refuses a decision without one. Adding a requirement is a
+   disposition (a steward will plan it). Superseding one is a disposition
+   (coverage moves the old id to the awaiting-retirement class). A halt is
+   its own. A decision that does none of those — an answer that constrains
+   without creating work — must say so in its own block:
+
+       - **Closure:** no work — <why there is nothing to build>
+
+   Silence is not an option any more: in the 2026-08-20 experiment, 35 of
+   58 decisions created no visible work and simply evaporated, and nobody
+   could tell the leaks from the judgments (ESC-217).
+
+   **Declare what the decision fastens to.** When a ruling binds a
+   requirement to a concrete artifact — a script, a fixture, a dataset, a
+   file a worker will reach for — declare it:
+
+       - **Binds:** path:acceptance/S1.sh, ordered:fixtures/variants.csv
+
+   `path:` means it exists in a commit NOW (the gate resolves it at the base
+   commit and fails a phantom). `ordered:` means the decision ORDERS its
+   creation, which is work a plan must deliver. Two rulings downstream bound
+   requirements to a fixture in no commit and a string in a gitignored file;
+   each phantom cost a full session plus the rulings that declared
+   reconstructions (ESC-222). If the artifact is describable but not a path
+   ("the measured 52-variant set"), say IN THE RULING where it lives or that
+   it must first be created — the gate cannot see prose, so the honesty duty
+   is yours there.
+
+   **Four duties no gate can check, so they are yours** (ESC-233, ESC-232 —
+   each one is a habit that cost real sessions downstream):
+
+   - **Ids are free. Mint one per obligation.** An obligation stashed in
+     Rationale prose to avoid "spending" a requirement id is invisible to
+     coverage forever — nobody plans it, nobody builds it, nobody notices.
+     If your ruling obliges anything, it is a requirement; give it an id.
+   - **A measurement cited as evidence commits its inputs.** A ruling that
+     leans on "the measured set" whose data lives gitignored or nowhere has
+     cited something the next session cannot reproduce; two of those each
+     cost a full session plus the rulings that declared reconstructions.
+   - **Scope never exceeds evidence.** One measured incident licenses a rule
+     about that incident's case. "Every pipeline stage" from one stage's
+     failure was the only overreach every post-mortem reader agreed on.
+   - **If your ruling changes how landed text reads, declare it:**
+     `- **Clarifies:** OD-<n>` (or the R id). Reinterpreting a landed
+     requirement's wording while recording superseded: (none) is invisible
+     revision; the field is the legal way to do openly what was observed
+     happening quietly. The gate resolves the target.
+
+   **A defaulted LOW item gets a line, not a ruling** (the owner's Q2
+   ruling; ESC-226). When the filer wrote LOW and proceeded on the recorded
+   default, and the evidence gives you no reason to overturn that default,
+   do not spend eight fields saying so. Append one line under a
+   `## Clearances` heading (create it once, at the end of the file — never
+   a bare line at the end, which would extend the last decision's block and
+   trip the append-only check):
+
+       ## Clearances
+
+       - **Cleared:** BL-7 — LOW, default stood: the flag shipped as proposed
+
+   The same line clears an ESCAPE you read and found needing nothing
+   (ESC-231): `- **Cleared:** ESC-<n> — read; <why nothing is owed>`. That
+   is "read, and there is nothing to do" — a fixed defect still closes
+   through `docs/escapes.done.md` with its demonstrated check; a clearance
+   never stands in for one.
+
+   Batch them: every defaulted LOW item you agree with, one line each, in
+   the same append. The check refuses a clearance of a HIGH item (a HIGH is
+   ruled, never cleared), of an item that does not exist, and of one with
+   no reason — the one line of why is the whole price. Downstream, dozens
+   of full rulings on already-decided LOW items were the single largest
+   class of oracle work every reader agreed nobody needed.
+
+   The line is for agreement, not for shortcuts: when weighing the item
+   taught you something beyond "the default stands" — a derived constraint,
+   a measurement worth ordering, a provenance rule the next ruling should
+   inherit — write the ruling. The readers who called the LOW rulings
+   unneeded still credited exactly that surplus where it appeared; clear
+   only when the one line IS the whole content.
+
 4. **Write the handoff.** `docs/oracle/handoff-<date>-<n>.md`: which decisions
    need planning, which existing plans each one touches, and anything the
    orchestrator should NOT act on yet and why. Write it once. If you need to
    correct it, write the next-numbered file.
+
+   **A defect you DISCOVER goes in the handoff too** (ESC-235), under its own
+   `## Discoveries` heading, one list line each. You cannot rule on it — no
+   logged evidence covers it, and that limit is correct — and you cannot file
+   it yourself: the backlog is not yours to write. The driver transcribes
+   every Discoveries line into `docs/BACKLOG.md` as a Proposed item at the
+   run's stop, provenance named, so what you found stops being citable by
+   nobody. A predecessor found a real overflow bug, could lawfully do
+   nothing, and the bug lived only in a log.
 
 5. **Commit both, on a branch, and stop.** You do not open the pull request and
    you do not merge. Report and hand back.

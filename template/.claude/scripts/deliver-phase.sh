@@ -26,22 +26,34 @@
 #   PHASE=ORACLE REASON=uncertainties UNRULED=<BL ids>
 #                                     a plan filed HIGH-risk uncertainties and
 #                                     no decision cites them yet — planning is
-#                                     blocked until the oracle rules
+#                                     blocked until the oracle rules. HIGH is
+#                                     the ONE class of new question that
+#                                     outranks decided work
+#   PHASE=STEWARD ODS=<OD ids>        landed decisions added requirements no
+#                                     plan covers — one steward per decision.
+#                                     Ranked ABOVE new-evidence intake
+#                                     (ESC-217): a ruling nobody plans is the
+#                                     leak that cost the 2026-08-20 runs most
+#   PHASE=ORCHESTRATE SLUG=<slug>     a landed plan with no merged feat/ pull
+#                                     request, and whose front matter does not
+#                                     say `status: merged` — build it. Also
+#                                     ranked above new-evidence intake
+#                                     (ESC-218): decided work outranks new
+#                                     questions
 #   PHASE=ORACLE REASON=evidence UNCITED=<ids>
 #                                     logged evidence (escapes, backlog items,
 #                                     LOW uncertainties) no decision has
 #                                     metabolised, no closure in
 #                                     docs/escapes.done.md has finished, and no
-#                                     prior oracle run has dismissed — the
-#                                     oracle looks before more work is planned
-#                                     on a possibly-wrong design
-#   PHASE=STEWARD ODS=<OD ids>        landed decisions added requirements no
-#                                     plan covers — one steward per decision
+#                                     prior oracle run has dismissed — after
+#                                     decided work, before any NEW milestone is
+#                                     planned on a possibly-wrong design
 #   PHASE=PLAN REQS=<R ids>           owner-side requirements no plan covers —
 #                                     plan the next milestone
-#   PHASE=ORCHESTRATE SLUG=<slug>     a landed plan with no merged feat/ pull
-#                                     request, and whose front matter does not
-#                                     say `status: merged` — build it
+#
+#   Every reading from STEWARD down also carries the economy counters
+#   OPEN_DECISIONS= UNBUILT_PLANS= EVIDENCE= — the loop's scoreboard, logged
+#   by the driver every iteration (ESC-218)
 #   PHASE=ACCEPTANCE [CRITERIA=<S ids>]
 #                                     everything planned and merged — check
 #                                     the built system against the design's
@@ -234,15 +246,34 @@ if [[ -n "${UNRULED# }" ]]; then
   exit 0
 fi
 
-# --------------------------------------------- 3. evidence nobody has read?
+# --------------------------------------- 3. evidence nobody has read? (COUNTED)
 # Every real id in the ledgers, minus what a decision cites, minus what a
-# prior run explicitly dismissed. The oracle rules on a possibly-wrong design
-# BEFORE more work is planned against it — that ordering is the role's point.
+# prior run explicitly dismissed. COMPUTED here, ACTED ON further down
+# (ESC-218): this used to exit straight to ORACLE, which put "any uncited id
+# anywhere" ahead of every planning and build phase — so the loop's stable
+# state was design-layer work, and in 1650 recorded events of the 2026-08-20
+# experiment the build phase was reached once, under a broken gate. The rule
+# now is the one AGENTS.md always stated for LOW items: decided work outranks
+# new questions. Only a HIGH uncertainty (section 2, above) blocks everything;
+# ordinary evidence waits its turn behind stewards and builds, and still comes
+# BEFORE planning a new milestone — the oracle rules on a possibly-wrong
+# design before more work is planned against it, which remains the role's
+# point.
 UNCITED=""
 IDS_TMP="$(mktemp)"
 {
   [[ -f "$LEDGER"  ]] && grep -E '^\|' "$LEDGER" | grep -oE 'ESC-[0-9]+' || true
-  [[ -f "$BACKLOG" ]] && grep -oE 'BL-[0-9]+' "$BACKLOG" || true
+  # SECTION-AWARE INTAKE (ESC-230). Only the Uncertainties section's ids are
+  # questions somebody filed FOR the oracle. This used to grep the whole
+  # backlog, which swept owner-filed Proposed ideas — items the rules say are
+  # never coded unprompted — into the oracle's inbox as commissioned
+  # evidence, and they got rulings nobody asked for. Proposed and Approved
+  # ids now wait until a decision cites them; the count of what waits is on
+  # every reading, so a wrongly-sectioned item is visible, never vanished.
+  [[ -f "$BACKLOG" ]] && awk '
+      /^## Uncertainties awaiting oracle ruling/ { insec = 1; next }
+      /^## /  { insec = 0 }
+      insec' "$BACKLOG" | grep -oE 'BL-[0-9]+' || true
 } | sort -u > "$IDS_TMP" || true
 while IFS= read -r id; do
   [[ -n "$id" ]] || continue
@@ -251,22 +282,45 @@ while IFS= read -r id; do
   is_processed "$id" && continue
   UNCITED="$UNCITED $id"
 done < "$IDS_TMP"
-rm -f "$IDS_TMP"
-if [[ -n "${UNCITED# }" ]]; then
-  echo "PHASE=ORACLE"
-  emit_base
-  echo "REASON=evidence"
-  echo "UNCITED=${UNCITED# }"
-  exit 0
+PROPOSED_SKIPPED=0
+if [[ -f "$BACKLOG" ]]; then
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    grep -qw -- "$id" "$IDS_TMP" && continue
+    is_cited "$id" && continue
+    PROPOSED_SKIPPED=$((PROPOSED_SKIPPED + 1))
+  done < <(grep -oE 'BL-[0-9]+' "$BACKLOG" | sort -u)
 fi
+rm -f "$IDS_TMP"
+UNCITED="${UNCITED# }"
+
+# THE ECONOMY COUNTERS, on every reading below (ESC-218). The 2026-08-20 runs
+# ended with 35 of 58 decisions never planned and nothing in any run report
+# that could have said so. These three numbers are the loop's scoreboard; the
+# driver logs them every iteration, so a run that is all design and no build
+# reads that way while it is happening rather than in a post-mortem.
+OPEN_DECISIONS=""
+UNBUILT_PLANS=""
+BRAKED=""   # filled by the brake pass below; empty until then
+emit_counts() {
+  [[ -n "$OPEN_DECISIONS" ]] && echo "OPEN_DECISIONS=$OPEN_DECISIONS"
+  [[ -n "$UNBUILT_PLANS"  ]] && echo "UNBUILT_PLANS=$UNBUILT_PLANS"
+  echo "EVIDENCE=$(wc -w <<<"$UNCITED" | tr -d ' ')"
+  [[ "${PROPOSED_SKIPPED:-0}" -gt 0 ]] && echo "PROPOSED_SKIPPED=$PROPOSED_SKIPPED"
+  [[ -n "$BRAKED" ]] && echo "BRAKED=$BRAKED"
+  return 0
+}
 
 # ------------------------------------------------------- 4. coverage gaps?
 COV_RC=0
 COV_OUT="$(.github/scripts/coverage.sh 2>&1)" || COV_RC=$?
+STEWARD_ODS=""
+PLAN_REQS=""
 case "$COV_RC" in
   2)
     echo "PHASE=SETUP"
     emit_base
+    emit_counts
     echo "REASON=$(head -1 <<<"$COV_OUT")"
     exit 0 ;;
   1)
@@ -276,8 +330,6 @@ case "$COV_RC" in
     # first: those decisions exist because the design was WRONG, and building
     # more against the uncorrected shape is the waste the oracle exists to
     # stop.
-    STEWARD_ODS=""
-    PLAN_REQS=""
     for req in $GAPS; do
       n="${req#R}"
       if [[ "$n" =~ ^[0-9]+$ ]] && [[ "$n" -ge 1000 ]]; then
@@ -288,16 +340,8 @@ case "$COV_RC" in
         PLAN_REQS="$PLAN_REQS $req"
       fi
     done
-    if [[ -n "${STEWARD_ODS# }" ]]; then
-      echo "PHASE=STEWARD"
-      emit_base
-      echo "ODS=${STEWARD_ODS# }"
-      exit 0
-    fi
-    echo "PHASE=PLAN"
-    emit_base
-    echo "REQS=${PLAN_REQS# }"
-    exit 0 ;;
+    STEWARD_ODS="${STEWARD_ODS# }"
+    PLAN_REQS="${PLAN_REQS# }" ;;
 esac
 
 # ------------------------------------- 5. planned and merged, but unbuilt?
@@ -309,6 +353,7 @@ esac
 # plans built with the work simply absent here.
 # REST has no state=merged filter: closed pull requests include unmerged ones,
 # and merged is the merged_at field being set. --paginate replaces --limit 200.
+UNBUILT_SLUGS=""
 MERGED_REFS="$("$GH" api --paginate "repos/$REPO/pulls?state=closed&base=$RUN_BASE&per_page=100" \
   --jq '.[] | select(.merged_at != null) | .head.ref' 2>/dev/null || true)"
 #
@@ -368,13 +413,97 @@ while IFS= read -r f; do
 
   # Anchored: the branch is `feat/<slug>` or `feat/<slug>-<something>`, never
   # `feat/<slug-as-a-substring-of-a-different-name>`.
+  #
+  # COLLECTED rather than exited on (ESC-218): the count of unbuilt plans is
+  # one of the three economy counters every reading below carries, so the walk
+  # runs to the end and the dispatch decision is taken after it.
   if ! grep -qE "^feat/${slug}([/-][^/]*)?$" <<<"$MERGED_REFS"; then
-    echo "PHASE=ORCHESTRATE"
-    emit_base
-    echo "SLUG=$slug"
-    exit 0
+    UNBUILT_SLUGS="$UNBUILT_SLUGS $slug"
   fi
 done < <(find "$PLANS_DIR" -name '*.md' 2>/dev/null | sort)
+UNBUILT_SLUGS="${UNBUILT_SLUGS# }"
+
+# ------------------------------- the per-target brake (ESC-221, ruling Q1)
+# The one legal move the oracle has against a poisoned work item. On the
+# 2026-08-20 run the oracle diagnosed a stuck driver IN WRITING — "nothing an
+# oracle may write can [unstick it]" — and was right: the driver reads no
+# prose, so a quarter of that ledger exists only to make the loop harmless.
+# docs/oracle/do-not-dispatch.md is machine-readable: a column-0 list line
+# naming an `OD-<n>` or a `plan:<slug>`, with the reason after a dash. The
+# detector routes around a fenced target and REPORTS the skip; the driver
+# logs it loudly. It is a brake on one lane, never on the run (the owner's
+# Q1 ruling: no run-halt authority) — and it can only remove work from a
+# queue, never make a check pass, so the worst it can do is an idle run that
+# says exactly why it is idle, on every reading.
+BRAKE_FILE="${BRAKE_FILE:-docs/oracle/do-not-dispatch.md}"
+if [[ -f "$BRAKE_FILE" ]]; then
+  BRAKED_TARGETS="$(grep -E '^[-*] ' "$BRAKE_FILE" \
+    | grep -oE '(OD-[0-9]+|plan:[A-Za-z0-9][A-Za-z0-9-]*)' | sort -u || true)"
+  if [[ -n "$BRAKED_TARGETS" ]]; then
+    kept=""
+    for od in $STEWARD_ODS; do
+      if grep -qxF "$od" <<<"$BRAKED_TARGETS"; then
+        BRAKED="$BRAKED $od"
+      else
+        kept="$kept $od"
+      fi
+    done
+    STEWARD_ODS="${kept# }"
+    kept=""
+    for slug in $UNBUILT_SLUGS; do
+      if grep -qxF "plan:$slug" <<<"$BRAKED_TARGETS"; then
+        BRAKED="$BRAKED plan:$slug"
+      else
+        kept="$kept $slug"
+      fi
+    done
+    UNBUILT_SLUGS="${kept# }"
+    BRAKED="${BRAKED# }"
+  fi
+fi
+OPEN_DECISIONS="$(wc -w <<<"$STEWARD_ODS" | tr -d ' ')"
+UNBUILT_PLANS="$(wc -w <<<"$UNBUILT_SLUGS" | tr -d ' ')"
+
+# --------------------- the ladder: decided work outranks new questions
+# ESC-217 / ESC-218, the 2026-08-20 correction. Order below WAIT and the HIGH
+# veto: close open decisions (STEWARD), build merged-but-unbuilt plans
+# (ORCHESTRATE), then feed waiting evidence to the oracle, then plan the next
+# milestone, then acceptance. Evidence still precedes MILESTONE planning —
+# ruling on a possibly-wrong design before planning more against it is the
+# oracle's point — but it no longer starves work the design layer has already
+# decided.
+if [[ -n "$STEWARD_ODS" ]]; then
+  echo "PHASE=STEWARD"
+  emit_base
+  emit_counts
+  echo "ODS=$STEWARD_ODS"
+  exit 0
+fi
+
+if [[ -n "$UNBUILT_SLUGS" ]]; then
+  echo "PHASE=ORCHESTRATE"
+  emit_base
+  emit_counts
+  echo "SLUG=${UNBUILT_SLUGS%% *}"
+  exit 0
+fi
+
+if [[ -n "$UNCITED" ]]; then
+  echo "PHASE=ORACLE"
+  emit_base
+  emit_counts
+  echo "REASON=evidence"
+  echo "UNCITED=$UNCITED"
+  exit 0
+fi
+
+if [[ -n "$PLAN_REQS" ]]; then
+  echo "PHASE=PLAN"
+  emit_base
+  emit_counts
+  echo "REQS=$PLAN_REQS"
+  exit 0
+fi
 
 # ---------------------------------------------------------------- 6. done
 # ...and say which scripted success criteria are currently failing, so the
@@ -387,6 +516,7 @@ done < <(find "$PLANS_DIR" -name '*.md' 2>/dev/null | sort)
 # the judgement docs/acceptance.md exists to keep away from the pipeline.
 echo "PHASE=ACCEPTANCE"
 emit_base
+emit_counts
 FAILING=""
 if [[ -d "$ACCEPTANCE_DIR" ]]; then
   while IFS= read -r s; do

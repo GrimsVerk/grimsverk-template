@@ -284,6 +284,53 @@ if [[ ${#RETIRED[@]} -gt 0 ]]; then
   )
 fi
 
+# ------------------------------------- superseded ids: read, never subtracted
+# The decision schema REQUIRES every decision to carry a `**Requirements
+# superseded:**` line, and until ESC-219 nothing read it — a mandated
+# write-only field. The cost was not cosmetic: one correct supersession left a
+# permanent "NOT PLANNED" gap, the delivery driver dispatched a planner for
+# the dead id every cycle, and the loop livelocked (the same shape ESC-200
+# records). A field agents must write and nothing reads is the exact kind of
+# gate this template distrusts everywhere else.
+#
+# WHAT READING IT MAY AND MAY NOT DO is bounded by the owner's ruling above
+# (ESC-203): retiring — removing an id from what the project must satisfy —
+# is the owner's alone, in docs/DESIGN.oracle.retired.md. So a superseded id
+# is NOT subtracted from the universe and NOT counted covered. It moves from
+# the DISPATCHABLE gap list to its own reported class, "superseded — awaiting
+# the owner's retirement ruling": the delivery loop stops burning a session
+# per cycle on work a landed decision says is dead, while the id stays in
+# this report, in the run report, and on the owner's desk. The report keeps
+# it; only the owner removes it.
+#
+# Sequential, in document order, because the ledger is append-only and
+# therefore chronological: a later decision that re-ADDS a superseded id
+# revives it (the last declaration wins), so a supersession is never a
+# one-way door an agent can shut by accident. Same column-anchored
+# declaration-line rule as the id collection above, for the same ESC-82
+# reason.
+declare -A SUPERSEDED=()     # superseded id -> the OD that superseded it
+while IFS=$'\t' read -r verb id od; do
+  [[ -n "$id" ]] || continue
+  case "$verb" in
+    add)  unset 'SUPERSEDED[$id]' 2>/dev/null || true ;;
+    drop) SUPERSEDED["$id"]="${od:-a landed decision}" ;;
+  esac
+done < <(
+  for doc in "${PRESENT[@]}"; do
+    awk '
+      /^## OD-[0-9]+/ { od = $2; sub(/[^A-Za-z0-9-].*$/, "", od) }
+      /^[-*] \*\*Requirements added:\*\*/ || /^[-*] \*\*Requirements superseded:\*\*/ {
+        verb = ($0 ~ /superseded/) ? "drop" : "add"
+        line = $0
+        sub(/^.*:\*\*/, "", line)
+        n = split(line, parts, /[^A-Za-z0-9]+/)
+        for (i = 1; i <= n; i++) if (parts[i] ~ /^R[0-9]+$/)
+          print verb "\t" parts[i] "\t" od
+      }' "$doc"
+  done
+)
+
 # ------------------------------------------------ delivered ids: what SHIPPED
 # "Covered" has never meant built, and this report's own closing note said so
 # where nobody reads it. A planner therefore had no way to tell which
@@ -390,10 +437,15 @@ echo "===== REQUIREMENT COVERAGE ====="
 echo
 covered=0
 declare -a GAPS=()
+declare -a SUPERSEDED_OPEN=()
 for id in "${REQS[@]}"; do
   if [[ -n "${CLAIMED[$id]:-}" ]]; then
     printf '  %-5s covered by  %s\n' "$id" "${CLAIMED[$id]}"
     covered=$((covered + 1))
+  elif [[ -n "${SUPERSEDED[$id]:-}" ]]; then
+    printf '  %-5s superseded by %s — awaiting the owner'\''s retirement ruling\n' \
+      "$id" "${SUPERSEDED[$id]}"
+    SUPERSEDED_OPEN+=("$id (by ${SUPERSEDED[$id]})")
   else
     printf '  %-5s NOT PLANNED\n' "$id"
     GAPS+=("$id")
@@ -408,6 +460,26 @@ if [[ ${#UNKNOWN[@]} -gt 0 ]]; then
   echo "Plans covering ids the design doesn't define:"
   printf '  %s\n' "${UNKNOWN[@]}"
   echo "  (a renumbered requirement or a typo — one of the two is wrong)"
+fi
+
+# A requirement claimed by TWO plans passed silently (ESC-236): downstream,
+# two rulings bound the same oracle requirement to two different plans and
+# nothing drew attention to the collision. A note, never a failure, like the
+# other adequacy notes — two plans can legitimately share an id mid-handover,
+# and a gate would teach authors to hide the overlap instead.
+declare -a MULTI_CLAIMED=()
+for id in "${REQS[@]}"; do
+  if [[ "${CLAIMED[$id]:-}" == *" "* ]]; then
+    MULTI_CLAIMED+=("$id (${CLAIMED[$id]})")
+  fi
+done
+if [[ ${#MULTI_CLAIMED[@]} -gt 0 ]]; then
+  echo
+  echo "Claimed by more than one plan:"
+  printf '  %s\n' "${MULTI_CLAIMED[@]}"
+  echo "  Two plans delivering one requirement usually means a stale claim or"
+  echo "  an id doing double duty — one of them should drop it or the id"
+  echo "  should split. Reported, never red."
 fi
 
 # ------------------------------------------------------- plan adequacy (NOTE)
@@ -472,6 +544,16 @@ if [[ ${#RETIRED_CLAIMS[@]} -gt 0 ]]; then
   echo "  that replaced it."
 fi
 
+if [[ ${#SUPERSEDED_OPEN[@]} -gt 0 ]]; then
+  echo
+  echo "Superseded by a landed decision, awaiting the owner's retirement ruling:"
+  printf '  %s\n' "${SUPERSEDED_OPEN[@]}"
+  echo "  Not a gap to plan — the decision that superseded each id is landed and"
+  echo "  gated (ESC-219) — and not gone either: only the owner retires an id"
+  echo "  from the universe (docs/DESIGN.oracle.retired.md, ESC-203). Listed"
+  echo "  here, every run, until they rule."
+fi
+
 if [[ ${#GAPS[@]} -gt 0 ]]; then
   echo
   echo "${#GAPS[@]} requirement(s) with no plan: ${GAPS[*]}"
@@ -480,7 +562,12 @@ if [[ ${#GAPS[@]} -gt 0 ]]; then
 fi
 
 echo
-echo "Every requirement is covered by a plan."
+if [[ ${#SUPERSEDED_OPEN[@]} -gt 0 ]]; then
+  echo "Every requirement is covered by a plan, except the superseded ids listed"
+  echo "above, which wait on the owner's retirement ruling rather than on a plan."
+else
+  echo "Every requirement is covered by a plan."
+fi
 echo "Note: covered means PLANNED, not delivered and not verified. Whether the"
 echo "built system satisfies the success criteria is the acceptance pass —"
 echo "see docs/acceptance.md."

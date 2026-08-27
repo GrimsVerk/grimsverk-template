@@ -40,7 +40,7 @@ else no "the skeleton ships"; fi
 # Allowed: the file itself; the two documents it pairs with, which link it so a
 # reader can follow the thread; and the oracle's command file, which is the
 # writer.
-ALLOWED_RE='^template/(docs/oracle/retirement-suggestions\.md\.jinja|docs/DESIGN\.oracle\.md\.jinja|docs/DESIGN\.oracle\.retired\.md\.jinja|\.claude/commands/oracle\.md)$'
+ALLOWED_RE='^template/(docs/oracle/retirement-suggestions\.md\.jinja|docs/oracle/vision-gaps\.md\.jinja|docs/DESIGN\.oracle\.md\.jinja|docs/DESIGN\.oracle\.retired\.md\.jinja|\.claude/commands/oracle\.md)$'
 
 mapfile -t MENTIONS < <(
   cd "$T/.." && grep -rl "retirement-suggestions" template/ 2>/dev/null | sort
@@ -86,5 +86,38 @@ else no "the retired ledger is named in CI"; fi
 if grep -A3 'OWNED_DOCS=' "$T/.github/workflows/ci.yml.jinja" | grep -q "DESIGN.oracle.retired.md"; then
   ok "and it is the owner-authored check that guards it"
 else no "and it is the owner-authored check that guards it"; fi
+
+# ---------------- vision-gaps.md carries the SAME guarantee (ESC-235)
+# The second owner-only file: where a decision records that the vision went
+# silent. Same design, same teeth — a gap observation that carried mechanical
+# weight would be a veto with extra steps, so nothing may read it but the
+# owner. The allowlist is the file's own skeleton and the oracle's prompt
+# (the writer has to be told where to write).
+VG_ALLOWED_RE='^template/(docs/oracle/vision-gaps\.md\.jinja|docs/oracle/retirement-suggestions\.md\.jinja|\.claude/commands/oracle\.md)$'
+mapfile -t VG_MENTIONS < <(
+  cd "$T/.." && grep -rl "vision-gaps" template/ 2>/dev/null | sort
+)
+VG_OFFENDERS=()
+for f in "${VG_MENTIONS[@]:-}"; do
+  [[ -z "$f" ]] && continue
+  [[ "$f" =~ $VG_ALLOWED_RE ]] || VG_OFFENDERS+=("$f")
+done
+if [[ ${#VG_OFFENDERS[@]} -eq 0 ]]; then
+  ok "no script, workflow or other role's prompt names vision-gaps"
+else
+  no "no script, workflow or other role's prompt names vision-gaps"
+  printf '        reads it: %s\n' "${VG_OFFENDERS[@]}"
+fi
+for f in .github/scripts/coverage.sh .claude/scripts/deliver-phase.sh; do
+  if grep -q "vision-gaps" "$T/$f" 2>/dev/null; then
+    no "$f does not read the vision gaps"
+  else ok "$f does not read the vision gaps"; fi
+done
+if grep -q "vision-gaps" "$T/.claude/commands/oracle.md"; then
+  ok "the oracle is told where to record a vision gap"
+else no "the oracle is told where to record a vision gap"; fi
+if [[ -f "$T/docs/oracle/vision-gaps.md.jinja" ]]; then
+  ok "the vision-gaps skeleton ships"
+else no "the vision-gaps skeleton ships"; fi
 
 summary

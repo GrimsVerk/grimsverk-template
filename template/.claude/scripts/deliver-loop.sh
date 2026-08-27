@@ -64,6 +64,10 @@
 #      exit code 0, the success code, with no reason given (anvil local F20).
 #      Success is a thing the driver has to EARN by reaching a stop that says
 #      its own name; it is never what is left over.
+#   9  the template version changed mid-run (ESC-228): a run is an experiment
+#      on ONE version — four bumps in one day forced three restarts downstream
+#      and nothing recorded which version a round even ran. Upgrade between
+#      runs; the stop lands the evidence and says both versions
 #   8  EVIDENCE NOT LANDED: the run's evidence branch could not be VERIFIED on
 #      the remote — the push failed, or claimed success while `git ls-remote`
 #      never saw the ref move (ESC-204: a trap once announced the evidence
@@ -152,6 +156,10 @@
 #                         formality (docs/synthesis.md, D15).
 
 set -uo pipefail
+
+# The loop's vocabularies come from one place (ESC-225).
+# shellcheck source=template/.claude/scripts/lexicon.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lexicon.sh"
 
 # Every ceiling starts at zero — meaning "not set" — because the owner's ruling
 # is that no limit applies unless they chose it, and the run asks for one before
@@ -667,10 +675,44 @@ if [[ -s "$STATE_DIR/run.md" ]]; then
   cat "$STATE_DIR/run.md" >> "$STATE_DIR/unlanded-${PREV_RUN:-unknown}.md" \
     && rm -f "$STATE_DIR/run.md"
 fi
+# The machine record rotates with it (ESC-224): a dead run's event stream is
+# evidence, and the unlanded-* glob below ships it beside the rotated report.
+if [[ -s "$STATE_DIR/events.jsonl" ]]; then
+  cat "$STATE_DIR/events.jsonl" >> "$STATE_DIR/unlanded-${PREV_RUN:-unknown}-events.jsonl" \
+    && rm -f "$STATE_DIR/events.jsonl"
+fi
 { echo "# Delivery run $RUN_ID"; echo
   echo "Started $RUN_STARTED_AT."
   echo "Base branch: $RUN_BASE${LANE:+ (branch suffix '$LANE')}."; echo
 } >> "$STATE_DIR/run.md"
+
+# ------------------------------------------ the machine record (ESC-224)
+# One JSON line per loop event, written through as it happens, landed beside
+# run.md at the stop. The post-mortem that motivated it could not join
+# dispatches to pull requests or rulings to bytes because nothing wrote the
+# fields; the emitter refuses an event missing its required ones, and that
+# refusal is LOGGED, never fatal — a recorder that kills the run it records
+# has inverted its job.
+EVENTS_FILE="$STATE_DIR/events.jsonl"
+emit() { # emit <kind> [k=v ...] — best-effort, loud when refused
+  local err
+  if ! err="$(EVENTS_FILE="$EVENTS_FILE" RUN_ID="$RUN_ID" RUN_BASE="$RUN_BASE" \
+        .claude/scripts/emit-event.sh "$@" 2>&1)"; then
+    log "event NOT recorded (${1:-?}): ${err:-emit-event failed} — the machine record has a hole here (ESC-224)"
+  fi
+  return 0
+}
+# THE RUN PINS ITS TEMPLATE VERSION (ESC-228). Read once here; a change
+# mid-run is a typed stop in the loop below. Generated projects carry it in
+# their copier answers file; a repository without one is 'unversioned', which
+# still pins ("unversioned -> unversioned" never stops).
+template_version() {
+  sed -n 's/^_commit:[[:space:]]*//p' .copier-answers.yml 2>/dev/null \
+    | head -1 | tr -d "'\" "
+}
+TEMPLATE_VERSION_AT_START="$(template_version)"
+[[ -n "$TEMPLATE_VERSION_AT_START" ]] || TEMPLATE_VERSION_AT_START=unversioned
+[[ "$DRY_RUN" -eq 1 ]] || emit start template_version="$TEMPLATE_VERSION_AT_START"
 fi
 
 # ------------------------------------------------- the evidence, at every stop
@@ -710,6 +752,51 @@ for _sig in TERM INT HUP; do
   trap "STOP_REASON='killed by SIG$_sig — something outside this run ended it (a session teardown, a wrapper timeout, an owner Ctrl-C); the lines above are where it was, not a verdict'; exit 7" "$_sig"
 done
 unset _sig
+
+# ---------------------------- discoveries reach the backlog (ESC-235)
+# The oracle may not write the backlog and may not rule on what no logged
+# evidence covers — both limits are correct, and together they made a defect
+# the oracle DISCOVERED citable by nobody: a real overflow bug lived and died
+# in a worker log. The handoff's `## Discoveries` section is the oracle's
+# outbox; this transcribes every line of it into docs/BACKLOG.md as a
+# Proposed item, mechanically, with provenance — the oracle gains no write
+# surface, and the append travels with the run's evidence pull request
+# through the same gates as everything else. Idempotent per handoff: a
+# handoff whose basename the backlog already names is done. Appended under
+# its own `## ` heading, never into an existing section — an insertion is
+# not an append, and a fresh heading also ends the Uncertainties section so
+# section-aware intake (ESC-230) correctly treats these as Proposed.
+transcribe_discoveries() {
+  [[ -d docs/oracle ]] || return 0
+  local hf base next_bl entries
+  for hf in docs/oracle/handoff-*.md; do
+    [[ -f "$hf" ]] || continue
+    base="$(basename "$hf")"
+    grep -q '^## Discoveries' "$hf" || continue
+    grep -qF -- "$base" docs/BACKLOG.md 2>/dev/null && continue
+    entries="$(awk '/^## Discoveries/{insec=1; next} /^## /{insec=0} insec && /^[-*] /' "$hf")"
+    [[ -n "$entries" ]] || continue
+    # Two steps, because under pipefail the missing done-ledger fails the
+    # whole pipeline AFTER tail has printed, and an `|| echo 0` then prints a
+    # second number into the arithmetic.
+    next_bl="$(cat docs/BACKLOG.md docs/BACKLOG.done.md 2>/dev/null \
+      | grep -oE 'BL-[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1 || true)"
+    next_bl="$(( ${next_bl:-0} + 1 ))"
+    {
+      echo
+      echo "## Proposed (oracle discoveries — transcribed by the driver from $base, run $RUN_ID)"
+      echo
+      while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        printf -- '- **BL-%s** — %s\n  filed by: the delivery driver, transcribing the oracle'"'"'s handoff (the oracle cannot file; ESC-235)\n' \
+          "$next_bl" "$(sed 's/^[-*][[:space:]]*//' <<<"$line")"
+        next_bl=$((next_bl + 1))
+      done <<<"$entries"
+    } >> docs/BACKLOG.md
+    log "transcribed the Discoveries of $base into docs/BACKLOG.md as Proposed items"
+  done
+  return 0
+}
 
 land_evidence() {
   local rc=$?
@@ -775,6 +862,14 @@ land_evidence() {
       echo "verify that docs/run-$RUN_ID$LANE actually reached origin."
     fi
   } > "$RUN_DIR/run.md"
+
+  # The machine record lands beside the human one (ESC-224). Its stop event
+  # is written first, directly — emit() logs into a report buffer that has
+  # already been flushed — so the stream's last line says how the run ended.
+  EVENTS_FILE="$STATE_DIR/events.jsonl" RUN_ID="$RUN_ID" RUN_BASE="$RUN_BASE" \
+    .claude/scripts/emit-event.sh stop exit_code="$rc" \
+    reason="${STOP_REASON:-ended without reaching a documented stop}" 2>/dev/null || true
+  [[ -f "$STATE_DIR/events.jsonl" ]] && cp "$STATE_DIR/events.jsonl" "$RUN_DIR/events.jsonl"
 
   # A previous run's set-aside buffer (the run-start rotation above) travels
   # with this run's evidence, under unlanded/ rather than inside this run's
@@ -848,6 +943,8 @@ land_evidence() {
     # silently blocks the step after it.
     git add "$RUN_DIR" 2>/dev/null || true
     git add docs/DESIGN.oracle.done.md 2>/dev/null || true
+    transcribe_discoveries
+    git add docs/BACKLOG.md 2>/dev/null || true
     if git diff --cached --quiet 2>/dev/null; then
       echo "deliver-loop: nothing to land."
     elif ! git commit -q -m "Run evidence for $RUN_ID" 2>/dev/null; then
@@ -859,6 +956,7 @@ land_evidence() {
       # the mirror image of ESC-44. Kept when the commit failed, because then
       # the buffer is still the only copy.
       : > "$STATE_DIR/run.md"
+      : > "$STATE_DIR/events.jsonl"
       rm -f "$STATE_DIR"/unlanded-* 2>/dev/null
       # PUSHED MEANS VERIFIED ON THE REMOTE, NOT ANNOUNCED (ESC-204). This trap
       # once reported a run's evidence landed while `git ls-remote` had never
@@ -1150,10 +1248,21 @@ UNATTENDED CONTRACT — read this before you finish.
 run_worker() { # run_worker <id> <role> <prompt> <docs-ref> <pr-title>
   local id="$1" role="$2" prompt="$3" ref="$4" title="$5"
   log "dispatch $role worker ($id)"
+  local psha; psha="$(printf '%s' "$prompt" | sha1sum | awk '{print $1}')"
+  emit dispatch iteration="${ITER:-0}" phase="${PHASE:-unknown}" worker="$id" \
+    role="$role" prompt_sha="$psha"
   local out_file="$STATE_DIR/worker-$id.out"
+  # BY FILE, NEVER BY ARGV (ESC-224's dispatch-hygiene half). A prompt passed
+  # as one argument dies at ~128 KiB inside exec — `timeout: Argument list
+  # too long` — after enough of the dispatch has happened to leave a
+  # plausible header-only log. Observed live on an analysis harness whose
+  # prompts reached 163 KB. The file also survives as the run's own record of
+  # what was actually asked, beside the prompt_sha the event stream carries.
+  local prompt_file="$STATE_DIR/worker-$id.prompt"
+  printf '%s' "$prompt" > "$prompt_file"
   local wrc=0
   timeout "$SESSION_TIMEOUT" "$SPAWN" --id "$id" --role "$role" \
-       --engine "$ENGINE" --base "$RUN_BASE" --prompt "$prompt" \
+       --engine "$ENGINE" --base "$RUN_BASE" --prompt-file "$prompt_file" \
        > "$out_file" 2>&1 || wrc=$?
   if [[ "$wrc" -ne 0 ]]; then
     cat "$out_file" >> "$STATE_DIR/run.md"
@@ -1196,6 +1305,7 @@ run_worker() { # run_worker <id> <role> <prompt> <docs-ref> <pr-title>
       LAST_WORKER_FAILURE="the $role worker ($id) failed with exit code $wrc — its engine did not finish"
     fi
     log "$LAST_WORKER_FAILURE — see .claude/orchestration-logs/$id.log"
+    emit result iteration="${ITER:-0}" worker="$id" exit_code="$wrc"
     return 1
   fi
   cat "$out_file" >> "$STATE_DIR/run.md"
@@ -1211,7 +1321,10 @@ run_worker() { # run_worker <id> <role> <prompt> <docs-ref> <pr-title>
     log "the worker's work is on '$src', not 'worker/$id' — pushing what it reported"
   fi
   [[ -n "$src" ]] || src="worker/$id"
-  mechanical_pr "$src" "$ref" "$title"
+  local prc=0
+  mechanical_pr "$src" "$ref" "$title" || prc=$?
+  emit result iteration="${ITER:-0}" worker="$id" exit_code=0 branch="$src"
+  return "$prc"
 }
 
 # Consecutive dispatches that produced no pull request. A run whose worker
@@ -1247,12 +1360,17 @@ note_dispatch_outcome() { # note_dispatch_outcome <rc-from-run_worker> [scope id
 
 run_session() { # run_session <label> <prompt>
   log "dispatch $1 session"
+  local psha; psha="$(printf '%s' "$2" | sha1sum | awk '{print $1}')"
+  emit dispatch iteration="${ITER:-0}" phase="${PHASE:-session}" \
+    worker="session-$1" role="$1" prompt_sha="$psha"
   local -a cmd
   mapfile -t cmd < <(orch_cmd "$2")
   if ! timeout "$SESSION_TIMEOUT" "${cmd[@]}" >> "$STATE_DIR/run.md" 2>&1; then
     log "$1 session failed or timed out"
+    emit result iteration="${ITER:-0}" worker="session-$1" exit_code=1
     return 1
   fi
+  emit result iteration="${ITER:-0}" worker="session-$1" exit_code=0
 }
 
 record_dismissed_evidence() {
@@ -1289,7 +1407,32 @@ wait_on_pr() { # wait_on_pr <number> <headref>
     local waited=0
     while [[ "$waited" -lt 600 ]]; do
       state="$("$GH" pr view "$pr" --json state --jq .state 2>/dev/null)"
-      [[ "$state" == "MERGED" ]] && { log "PR #$pr merged"; return 0; }
+      [[ "$state" == "MERGED" ]] && {
+        log "PR #$pr merged"
+        # The factory's own output becomes evidence (ESC-223): the merge is
+        # recorded the moment it is known, never reconstructed later.
+        emit merge pr="$pr" headref="$headref"
+        # A MERGE INTO A NON-DEFAULT BASE IS TAGGED (ESC-223's other half).
+        # Downstream, +541 lines of merged product code became reachable from
+        # zero refs when its run base was force-rebuilt, and nothing reported
+        # it — found days later in the object store. The default branch is
+        # protected by its own permanence; a side base is not, so its merges
+        # get a tag that survives the base. Best-effort like every recorder:
+        # a failed tag is a logged hole, never a stopped run.
+        if [[ -n "$DEFAULT_BRANCH" && "$RUN_BASE" != "$DEFAULT_BRANCH" ]]; then
+          local msha=""
+          git fetch -q origin "$RUN_BASE" 2>/dev/null || true
+          msha="$(git rev-parse -q --verify FETCH_HEAD 2>/dev/null || true)"
+          [[ -n "$msha" ]] || msha="$(git rev-parse -q --verify "origin/$RUN_BASE" 2>/dev/null || true)"
+          if [[ -n "$msha" ]] && git tag -f "evidence/$RUN_BASE/pr-$pr" "$msha" 2>/dev/null \
+             && git push -q -f origin "refs/tags/evidence/$RUN_BASE/pr-$pr" 2>/dev/null; then
+            log "tagged the merge: evidence/$RUN_BASE/pr-$pr -> ${msha:0:12} (a side base can be rebuilt; the tag survives it)"
+          else
+            log "could NOT tag PR #$pr's merge on side base $RUN_BASE — if this base is ever rebuilt, that merge is only in the object store (ESC-223)"
+          fi
+        fi
+        return 0
+      }
       [[ "$state" == "CLOSED" ]] && { log "PR #$pr closed unmerged — investigate"; return 0; }
       sleep 30; waited=$((waited + 30))
     done
@@ -1344,6 +1487,7 @@ wait_on_pr() { # wait_on_pr <number> <headref>
 
 # ------------------------------------------------------------- the loop
 ITER=0
+LAST_ASK_SIG=""; ASK_REPEATS=0   # the repetition guard's memory (ESC-220)
 while :; do
   ITER=$((ITER + 1))
   if [[ "$MAX_ITER" -gt 0 && "$ITER" -gt "$MAX_ITER" ]]; then
@@ -1378,6 +1522,16 @@ while :; do
     log "owner edited the design layer — re-deriving everything, resetting failure counters"
     STEER_DESIGN="$(design_sha)"; STEER_VISION="$(vision_sha)"
     : > "$SIG_FILE"
+  fi
+
+  # A template bump mid-run ends the run, typed (ESC-228): the run is an
+  # experiment on one version, and continuing across a bump makes its
+  # evidence unreadable — downstream, three restarts in one day were forced
+  # exactly here, and no record said which version any round ran.
+  TV_NOW="$(template_version)"; [[ -n "$TV_NOW" ]] || TV_NOW=unversioned
+  if [[ "$TV_NOW" != "$TEMPLATE_VERSION_AT_START" ]]; then
+    log "the template version changed mid-run ($TEMPLATE_VERSION_AT_START -> $TV_NOW) — stopping"
+    stop 9 "the template version changed mid-run ($TEMPLATE_VERSION_AT_START -> $TV_NOW) — a run is an experiment on one version; upgrade between runs (ESC-228)"
   fi
 
   # Ceilings. Each applies only if the owner set it — zero means "not a limit",
@@ -1440,13 +1594,19 @@ while :; do
 
   # What next? Recomputed from the world, never remembered.
   PHASE=""; PR=""; HEADREF=""; UNRULED=""; UNCITED=""; ODS=""; REQS=""; SLUG=""; REASON=""
-  CRITERIA=""; rc=0
+  CRITERIA=""; OPEN_DECISIONS=""; UNBUILT_PLANS=""; EVIDENCE=""; BRAKED=""
+  PROPOSED_SKIPPED=""; rc=0
   while IFS='=' read -r k v; do
     case "$k" in
       PHASE) PHASE="$v" ;; PR) PR="$v" ;; HEADREF) HEADREF="$v" ;;
       UNRULED) UNRULED="$v" ;; UNCITED) UNCITED="$v" ;; ODS) ODS="$v" ;;
       REQS) REQS="$v" ;; SLUG) SLUG="$v" ;; REASON) REASON="$v" ;;
       CRITERIA) CRITERIA="$v" ;;
+      OPEN_DECISIONS) OPEN_DECISIONS="$v" ;;
+      UNBUILT_PLANS) UNBUILT_PLANS="$v" ;;
+      EVIDENCE) EVIDENCE="$v" ;;
+      BRAKED) BRAKED="$v" ;;
+      PROPOSED_SKIPPED) PROPOSED_SKIPPED="$v" ;;
     esac
   done < <(GH="$GH" PROCESSED_FILE="$PROCESSED_FILE" RUN_BASE="$RUN_BASE" "$PHASE_SH")
   [[ -n "$PHASE" ]] || die "phase detection failed"
@@ -1461,7 +1621,54 @@ while :; do
     exit 0
   fi
 
+  grep -qw -- "$PHASE" <<<"$LOOP_PHASES" \
+    || die "the detector emitted phase '$PHASE', which the lexicon does not define — fix whichever of the two is wrong, never both silently (ESC-225)"
   log "iteration $ITER: phase $PHASE"
+  # The economy scoreboard (ESC-218): the three counters the detector computes,
+  # logged EVERY iteration so a run that is all design and no build reads that
+  # way in run.md while it is happening — 2026-08-20's runs ended with 35 of 58
+  # decisions never planned and no line anywhere that could have said so.
+  if [[ -n "$OPEN_DECISIONS$UNBUILT_PLANS$EVIDENCE" ]]; then
+    log "economy: decisions open ${OPEN_DECISIONS:-?}, plans unbuilt ${UNBUILT_PLANS:-?}, evidence waiting ${EVIDENCE:-?}${PROPOSED_SKIPPED:+, proposed items waiting for a citation $PROPOSED_SKIPPED}"
+  fi
+  # The oracle's per-target brake, said LOUDLY every iteration it holds
+  # (ESC-221): a fenced target is routed around, never silently dropped.
+  if [[ -n "$BRAKED" ]]; then
+    log "BRAKE: the oracle has fenced [$BRAKED] in docs/oracle/do-not-dispatch.md — routing around it; the reason is in that file"
+  fi
+  emit detect iteration="$ITER" phase="$PHASE" reason="$REASON" \
+    ids="$(echo $UNRULED $UNCITED $ODS)" plan="$SLUG" reqs="$REQS" \
+    open_decisions="$OPEN_DECISIONS" unbuilt_plans="$UNBUILT_PLANS" \
+    evidence="$EVIDENCE" braked="$BRAKED"
+  # THE REPETITION GUARD (ESC-220). The livelock the other guards cannot see:
+  # a dispatch that opens a pull request — a backlog filing, a re-derived
+  # ruling — resets the no-progress counter, fails no check and repeats no
+  # signature, yet changes nothing the detector reads. Downstream this burned
+  # a session per cycle for an hour, every cycle looking productive. So the
+  # ASK itself is the signal: the detector requesting the same phase with the
+  # same scope a third time, with WAIT iterations not resetting the count,
+  # means two completed dispatches changed nothing — stop, typed, with the
+  # evidence landed.
+  case "$PHASE" in
+    ORACLE|STEWARD|PLAN|ORCHESTRATE)
+      SIG_NOW="$PHASE|$REASON|$UNRULED|$UNCITED|$ODS|$REQS|$SLUG"
+      if [[ "$SIG_NOW" == "$LAST_ASK_SIG" ]]; then
+        ASK_REPEATS=$((ASK_REPEATS + 1))
+      else
+        LAST_ASK_SIG="$SIG_NOW"; ASK_REPEATS=1
+      fi
+      if [[ "$ASK_REPEATS" -ge 3 ]]; then
+        log "STOPPED: the detector asked for the same work a third time ($PHASE, scope unchanged)"
+        log "with nothing closed in between. Two dispatches completed and the world did not"
+        log "move — the 2026-08-20 livelock shape (ESC-220). Every further iteration would"
+        log "spend a session to learn the same thing. If a template defect is the cause,"
+        log "the evidence lands with this report; the oracle can fence the target in"
+        log "docs/oracle/do-not-dispatch.md if the run should continue around it."
+        stop 5 "the same phase and scope asked for a third time with nothing closed between — the repetition guard (ESC-220)"
+      fi ;;
+    WAIT) : ;;                 # waiting on a PR is not an ask; it must not reset the count
+    *) LAST_ASK_SIG=""; ASK_REPEATS=0 ;;
+  esac
   case "$PHASE" in
     SETUP)
       log "setup problem: $REASON — /design is interactive and owner-landed; the loop cannot do it"

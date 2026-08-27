@@ -233,13 +233,34 @@ reclaimed, so a report that lives only on disk is a report nobody reads. The
 local driver lands one automatically at every stop; **here, you are the driver,
 so you land it.**
 
+**And the machine record is not optional here (ESC-224).** The web lane of
+the 2026-08-20 experiment left NO machine log at all — every phase,
+iteration and wait survived only as hand-typed prose needing its own parser,
+and half the post-mortem's questions died on it. You run the same emitter
+the local driver runs, at the same moments, throughout the run — not at the
+stop:
+
+    EVENTS_FILE=docs/runs/<timestamp>/events.jsonl \
+    RUN_ID=<timestamp> RUN_BASE=<base> \
+      .claude/scripts/emit-event.sh <kind> key=value ...
+
+once per event as it happens: `start template_version=<from the copier
+answers file>` at run start; `detect iteration=N phase=<PHASE>` with the
+detector's counters after every reading; `dispatch` / `result` around every
+session you commission (the emitter's header lists each kind's required
+fields — it REFUSES a call missing one, and a refusal means you are about to
+drop a fact the next post-mortem will starve for); `merge pr=N` the moment a
+pull request merges; `stop exit_code=N reason=...` as your last event. Your
+prose report is commentary; the stream is the record.
+
 At the run's stop, whatever the reason — done, blocked on the owner, a limit
 reached, a pattern of failures, a setup refusal:
 
 1. Write your run report to `docs/runs/<timestamp>/run.md`, using the same
    timestamp you fixed at run start. It carries what each iteration did, every
    dispatch and its outcome, which stop ended the run and why, and anything that
-   looked anomalous.
+   looked anomalous — commentary beside `events.jsonl`, which you have been
+   writing all along and which lands in the same directory.
 2. Run `.claude/scripts/collect-evidence.sh --run-dir docs/runs/<timestamp>
    --since <run start, RFC3339>`. It gathers the review gate's payloads and
    replies — what the reviewer was shown and what it said — beside the report.

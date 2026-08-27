@@ -498,6 +498,16 @@ else
   ok "no leftover worktrees — no dead run's debris in the way"
 fi
 
+# ---------------------------------------- the owner documents, cross-checked
+# Report-only, never a refusal (ESC-222): design-refs.sh lists every
+# backticked path in the owner documents that resolves to nothing in this
+# tree. A phantom referent discovered here costs the owner a glance; the same
+# phantom discovered by a 3am worker cost a session per phantom downstream,
+# plus the rulings that declared the reconstructions. The documents are the
+# owner's, so this can only ever inform.
+echo
+.github/scripts/design-refs.sh 2>/dev/null || true
+
 # ------------------------------------------------------------------- verdict
 echo
 if [[ ${#MISSING[@]} -gt 0 ]]; then
