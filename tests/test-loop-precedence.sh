@@ -56,6 +56,13 @@ R="$WORK/repo"
 init_repo "$R"
 mkdir -p "$R/docs/plans/oracle"
 
+# The detector shells out to .github/scripts/coverage.sh for the gap split;
+# without it in the fixture the coverage read silently yields nothing and no
+# STEWARD/SETUP case can fire. (Assembly fix: the blind spec never said the
+# fixture needs the script — the same recipe test-deliver-loop.sh uses.)
+mkdir -p "$R/.github/scripts"
+cp "$ROOT/template/.github/scripts/coverage.sh" "$R/.github/scripts/"
+
 cat > "$R/docs/DESIGN.md" <<'EOF'
 # Design
 

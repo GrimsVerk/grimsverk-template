@@ -1440,13 +1440,16 @@ while :; do
 
   # What next? Recomputed from the world, never remembered.
   PHASE=""; PR=""; HEADREF=""; UNRULED=""; UNCITED=""; ODS=""; REQS=""; SLUG=""; REASON=""
-  CRITERIA=""; rc=0
+  CRITERIA=""; OPEN_DECISIONS=""; UNBUILT_PLANS=""; EVIDENCE=""; rc=0
   while IFS='=' read -r k v; do
     case "$k" in
       PHASE) PHASE="$v" ;; PR) PR="$v" ;; HEADREF) HEADREF="$v" ;;
       UNRULED) UNRULED="$v" ;; UNCITED) UNCITED="$v" ;; ODS) ODS="$v" ;;
       REQS) REQS="$v" ;; SLUG) SLUG="$v" ;; REASON) REASON="$v" ;;
       CRITERIA) CRITERIA="$v" ;;
+      OPEN_DECISIONS) OPEN_DECISIONS="$v" ;;
+      UNBUILT_PLANS) UNBUILT_PLANS="$v" ;;
+      EVIDENCE) EVIDENCE="$v" ;;
     esac
   done < <(GH="$GH" PROCESSED_FILE="$PROCESSED_FILE" RUN_BASE="$RUN_BASE" "$PHASE_SH")
   [[ -n "$PHASE" ]] || die "phase detection failed"
@@ -1462,6 +1465,13 @@ while :; do
   fi
 
   log "iteration $ITER: phase $PHASE"
+  # The economy scoreboard (ESC-218): the three counters the detector computes,
+  # logged EVERY iteration so a run that is all design and no build reads that
+  # way in run.md while it is happening — 2026-08-20's runs ended with 35 of 58
+  # decisions never planned and no line anywhere that could have said so.
+  if [[ -n "$OPEN_DECISIONS$UNBUILT_PLANS$EVIDENCE" ]]; then
+    log "economy: decisions open ${OPEN_DECISIONS:-?}, plans unbuilt ${UNBUILT_PLANS:-?}, evidence waiting ${EVIDENCE:-?}"
+  fi
   case "$PHASE" in
     SETUP)
       log "setup problem: $REASON — /design is interactive and owner-landed; the loop cannot do it"

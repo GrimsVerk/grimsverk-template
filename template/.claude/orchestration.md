@@ -143,16 +143,23 @@ a PR subscription plus a scheduled check-in — because a hosted session holding
 a turn open to watch CI spends its lifetime on nothing. The owner chooses a
 mode by choosing which entry point to start.
 
-The phase order encodes the authority chain: an open pull request targeting
-the run's base branch holds everything (one PR in flight per base branch — a
-pull request into a different base belongs to a different run and holds
-nothing here); unruled HIGH uncertainties, then unmetabolised
-evidence, wake the **oracle**; landed decisions without plans get
-**stewards**; uncovered owner requirements get a **plan**; merged plans
-without merged features get an **orchestrator**; and a fully built design
-gets the acceptance pass. Every stop states its reason — repeated failure
-signature, budget spent, blocked on the owner — and the run's record is
-`.claude/deliver-loop/run.md`.
+The phase order encodes the authority chain, and one economy rule on top of
+it: **decided work outranks new questions** (ESC-217, ESC-218 — the
+2026-08-20 correction, when the old order let any uncited id starve the build
+phase for entire runs). An open pull request targeting the run's base branch
+holds everything (one PR in flight per base branch — a pull request into a
+different base belongs to a different run and holds nothing here); unruled
+HIGH uncertainties wake the **oracle**, the one class of new question that
+outranks decided work; landed decisions without plans get **stewards**;
+merged plans without merged features get an **orchestrator**; only then does
+unmetabolised evidence wake the **oracle** — still ahead of planning a NEW
+milestone against a possibly-wrong design; uncovered owner requirements get a
+**plan**; and a fully built design gets the acceptance pass. The detector
+emits the economy counters (open decisions, unbuilt plans, waiting evidence)
+and the driver logs them every iteration, so a run that is all design and no
+build reads that way while it happens. Every stop states its reason —
+repeated failure signature, budget spent, blocked on the owner — and the
+run's record is `.claude/deliver-loop/run.md`.
 
 ## The one-layer rule
 

@@ -112,6 +112,19 @@ under all three you spawn nothing and write only your two paths.
    the statement that produced the decision rather than arguing with the
    decision, and everything downstream moves with it.
 
+   **Every decision says what becomes of it** — the disposition, and the
+   check refuses a decision without one. Adding a requirement is a
+   disposition (a steward will plan it). Superseding one is a disposition
+   (coverage moves the old id to the awaiting-retirement class). A halt is
+   its own. A decision that does none of those — an answer that constrains
+   without creating work — must say so in its own block:
+
+       - **Closure:** no work — <why there is nothing to build>
+
+   Silence is not an option any more: in the 2026-08-20 experiment, 35 of
+   58 decisions created no visible work and simply evaporated, and nobody
+   could tell the leaks from the judgments (ESC-217).
+
 4. **Write the handoff.** `docs/oracle/handoff-<date>-<n>.md`: which decisions
    need planning, which existing plans each one touches, and anything the
    orchestrator should NOT act on yet and why. Write it once. If you need to

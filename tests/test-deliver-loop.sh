@@ -259,12 +259,16 @@ out="$(run_phase)"
 expect_contains "a cited uncertainty no longer wakes the oracle" "$out" "PHASE=STEWARD"
 expect_contains "and the decision needing a plan is named" "$out" "ODS=OD-1"
 
-# Un-metabolised evidence wakes the oracle; a processed-file entry (a prior
-# run's dismissal) silences it — the anti-thrash memory.
+# Un-metabolised evidence WAITS behind decided work (ESC-218): with OD-1 still
+# unplanned, new evidence does not preempt the steward — the 2026-08-20 runs
+# showed the old any-evidence-first order starving the build phase for whole
+# runs. The evidence is counted, not forgotten; it surfaces below, the moment
+# the decided work is closed. A processed-file entry (a prior run's dismissal)
+# silences an id entirely — the anti-thrash memory.
 echo "| ESC-1 | 2026-08-16 | a thing escaped | none | pending |" >> "$R/docs/escapes.md"
 out="$(run_phase)"
-expect_contains "uncited evidence wakes the oracle" "$out" "PHASE=ORACLE"
-expect_contains "as evidence" "$out" "REASON=evidence"
+expect_contains "new evidence does not preempt an unplanned decision" "$out" "PHASE=STEWARD"
+expect_contains "but is counted while it waits" "$out" "EVIDENCE=1"
 echo "ESC-1" > "$WORK/cap/processed"
 out="$(run_phase PROCESSED_FILE="$WORK/cap/processed")"
 expect_contains "dismissed evidence does not re-wake the oracle" "$out" "PHASE=STEWARD"
@@ -290,6 +294,15 @@ out="$(run_phase PROCESSED_FILE="$WORK/cap/processed" \
         STUB_MERGED_REFS=$'docs/plan-notes\ndocs/oracle-plan-od-1')"
 expect_contains "a merged plan with no merged feature means ORCHESTRATE" "$out" \
   "PHASE=ORCHESTRATE"
+
+# With every decision planned and every plan built, the waiting evidence
+# surfaces — this is the other half of the ESC-218 reorder: deferred, never
+# dropped.
+out="$(run_phase STUB_MERGED_REFS=$'feat/notes\nfeat/sqlite-store')"
+expect_contains "waiting evidence surfaces once decided work is closed" "$out" \
+  "PHASE=ORACLE"
+expect_contains "as evidence" "$out" "REASON=evidence"
+expect_contains "naming the id that waited" "$out" "ESC-1"
 
 out="$(run_phase PROCESSED_FILE="$WORK/cap/processed" \
         STUB_MERGED_REFS=$'feat/notes\nfeat/sqlite-store')"
@@ -637,7 +650,7 @@ cat > "$R/docs/escapes.md" <<'EOF'
 | ESC-1 | 2026-08-15 | a check reported green by not running | CI | `tests/a.sh` |
 | ESC-2 | 2026-08-16 | still open, nobody has ruled | none existed | unverified — pending: something |
 EOF
-out="$(run_phase)"
+out="$(run_phase STUB_MERGED_REFS="$BUILT")"
 expect_contains "an unclosed escape still reaches the oracle" "$out" "ESC-1"
 
 cat > "$R/docs/escapes.done.md" <<'EOF'
@@ -647,14 +660,14 @@ cat > "$R/docs/escapes.done.md" <<'EOF'
 | --- | --- | --- | --- |
 | ESC-1 | 2026-08-17 | `tests/a.sh` | red against the defect, green after |
 EOF
-out="$(run_phase)"
+out="$(run_phase STUB_MERGED_REFS="$BUILT")"
 expect_not_contains "a closed escape is not handed to the oracle again" "$out" "ESC-1"
 expect_contains "and the one still open is" "$out" "ESC-2"
 
 # The point of the file being COMMITTED rather than gitignored: the answer does
 # not depend on which machine the driver runs on.
 out="$( cd "$R" && env PROCESSED_FILE=/nonexistent GH="$WORK/bin/gh" \
-        bash "$PHASE" 2>&1 )"
+        STUB_MERGED_REFS="$BUILT" bash "$PHASE" 2>&1 )"
 expect_not_contains "and the closure holds with no run memory at all" "$out" "ESC-1"
 
 rm -f "$R/docs/escapes.done.md" "$R/docs/escapes.md"
@@ -846,7 +859,7 @@ chmod +x "$WORK/bin/spawn-worker-moved"
 : > "$PRLOG"
 PROMPTLOG="$WORK/cap/spawn-prompt.log"; : > "$PROMPTLOG"
 out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-moved" \
-        SPAWN_PROMPT_LOG="$PROMPTLOG" \
+        SPAWN_PROMPT_LOG="$PROMPTLOG" STUB_MERGED_REFS="$BUILT" \
         PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 1)"
 expect_contains "the driver notices the work moved branch (ESC-68)" "$out" \
   "not 'worker/"
@@ -879,11 +892,20 @@ git -C "$R" update-ref refs/remotes/origin/main "$PRE_SEED"
 # has a fresh name.
 reset_pr_run
 git -C "$R" branch -qD feat/sqlite-store 2>/dev/null || true
-# Uncited evidence puts the detector in ORACLE — the phase the live run
-# looped in. Reverted right after, so later scenarios see the tree they expect.
+# An unruled HIGH uncertainty puts the detector in ORACLE on EVERY reading —
+# the one scope the processed-evidence memory never silences (a HIGH blocks
+# until a ruling CITES it), so it is what drives two identical dispatches
+# under the decided-work-first order (ESC-218). Reverted right after, so
+# later scenarios see the tree they expect.
 PRE_SEED99="$(git -C "$R" rev-parse main)"
-printf '| ESC-99 | 2026-08-20 | a seeded escape | none | none |\n' >> "$R/docs/escapes.md"
-git -C "$R" add -A && git -C "$R" commit -qm "seed an uncited escape"
+cat >> "$R/docs/BACKLOG.md" <<'EOF'
+
+## Uncertainties awaiting oracle ruling
+
+- **BL-77** — which store engine? — proposed: sqlite — HIGH: changes the
+  storage schema and two slice boundaries.
+EOF
+git -C "$R" add -A && git -C "$R" commit -qm "seed an unruled HIGH"
 # The driver pulls its base each iteration, so origin/<base> tracks it live —
 # and origin/<base> is the comparison that matches GitHub's own "No commits
 # between" verdict. A fixture leaving it behind makes an empty worker branch
@@ -900,7 +922,7 @@ exit 0
 STUB
 chmod +x "$WORK/bin/spawn-worker-empty"
 out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-empty" \
-        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
+        STUB_MERGED_REFS="$BUILT" PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
 expect_rc "an empty-diff dispatch stops the run instead of looping (ESC-66)" 5 $?
 expect_contains "and says the lane did not move" "$out" "adds nothing to"
 expect_contains "and names the pattern rather than a check failure" "$out" \
@@ -912,9 +934,11 @@ else ok "no pull request is attempted for an empty branch"; fi
 disp="$(grep -c "dispatch oracle worker" <<<"$out")"
 if [[ "$disp" -le 2 ]]; then ok "it stops after 2 empty dispatches, not at the iteration limit"
 else no "it stops after 2 empty dispatches, not at the iteration limit" "$disp dispatches"; fi
-# The scope it was commissioned to work is recorded as processed, so a fresh
-# detector does not re-summon the same worker over the same evidence.
-if grep -q "ESC-99" "$R/.claude/deliver-loop/processed-evidence" 2>/dev/null; then
+# The scope it was commissioned to work is recorded as processed. For a HIGH
+# item the record silences nothing (only a ruling clears a HIGH — that is why
+# this scope can strike twice), but the record is still the run's memory of
+# what was dispatched.
+if grep -q "BL-77" "$R/.claude/deliver-loop/processed-evidence" 2>/dev/null; then
   ok "the dispatched scope is recorded as processed"
 else
   no "the dispatched scope is recorded as processed" \
@@ -935,8 +959,16 @@ git -C "$R" update-ref refs/remotes/origin/main "$PRE_SEED99"
 reset_pr_run
 git -C "$R" branch -qD feat/sqlite-store 2>/dev/null || true
 PRE_ESC75="$(git -C "$R" rev-parse main)"
-printf '| ESC-98 | 2026-08-20 | another seeded escape | none | none |\n' >> "$R/docs/escapes.md"
-git -C "$R" add -A && git -C "$R" commit -qm "seed an uncited escape for ESC-75"
+# A HIGH item, for the same reason as the ESC-66 case above: it is the one
+# oracle scope that re-dispatches identically, so a dying engine gets its
+# second strike (ESC-218 changed which scopes can loop).
+cat >> "$R/docs/BACKLOG.md" <<'EOF'
+
+## Uncertainties awaiting oracle ruling
+
+- **BL-78** — which wire format? — proposed: json — HIGH: an external schema.
+EOF
+git -C "$R" add -A && git -C "$R" commit -qm "seed an unruled HIGH for ESC-75"
 git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse main)"
 
 # ---- the engine dies: the cause is named, and the stop that follows says why
@@ -949,7 +981,7 @@ chmod +x "$WORK/bin/spawn-worker-dead"
 git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' \
   | xargs -r git -C "$R" branch -qD 2>/dev/null || true
 out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-dead" \
-        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
+        STUB_MERGED_REFS="$BUILT" PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
 expect_rc "a worker whose engine dies twice stops the run" 5 $?
 expect_contains "and the driver names the cause rather than 'worker failed'" "$out" \
   "its engine did not finish"
@@ -979,7 +1011,7 @@ chmod +x "$WORK/bin/spawn-worker-kill"
 git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' \
   | xargs -r git -C "$R" branch -qD 2>/dev/null || true
 out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-kill" \
-        PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
+        STUB_MERGED_REFS="$BUILT" PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" -- --max-iterations 9)"
 expect_rc "a run killed mid-dispatch does not exit 0 (ESC-75)" 7 $?
 landref="$(git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' | tail -1)"
 landed="$(git -C "$R" show "$landref:$(git -C "$R" ls-tree -r --name-only "$landref" \

@@ -338,6 +338,43 @@ next — so a sentence they never wrote makes the lever a decoration."
     fi
   fi
 
+  # EVERY NEW DECISION SAYS WHAT BECOMES OF IT (ESC-217). In the 2026-08-20
+  # experiment, 35 of 58 decisions were never planned and nothing could say
+  # whether that was a leak or a judgment: a decision that answers a question
+  # without minting a requirement schedules no work and closes nothing, so it
+  # simply evaporates. The disposition rule makes the outcome explicit at
+  # ruling time — a decision either creates work, retires work, or says in so
+  # many words that there is none:
+  #
+  #   - `- **Requirements added:**` names an id  -> work exists; the steward
+  #     chain and coverage own its closure;
+  #   - `- **Requirements superseded:**` names an id -> work is retired
+  #     (coverage moves it to the awaiting-retirement class, ESC-219);
+  #   - `- **Closure:** <why there is nothing to build>` -> no work, said
+  #     aloud rather than implied by silence.
+  #
+  # A HALT is its own disposition and is checked in its own branch above. The
+  # rule binds NEW decisions only — the ledger is append-only, so a legacy
+  # decision without a disposition cannot be repaired and is not failed.
+  added_says="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Requirements added:\*\*[[:space:]]*//p' \
+    | head -1 | grep -oE '\bR[0-9]+\b' | head -1 || true)"
+  sup_says="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Requirements superseded:\*\*[[:space:]]*//p' \
+    | head -1 | grep -oE '\bR[0-9]+\b' | head -1 || true)"
+  closure_value="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Closure:\*\*[[:space:]]*//p' | head -1)"
+  if printf '%s\n' "$block" | grep -qF "**Closure:**"; then
+    if [[ -z "$closure_value" ]]; then
+      fail "$id has an empty **Closure:** field — say why there is nothing to build, or drop the field and add a requirement"
+    fi
+  elif [[ -z "$added_says" && -z "$sup_says" ]] \
+    && ! printf '%s\n' "$block" | grep -qF "**Criterion waived:**"; then
+    # A waiver is a disposition too — it changes what the acceptance gate does,
+    # which is this ledger's one directly-effective outcome.
+    fail "$id has no disposition: it adds no requirement, supersedes none, waives nothing, and carries no **Closure:** field. A decision that creates no work must say so — add '- **Closure:** <why there is nothing to build>' — or it evaporates the way 35 of 58 did on 2026-08-20 (ESC-217)"
+  fi
+
   fi  # end of the non-HALT schema
 
   # 1. Evidence must exist at the base commit. Both shapes cite it: a halt is a
