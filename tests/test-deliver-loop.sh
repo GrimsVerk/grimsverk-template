@@ -740,6 +740,16 @@ PRLOG="$WORK/cap/prcreate.log"
 ORCHLOG="$WORK/cap/claude.pr.log"
 reset_pr_run() {
   rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"; : > "$PRLOG"; : > "$ORCHLOG"
+  # The origin accumulates TIME-NAMED refs — docs/oracle-<ts>, docs/run-<id>,
+  # worker/* — from every scenario's pushes, and on a slow runner consecutive
+  # scenarios share a wall-clock second: the next scenario's push to the
+  # same-named ref is then rejected non-fast-forward, mechanical_pr honestly
+  # reports "no pull request", and the wrong guard stops the run. Caught on
+  # CI verbatim ("! [rejected] ... docs/oracle-<ts> (non-fast-forward)").
+  # Each scenario starts against a clean origin.
+  git -C "$R" ls-remote --heads origin 2>/dev/null | awk '{print $2}'     | grep -E '^refs/heads/(docs|worker)/'     | while read -r ref; do
+        git -C "$R" push -q origin --delete "${ref#refs/heads/}" 2>/dev/null || true
+      done
   # Worker branch names carry a per-SECOND timestamp, so two scenarios running
   # inside the same second reuse one — and a leftover branch pointing at a
   # commit a later scenario reset away is neither empty nor pushable, which
