@@ -154,6 +154,14 @@ Both documents can travel on the same branch when they are written together.
 
 ## After the design doc: the plan
 
+**Attended, the design doc is not the end of the design flow.** When I am
+present (I invoked `/design`), the finished doc feeds the hardening loop in
+`docs/design-flow.md`: a conceptual adversarial review, a pseudocode pass over
+the whole design carved into `format: pseudocode` plans
+(`docs/plans/_TEMPLATE.pseudocode.md`), my batched rulings, and a tactical
+adversarial review. Follow that flow; the rest of this section describes the
+legacy per-milestone path, which remains how the *unattended* machinery plans.
+
 The design doc says *what* we're building and *why*. It is not enough to start
 coding from. Once I've approved it, take one milestone from section 12 and write
 a **plan** for it: copy `docs/plans/_TEMPLATE.md` to `docs/plans/<slug>.md` and
