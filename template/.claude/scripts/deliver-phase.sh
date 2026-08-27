@@ -263,7 +263,17 @@ UNCITED=""
 IDS_TMP="$(mktemp)"
 {
   [[ -f "$LEDGER"  ]] && grep -E '^\|' "$LEDGER" | grep -oE 'ESC-[0-9]+' || true
-  [[ -f "$BACKLOG" ]] && grep -oE 'BL-[0-9]+' "$BACKLOG" || true
+  # SECTION-AWARE INTAKE (ESC-230). Only the Uncertainties section's ids are
+  # questions somebody filed FOR the oracle. This used to grep the whole
+  # backlog, which swept owner-filed Proposed ideas — items the rules say are
+  # never coded unprompted — into the oracle's inbox as commissioned
+  # evidence, and they got rulings nobody asked for. Proposed and Approved
+  # ids now wait until a decision cites them; the count of what waits is on
+  # every reading, so a wrongly-sectioned item is visible, never vanished.
+  [[ -f "$BACKLOG" ]] && awk '
+      /^## Uncertainties awaiting oracle ruling/ { insec = 1; next }
+      /^## /  { insec = 0 }
+      insec' "$BACKLOG" | grep -oE 'BL-[0-9]+' || true
 } | sort -u > "$IDS_TMP" || true
 while IFS= read -r id; do
   [[ -n "$id" ]] || continue
@@ -272,6 +282,15 @@ while IFS= read -r id; do
   is_processed "$id" && continue
   UNCITED="$UNCITED $id"
 done < "$IDS_TMP"
+PROPOSED_SKIPPED=0
+if [[ -f "$BACKLOG" ]]; then
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    grep -qw -- "$id" "$IDS_TMP" && continue
+    is_cited "$id" && continue
+    PROPOSED_SKIPPED=$((PROPOSED_SKIPPED + 1))
+  done < <(grep -oE 'BL-[0-9]+' "$BACKLOG" | sort -u)
+fi
 rm -f "$IDS_TMP"
 UNCITED="${UNCITED# }"
 
@@ -287,6 +306,7 @@ emit_counts() {
   [[ -n "$OPEN_DECISIONS" ]] && echo "OPEN_DECISIONS=$OPEN_DECISIONS"
   [[ -n "$UNBUILT_PLANS"  ]] && echo "UNBUILT_PLANS=$UNBUILT_PLANS"
   echo "EVIDENCE=$(wc -w <<<"$UNCITED" | tr -d ' ')"
+  [[ "${PROPOSED_SKIPPED:-0}" -gt 0 ]] && echo "PROPOSED_SKIPPED=$PROPOSED_SKIPPED"
   [[ -n "$BRAKED" ]] && echo "BRAKED=$BRAKED"
   return 0
 }
