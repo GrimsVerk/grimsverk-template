@@ -64,6 +64,19 @@ jobs:
         # unrelated branch trips over it — and then the error names a document
         # that branch never touched. Runs for exempt branches too.
         run: .github/scripts/plan-lint.sh
+      - name: Pseudocode plans keep their shape and carry their reviews
+        # Two promises of the attended design flow (docs/design-flow.md),
+        # enforced at the pull request that lands the plans. plan-format.sh
+        # holds the format's structure — the capped Summary header, the
+        # Rulings receipt, the Signatures/Internals split the blind
+        # test-writer's view is computed from. design-reviewed.sh refuses a
+        # format: pseudocode plan whose two adversarial review artifacts are
+        # missing or hollow. Legacy plans and docs/plans/oracle/ are exempt
+        # from both: the unattended path has no owner awake to walk the flow.
+        run: |
+          .github/scripts/plan-format.sh
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            .github/scripts/design-reviewed.sh
       - name: Escape citations must resolve at the base commit
         # A gated document cites a docs/escapes.md entry by rigid id (ESC-<n>),
         # and only once that entry exists at the base — the review gate reads
