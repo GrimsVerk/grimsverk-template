@@ -54,4 +54,11 @@ init_repo() {
   git -C "$1" config user.email "tests@example.invalid"
   git -C "$1" config user.name "Template Tests"
   git -C "$1" config commit.gpgsign false
+  # No detached background gc in a fixture, ever: an auto-gc kicked off by a
+  # driver's fetch or merge keeps running after the scenario moves on, and a
+  # later clone or push racing it dies mid-copy on a pruned object. Observed
+  # on CI as unrelated-looking one-off failures; a test repo has nothing gc
+  # buys it.
+  git -C "$1" config gc.auto 0
+  git -C "$1" config gc.autoDetach false
 }

@@ -1398,7 +1398,17 @@ else no "and the refusal leaves the live driver's claim untouched" \
 # A second clone with the same lane name and the same limits — the exact pair
 # that collided — must start with no interference at all.
 R2="$WORK/repo2"
-rm -rf "$R2"; git clone -q "$R" "$R2" 2>/dev/null
+# The clone source has a LIVE driver mutating it — that is the scenario — and
+# a clone of a repository mid-write can die partway through (observed on CI:
+# repo2 absent at the cd below, its clone error suppressed). The driver's
+# writes come in bursts, so a short retry wins the race; the last attempt
+# keeps its stderr so a real failure names itself instead of cascading.
+for _try in 1 2 3; do
+  rm -rf "$R2"
+  git clone -q "$R" "$R2" 2>/dev/null && break
+  sleep 1
+done
+[[ -d "$R2" ]] || { rm -rf "$R2"; git clone -q "$R" "$R2"; }
 git -C "$R2" config user.email t@e.i; git -C "$R2" config user.name T
 git -C "$R2" config commit.gpgsign false
 git -C "$R2" checkout -q -B main
