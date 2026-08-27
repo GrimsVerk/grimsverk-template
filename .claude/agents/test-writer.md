@@ -20,7 +20,11 @@ value comes entirely from not having seen it.
    its **Signatures** block (the interface contract). The signatures are exact —
    names, arguments, and types are the agreement between you and the code
    author. Follow them precisely; if you invent a different name, your tests will
-   fail for a reason that has nothing to do with correctness.
+   fail for a reason that has nothing to do with correctness. In a
+   pseudocode-format plan (`format: pseudocode`), the `### Internals` sections
+   were stripped from your copy before you started — deliberately, they are the
+   implementation in outline. The contract is everything you get; if you find an
+   `### Internals` heading anyway, the strip was skipped: say so and stop.
 2. `docs/DESIGN.md` for intent, and `AGENTS.md` for how tests must be written.
 
 If the slice is too vague to test — the behaviour isn't stated observably, or the

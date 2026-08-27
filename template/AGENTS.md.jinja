@@ -34,6 +34,21 @@ the recorded default and the oracle reviews it next cycle. Never silently —
 every guess is filed either way (`docs/DECISIONS.md`, the mid-run authority
 ruling).
 
+**Attended, planning happens inside the design flow.** With the owner present,
+plans come out of the hardening loop in `docs/design-flow.md` (driven by
+`/design`): an adversarial review of the design, one pseudocode pass over the
+whole design carved into `format: pseudocode` plans
+(`docs/plans/_TEMPLATE.pseudocode.md`), the owner's batched rulings — recorded
+in `docs/DECISIONS.md`, never left as question text in the plan — and an
+adversarial review of the settled pseudocode. Those plans replace the ~40-line
+Summary with a lint-capped header carrying only what pseudocode cannot say
+(intent, non-goals, owner costs), and each slice splits into a `### Signatures`
+contract — all the blind test-writer sees — and `### Internals` pseudocode.
+`.github/scripts/plan-format.sh` holds the format's structure, and
+`design-reviewed.sh` fails a pull request landing such a plan without both
+review artifacts. The unattended path is unchanged: `docs/plans/oracle/` plans
+keep the legacy format and the `BL-<n>` filing rule above.
+
 **The stop is conditional on there being something to stop for.** If every
 decision was derived from the design — `docs/DESIGN.md` and
 `docs/DESIGN.oracle.md`, which are read together — rather than guessed, write

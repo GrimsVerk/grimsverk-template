@@ -89,4 +89,26 @@ owner, which hollows out `owner-authored.sh`. The App stays at exactly
 Contents RW, Pull requests RW, Checks RO: never Administration or Secrets, or
 the unattended driver could edit its own gates.
 
+## 2026-08-27 — The design hardening loop: pseudocode is the attended plan
+
+The owner's ruling set for the attended path, taken in one working session and
+built as `docs/design-flow.md`. Between the design doc and the build sit a
+conceptual adversarial review, one pseudocode pass over the whole design, the
+owner's batched rulings, and a tactical adversarial review of the settled
+result. Attended plans are pseudocode-bodied (`format: pseudocode`): a
+lint-capped header carries only what pseudocode cannot express — intent,
+non-goals, owner costs — and open questions never land in a plan; they are
+ruled in batch, folded in (losing fork branches deleted), and recorded here,
+the plan keeping a `Rulings:` receipt line. Each slice splits into a
+Signatures contract — all the blind test-writer sees, enforced structurally by
+`spawn-worker.sh --strip-internals` — and pseudocode Internals for the coder.
+Mid-pass, a structural fork (the HIGH-risk contract test) is branched locally
+with effort shrinking in branch count, a trunk chosen, and the pass continues
+on the trunk; five-plus plausible branches are listed with two-sentence cases,
+not implemented. Review cadence: one conceptual plus one tactical is standard;
+a level gets a second pass only when landing its feedback made structural
+changes; hard cap two per level, past it only the owner opens more. The
+claimed payoff — fewer mid-run oracle rulings — is measured: every run report
+carries `oracle-rulings: <n>`. The unattended path is unchanged throughout.
+
 <!-- Append project decisions below, newest at the bottom. -->

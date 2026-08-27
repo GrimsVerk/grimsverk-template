@@ -258,6 +258,14 @@ same types. Without it the two would agree on intent and disagree on every
 identifier, and reconciliation would cost more than the separation saves. This
 is the reason the plan schema demands signatures with no bodies.
 
+A pseudocode-format plan (`format: pseudocode`, from the attended design flow)
+carries the implementation in outline as `### Internals` sections — which is
+exactly what the test author must not see, for the same reason it must not see
+the code. Spawn the test-writer with
+`--strip-internals docs/plans/<slug>.md`: spawn-worker replaces the plan in
+that worktree with the contract-only view (`plan-contracts.sh`), so the
+exclusion is structural there too. The coder's worktree keeps the full plan.
+
 The two meet at assembly, and disagreement there is the payoff, not a problem —
 it means the slice was built and checked by two independent readings of the
 spec, and they differed. `/orchestrate` step 4 says how to resolve it; the one

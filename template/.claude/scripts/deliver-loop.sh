@@ -650,6 +650,13 @@ while [[ -d "docs/runs/$RUN_ID" ]] \
 done
 RUN_DIR="docs/runs/$RUN_ID"
 RUN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# Pin where the base branch stood when the run began. The oracle-rulings count
+# in the landed report is "decisions added SINCE THE RUN STARTED", and by the
+# stop the base branch has usually moved — this run's own merges are on it —
+# so counting against the branch name would compare the tree with itself and
+# report 0 forever.
+RUN_BASE_SHA_AT_START="$(git rev-parse -q --verify "$RUN_BASE" 2>/dev/null \
+  || git rev-parse -q --verify "origin/$RUN_BASE" 2>/dev/null || true)"
 PROCESSED_FILE="$STATE_DIR/processed-evidence"
 touch "$PROCESSED_FILE"
 SIG_FILE="$STATE_DIR/failure-signatures"
@@ -848,6 +855,14 @@ land_evidence() {
       echo
       echo "See .claude/scripts/deliver-loop.sh's header for what each exit code"
       echo "means. Every stop says why; none degrades silently."
+    fi
+    # The design hardening loop's yardstick (docs/design-flow.md): how many
+    # decisions the oracle had to make this run. The loop claims to shrink
+    # this number, and a claim nothing measures is a claim nobody can
+    # evaluate — so every report carries the count, baseline runs included.
+    if RULINGS_LINE="$(.claude/scripts/count-rulings.sh "${RUN_BASE_SHA_AT_START:-$RUN_BASE}" 2>/dev/null)"; then
+      echo
+      echo "$RULINGS_LINE"
     fi
     # A SYNC DEGRADATION IS PART OF THE RECORD, NOT CONSOLE NOISE (ESC-204).
     # "pull --ff-only failed; continuing on the local tree" was a console-only

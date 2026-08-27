@@ -722,6 +722,17 @@ git -C "$R" add -A >/dev/null 2>&1; git -C "$R" commit -qm "before the pr tests"
 # happening.
 ORIGIN="$WORK/origin.git"
 git init -q --bare "$ORIGIN"
+# Auto-gc OFF, and not as tuning: receive.autogc detaches a background
+# `git gc --auto` inside this shared origin after a push, and on a slow
+# runner that gc prunes loose objects WHILE a later scenario clones or
+# pushes. Observed on CI as three different failures of this file on three
+# runs — a clone dying mid-object-copy ("failed to copy file ...
+# objects/..."), an evidence push failing into the ESC-204 buffer note, and
+# both ESC-220 pushes failing so the wrong rc-5 guard fired. One cause, a
+# race with background gc; a fixture origin has no use for gc at all.
+git -C "$ORIGIN" config receive.autogc false
+git -C "$ORIGIN" config gc.auto 0
+git -C "$ORIGIN" config gc.autoDetach false
 git -C "$R" remote add origin "$ORIGIN" 2>/dev/null || git -C "$R" remote set-url origin "$ORIGIN"
 git -C "$R" push -q origin main
 
@@ -729,6 +740,16 @@ PRLOG="$WORK/cap/prcreate.log"
 ORCHLOG="$WORK/cap/claude.pr.log"
 reset_pr_run() {
   rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"; : > "$PRLOG"; : > "$ORCHLOG"
+  # The origin accumulates TIME-NAMED refs — docs/oracle-<ts>, docs/run-<id>,
+  # worker/* — from every scenario's pushes, and on a slow runner consecutive
+  # scenarios share a wall-clock second: the next scenario's push to the
+  # same-named ref is then rejected non-fast-forward, mechanical_pr honestly
+  # reports "no pull request", and the wrong guard stops the run. Caught on
+  # CI verbatim ("! [rejected] ... docs/oracle-<ts> (non-fast-forward)").
+  # Each scenario starts against a clean origin.
+  git -C "$R" ls-remote --heads origin 2>/dev/null | awk '{print $2}'     | grep -E '^refs/heads/(docs|worker)/'     | while read -r ref; do
+        git -C "$R" push -q origin --delete "${ref#refs/heads/}" 2>/dev/null || true
+      done
   # Worker branch names carry a per-SECOND timestamp, so two scenarios running
   # inside the same second reuse one — and a leftover branch pointing at a
   # commit a later scenario reset away is neither empty nor pushable, which
@@ -1020,6 +1041,11 @@ out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-busy" \
         STUB_MERGED_REFS="$BUILT" PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" \
         -- --max-iterations 9)"
 expect_rc "the same ask a third time stops the run (ESC-220)" 5 $?
+if ! grep -q "asked for the same work a third time" <<<"$out"; then
+  echo "  ---- full driver output (the stop that DID fire) ----"
+  sed 's/^/  | /' <<<"$out"
+  echo "  ---- end driver output ----"
+fi
 expect_contains "and the stop names the shape" "$out" \
   "asked for the same work a third time"
 disp220="$(grep -c "dispatch oracle worker" <<<"$out")"
@@ -1382,7 +1408,17 @@ else no "and the refusal leaves the live driver's claim untouched" \
 # A second clone with the same lane name and the same limits — the exact pair
 # that collided — must start with no interference at all.
 R2="$WORK/repo2"
-rm -rf "$R2"; git clone -q "$R" "$R2" 2>/dev/null
+# The clone source has a LIVE driver mutating it — that is the scenario — and
+# a clone of a repository mid-write can die partway through (observed on CI:
+# repo2 absent at the cd below, its clone error suppressed). The driver's
+# writes come in bursts, so a short retry wins the race; the last attempt
+# keeps its stderr so a real failure names itself instead of cascading.
+for _try in 1 2 3; do
+  rm -rf "$R2"
+  git clone -q "$R" "$R2" 2>/dev/null && break
+  sleep 1
+done
+[[ -d "$R2" ]] || { rm -rf "$R2"; git clone -q "$R" "$R2"; }
 git -C "$R2" config user.email t@e.i; git -C "$R2" config user.name T
 git -C "$R2" config commit.gpgsign false
 git -C "$R2" checkout -q -B main
@@ -1574,8 +1610,19 @@ rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"
 # This scenario identifies its landing branch as the last docs/run-* by sort,
 # so earlier scenarios' landings must not be lying around to out-sort it — a
 # same-second collision suffix (-2, -recovered) sorts after its own parent.
+# Deleted on the ORIGIN too, not just locally. The driver's run-id de-dup
+# reads the local dir and the local branch; with the local branch gone, a
+# landing in the same SECOND as an earlier scenario's reuses its id, the
+# evidence push is non-fast-forward, and the driver queues the push failure
+# into the report buffer (ESC-204, by design) — which reads here as "a landed
+# buffer is cleared" failing on a slow runner. Observed on CI twice-adjacent
+# timestamps; reproduced deterministically by pre-seeding origin with
+# docs/run-<next-second> refs.
 git -C "$R" for-each-ref --format='%(refname:short)' 'refs/heads/docs/run-*' \
-  | while read -r b; do git -C "$R" branch -qD "$b" 2>/dev/null || true; done
+  | while read -r b; do
+      git -C "$R" branch -qD "$b" 2>/dev/null || true
+      git -C "$R" push -q origin --delete "$b" 2>/dev/null || true
+    done
 mkdir -p "$R/.claude/deliver-loop"
 printf '# Delivery run OLDRUN\n\n- 00:00:00Z the run that never landed\n' \
   > "$R/.claude/deliver-loop/run.md"
