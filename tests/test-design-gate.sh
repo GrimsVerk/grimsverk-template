@@ -110,6 +110,8 @@ run_gate() {
 run_gate_err() {
   local r="$1"
   shift
+  # shellcheck disable=SC2069  # stderr-ONLY capture is the point: 2>&1 first
+  # routes stderr into the substitution, then stdout is discarded.
   (cd "$r" && "$GATE" "$@" 2>&1 >/dev/null)
 }
 
