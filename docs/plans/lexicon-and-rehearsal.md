@@ -8,6 +8,14 @@ covers: [R4, R6, R11]
 
 # Lexicon and rehearsal — freeze the words, then drive the loop in CI
 
+> **Escape rows referenced by bare number.** This branch itself appends the
+> ratchet rows for these defects to `docs/escapes.md` (stubs 217-229, completed
+> in the final slice). The citation rule is that an ESC id is citable only once
+> its row is on the default branch at the base commit — and these rows travel
+> with this very change — so they are named as "row NNN" here, the same
+> travels-with-the-change form the first-run-defects plan used. After merge
+> they are ordinary citable ids.
+
 ## Summary
 
 Stage 3 of the post-mortem prevention plan. Three changes.
@@ -16,21 +24,21 @@ Stage 3 of the post-mortem prevention plan. Three changes.
   vocabularies — phases, verdicts, closure states, risk classes — as shell
   variables; scripts source it instead of restating the lists; a drift
   check fails when a command file or gate script uses a phase or verdict
-  spelling the lexicon does not carry (ESC-225).
+  spelling the lexicon does not carry (row 225).
 - **One decision schema, and a one-line clearance for LOW.** HALT entries
   keep their meaning but stop being a second schema: the checker accepts
   one field set with `HALT` as a kind (legacy HALT entries still pass). An
   appended `- **Cleared (OD-free):** BL-<n> — LOW, default stood: <line>`
   costs one line, satisfies the schema check, and the detector reads it as
   citation — a defaulted LOW item never again buys an eight-field ruling
-  (ESC-225, ESC-226).
+  (row 225, row 226).
 - **The loop is rehearsed in CI.** `test-loop-economy.sh` drives the real
   detector and driver over a manufactured repository through the failure
   shapes of 2026-08-20: reaches ORCHESTRATE with pending LOW evidence,
   clears the steward queue by closure, survives a supersession, honours the
   brake, and stops typed on repetition — each historical failure red before
   its fix, green after. The escape rows this whole effort opened are
-  completed here, red/green demonstrated (ESC-217..ESC-229 completions).
+  completed here, red/green demonstrated (row 217..row 229 completions).
 - **Costs:** one sourced file all loop scripts depend on; one slower test
   file in the suite (V9 accepts it).
 
@@ -41,7 +49,7 @@ No uncertainties — every decision derives from
 recorded there (Q2: the oracle writes the clearance, batched; Q3: closure
 lives in the ledger itself).
 
-## Slice 1 — the lexicon and its drift check *(covers R6; ESC-225)*
+## Slice 1 — the lexicon and its drift check *(covers R6; row 225)*
 
 - **Delivers:** `lexicon.sh` holds the phase, verdict, closure and risk
   vocabularies; `deliver-phase.sh` and `deliver-loop.sh` source it; a test
@@ -52,7 +60,7 @@ lives in the ledger itself).
   `template/.claude/scripts/deliver-loop.sh`, `tests/test-lexicon.sh`
 - **Estimate:** ~120 lines
 
-## Slice 2 — one schema, and the LOW clearance line *(covers R4, R11; ESC-225, ESC-226)*
+## Slice 2 — one schema, and the LOW clearance line *(covers R4, R11; row 225, row 226)*
 
 - **Delivers:** `oracle-decisions.sh` checks one field set with kind
   `HALT`/`decision` (legacy HALT shape still passes); an appended
@@ -65,7 +73,7 @@ lives in the ledger itself).
   `tests/test-deliver-phase.sh`
 - **Estimate:** ~140 lines
 
-## Slice 3 — the rehearsal *(covers R6; ESC-217..ESC-229 completions)*
+## Slice 3 — the rehearsal *(covers R6; row 217..row 229 completions)*
 
 - **Delivers:** `test-loop-economy.sh` drives detector and driver through
   the five 2026-08-20 failure shapes over a manufactured repository with a

@@ -8,6 +8,14 @@ covers: [R4, R9, R11]
 
 # Grounding and evidence — decisions bind to things that exist, and nothing built is lost
 
+> **Escape rows referenced by bare number.** This branch itself appends the
+> ratchet rows for these defects to `docs/escapes.md` (stubs 217-229, completed
+> in the final slice). The citation rule is that an ESC id is citable only once
+> its row is on the default branch at the base commit — and these rows travel
+> with this very change — so they are named as "row NNN" here, the same
+> travels-with-the-change form the first-run-defects plan used. After merge
+> they are ordinary citable ids.
+
 ## Summary
 
 Stage 2 of the post-mortem prevention plan. Four changes.
@@ -19,21 +27,21 @@ Stage 2 of the post-mortem prevention plan. Four changes.
   work). Path-like strings outside the field produce a warning, never a
   failure — a described artifact ("the measured 52-variant set") cannot be
   detected mechanically, so the prompt (`oracle.md`) carries the
-  declaration duty and the gate verifies what is declared (ESC-222).
+  declaration duty and the gate verifies what is declared (row 222).
 - **The owner's documents get the same look, report-only, before the first
   dispatch.** `design-refs.sh` lists path-like references in
   `docs/DESIGN.md`, `docs/VISION.md` and the seed backlog that resolve to
   nothing, and `unattended-ready.sh` prints the report in its preflight
   banner — the owner learns about phantom referents while awake; nothing
-  blocks (ESC-222).
+  blocks (row 222).
 - **A merge into a non-default base is tagged.** `mechanical_pr`'s merge
   bookkeeping tags the merge commit `evidence/<base>/pr-<n>` when the run
   base is not the default branch, and pushes the tag — the class of loss
-  that erased a merged feature slice cannot recur silently (ESC-223).
+  that erased a merged feature slice cannot recur silently (row 223).
 - **Run evidence is append-only like every other ledger.**
   `runs-append-only.sh` fails a pull request that edits or deletes a file
   already landed under `docs/runs/`; new files append freely. Corrections
-  are new files that cite the old (ESC-223's post-hoc-edit half).
+  are new files that cite the old (row 223's post-hoc-edit half).
 - **Costs:** one new gate script wired beside the other append-only checks;
   one new preflight line; tags accumulate on non-default bases (V8 accepts
   the space).
@@ -45,7 +53,7 @@ No uncertainties — every decision derives from
 recorded there. The warning-not-failure line for undeclared referents is the
 plan's own recorded decision, not a new one.
 
-## Slice 1 — the Binds field and its gate *(covers R4; ESC-222)*
+## Slice 1 — the Binds field and its gate *(covers R4; row 222)*
 
 - **Delivers:** a decision whose `Binds:` entry names a path absent at the
   base commit fails `oracle-decisions.sh` with the artifact-ordered escape
@@ -56,7 +64,7 @@ plan's own recorded decision, not a new one.
   `template/.claude/commands/oracle.md`, `tests/test-oracle-decisions.sh`
 - **Estimate:** ~110 lines
 
-## Slice 2 — the owner-document referent report *(covers R4; ESC-222)*
+## Slice 2 — the owner-document referent report *(covers R4; row 222)*
 
 - **Delivers:** `design-refs.sh` prints every path-like reference in the
   owner documents that resolves to nothing in the tree, exits 0 always;
@@ -66,7 +74,7 @@ plan's own recorded decision, not a new one.
   `tests/test-design-refs.sh`, `tests/test-unattended-ready.sh`
 - **Estimate:** ~120 lines
 
-## Slice 3 — merges into non-default bases are tagged *(covers R9; ESC-223)*
+## Slice 3 — merges into non-default bases are tagged *(covers R9; row 223)*
 
 - **Delivers:** after a merge into a non-default run base, an
   `evidence/<base>/pr-<n>` tag exists on the remote pointing at the merge
@@ -76,7 +84,7 @@ plan's own recorded decision, not a new one.
   `tests/test-deliver-loop.sh`
 - **Estimate:** ~60 lines
 
-## Slice 4 — run evidence cannot be rewritten *(covers R9, R11; ESC-223)*
+## Slice 4 — run evidence cannot be rewritten *(covers R9, R11; row 223)*
 
 - **Delivers:** a pull request modifying or deleting a landed file under
   `docs/runs/` fails `runs-append-only.sh`; adding new files passes; the
