@@ -12,12 +12,14 @@ reads everything and judges depth themselves.
 The stages, in order:
 
 1. **Design + vision.** Read `docs/idea-to-design-doc.md` and act as the
-   elicitation agent it describes: interrogate the owner, then write
-   `docs/DESIGN.md` (and `docs/VISION.md` — offer it at the start, accept
-   "after the design"). Push the branch and STOP for the owner to open the
-   pull request themselves: `.github/scripts/owner-authored.sh` fails any
-   pull request touching either file that the owner did not open. Gate:
-   `design-gate.sh design`.
+   elicitation agent it describes: interrogate the owner, then write the
+   design doc. **Two documents, not one**: `docs/VISION.md` must be filled in
+   by asking — offer it at the start, and accept "after the design" as an
+   answer; the deadline is the plans, and the gate below holds it. Then push
+   the branch and STOP THERE. **Do not open the pull request** — the owner
+   opens it themselves, because `.github/scripts/owner-authored.sh` fails any
+   pull request touching either file that the owner did not open, so opening
+   one wastes a run and lands nothing. Gate: `design-gate.sh design`.
 
 2. **Conceptual adversarial review.** Run while the owner steps away. Hand
    `docs/design-reviews/conceptual-prompt.md` to a FRESH agent — one with no
