@@ -1344,6 +1344,7 @@ wait_on_pr() { # wait_on_pr <number> <headref>
 
 # ------------------------------------------------------------- the loop
 ITER=0
+LAST_ASK_SIG=""; ASK_REPEATS=0   # the repetition guard's memory (ESC-220)
 while :; do
   ITER=$((ITER + 1))
   if [[ "$MAX_ITER" -gt 0 && "$ITER" -gt "$MAX_ITER" ]]; then
@@ -1440,7 +1441,7 @@ while :; do
 
   # What next? Recomputed from the world, never remembered.
   PHASE=""; PR=""; HEADREF=""; UNRULED=""; UNCITED=""; ODS=""; REQS=""; SLUG=""; REASON=""
-  CRITERIA=""; OPEN_DECISIONS=""; UNBUILT_PLANS=""; EVIDENCE=""; rc=0
+  CRITERIA=""; OPEN_DECISIONS=""; UNBUILT_PLANS=""; EVIDENCE=""; BRAKED=""; rc=0
   while IFS='=' read -r k v; do
     case "$k" in
       PHASE) PHASE="$v" ;; PR) PR="$v" ;; HEADREF) HEADREF="$v" ;;
@@ -1450,6 +1451,7 @@ while :; do
       OPEN_DECISIONS) OPEN_DECISIONS="$v" ;;
       UNBUILT_PLANS) UNBUILT_PLANS="$v" ;;
       EVIDENCE) EVIDENCE="$v" ;;
+      BRAKED) BRAKED="$v" ;;
     esac
   done < <(GH="$GH" PROCESSED_FILE="$PROCESSED_FILE" RUN_BASE="$RUN_BASE" "$PHASE_SH")
   [[ -n "$PHASE" ]] || die "phase detection failed"
@@ -1472,6 +1474,40 @@ while :; do
   if [[ -n "$OPEN_DECISIONS$UNBUILT_PLANS$EVIDENCE" ]]; then
     log "economy: decisions open ${OPEN_DECISIONS:-?}, plans unbuilt ${UNBUILT_PLANS:-?}, evidence waiting ${EVIDENCE:-?}"
   fi
+  # The oracle's per-target brake, said LOUDLY every iteration it holds
+  # (ESC-221): a fenced target is routed around, never silently dropped.
+  if [[ -n "$BRAKED" ]]; then
+    log "BRAKE: the oracle has fenced [$BRAKED] in docs/oracle/do-not-dispatch.md — routing around it; the reason is in that file"
+  fi
+  # THE REPETITION GUARD (ESC-220). The livelock the other guards cannot see:
+  # a dispatch that opens a pull request — a backlog filing, a re-derived
+  # ruling — resets the no-progress counter, fails no check and repeats no
+  # signature, yet changes nothing the detector reads. Downstream this burned
+  # a session per cycle for an hour, every cycle looking productive. So the
+  # ASK itself is the signal: the detector requesting the same phase with the
+  # same scope a third time, with WAIT iterations not resetting the count,
+  # means two completed dispatches changed nothing — stop, typed, with the
+  # evidence landed.
+  case "$PHASE" in
+    ORACLE|STEWARD|PLAN|ORCHESTRATE)
+      SIG_NOW="$PHASE|$REASON|$UNRULED|$UNCITED|$ODS|$REQS|$SLUG"
+      if [[ "$SIG_NOW" == "$LAST_ASK_SIG" ]]; then
+        ASK_REPEATS=$((ASK_REPEATS + 1))
+      else
+        LAST_ASK_SIG="$SIG_NOW"; ASK_REPEATS=1
+      fi
+      if [[ "$ASK_REPEATS" -ge 3 ]]; then
+        log "STOPPED: the detector asked for the same work a third time ($PHASE, scope unchanged)"
+        log "with nothing closed in between. Two dispatches completed and the world did not"
+        log "move — the 2026-08-20 livelock shape (ESC-220). Every further iteration would"
+        log "spend a session to learn the same thing. If a template defect is the cause,"
+        log "the evidence lands with this report; the oracle can fence the target in"
+        log "docs/oracle/do-not-dispatch.md if the run should continue around it."
+        stop 5 "the same phase and scope asked for a third time with nothing closed between — the repetition guard (ESC-220)"
+      fi ;;
+    WAIT) : ;;                 # waiting on a PR is not an ask; it must not reset the count
+    *) LAST_ASK_SIG=""; ASK_REPEATS=0 ;;
+  esac
   case "$PHASE" in
     SETUP)
       log "setup problem: $REASON — /design is interactive and owner-landed; the loop cannot do it"

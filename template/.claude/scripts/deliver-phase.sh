@@ -282,10 +282,13 @@ UNCITED="${UNCITED# }"
 # reads that way while it is happening rather than in a post-mortem.
 OPEN_DECISIONS=""
 UNBUILT_PLANS=""
+BRAKED=""   # filled by the brake pass below; empty until then
 emit_counts() {
   [[ -n "$OPEN_DECISIONS" ]] && echo "OPEN_DECISIONS=$OPEN_DECISIONS"
   [[ -n "$UNBUILT_PLANS"  ]] && echo "UNBUILT_PLANS=$UNBUILT_PLANS"
   echo "EVIDENCE=$(wc -w <<<"$UNCITED" | tr -d ' ')"
+  [[ -n "$BRAKED" ]] && echo "BRAKED=$BRAKED"
+  return 0
 }
 
 # ------------------------------------------------------- 4. coverage gaps?
@@ -320,7 +323,6 @@ case "$COV_RC" in
     STEWARD_ODS="${STEWARD_ODS# }"
     PLAN_REQS="${PLAN_REQS# }" ;;
 esac
-OPEN_DECISIONS="$(wc -w <<<"$STEWARD_ODS" | tr -d ' ')"
 
 # ------------------------------------- 5. planned and merged, but unbuilt?
 # A plan is BUILT when a feat/ pull request carrying its slug has merged INTO
@@ -400,6 +402,46 @@ while IFS= read -r f; do
   fi
 done < <(find "$PLANS_DIR" -name '*.md' 2>/dev/null | sort)
 UNBUILT_SLUGS="${UNBUILT_SLUGS# }"
+
+# ------------------------------- the per-target brake (ESC-221, ruling Q1)
+# The one legal move the oracle has against a poisoned work item. On the
+# 2026-08-20 run the oracle diagnosed a stuck driver IN WRITING — "nothing an
+# oracle may write can [unstick it]" — and was right: the driver reads no
+# prose, so a quarter of that ledger exists only to make the loop harmless.
+# docs/oracle/do-not-dispatch.md is machine-readable: a column-0 list line
+# naming an `OD-<n>` or a `plan:<slug>`, with the reason after a dash. The
+# detector routes around a fenced target and REPORTS the skip; the driver
+# logs it loudly. It is a brake on one lane, never on the run (the owner's
+# Q1 ruling: no run-halt authority) — and it can only remove work from a
+# queue, never make a check pass, so the worst it can do is an idle run that
+# says exactly why it is idle, on every reading.
+BRAKE_FILE="${BRAKE_FILE:-docs/oracle/do-not-dispatch.md}"
+if [[ -f "$BRAKE_FILE" ]]; then
+  BRAKED_TARGETS="$(grep -E '^[-*] ' "$BRAKE_FILE" \
+    | grep -oE '(OD-[0-9]+|plan:[A-Za-z0-9][A-Za-z0-9-]*)' | sort -u || true)"
+  if [[ -n "$BRAKED_TARGETS" ]]; then
+    kept=""
+    for od in $STEWARD_ODS; do
+      if grep -qxF "$od" <<<"$BRAKED_TARGETS"; then
+        BRAKED="$BRAKED $od"
+      else
+        kept="$kept $od"
+      fi
+    done
+    STEWARD_ODS="${kept# }"
+    kept=""
+    for slug in $UNBUILT_SLUGS; do
+      if grep -qxF "plan:$slug" <<<"$BRAKED_TARGETS"; then
+        BRAKED="$BRAKED plan:$slug"
+      else
+        kept="$kept $slug"
+      fi
+    done
+    UNBUILT_SLUGS="${kept# }"
+    BRAKED="${BRAKED# }"
+  fi
+fi
+OPEN_DECISIONS="$(wc -w <<<"$STEWARD_ODS" | tr -d ' ')"
 UNBUILT_PLANS="$(wc -w <<<"$UNBUILT_SLUGS" | tr -d ' ')"
 
 # --------------------- the ladder: decided work outranks new questions

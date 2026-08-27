@@ -950,6 +950,56 @@ git -C "$R" switch -q main
 git -C "$R" reset -q --hard "$PRE_SEED99"
 git -C "$R" update-ref refs/remotes/origin/main "$PRE_SEED99"
 
+# ---- ESC-220: the PRODUCTIVE-looking livelock the other guards cannot see
+# Downstream, a stuck steward opened a pull request EVERY cycle — each one
+# carrying only a fresh backlog filing — so the no-progress counter reset
+# every time, no check failed, no signature repeated, and the loop burned a
+# session per cycle for an hour while every guard saw progress. The ask
+# itself is the tell: the detector requesting the same phase with the same
+# scope a third time means two COMPLETED dispatches changed nothing.
+reset_pr_run
+PRE_SEED220="$(git -C "$R" rev-parse main)"
+cat >> "$R/docs/BACKLOG.md" <<'EOF'
+
+## Uncertainties awaiting oracle ruling
+
+- **BL-79** — how are conflicts merged? — proposed: last-writer — HIGH:
+  changes the storage schema.
+EOF
+git -C "$R" add -A && git -C "$R" commit -qm "seed an unruled HIGH for the repetition guard"
+git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse main)"
+# A worker that DOES produce work each time — a real commit, a real pull
+# request — that never cites the id it was dispatched for.
+cat > "$WORK/bin/spawn-worker-busy" <<'STUB'
+#!/usr/bin/env bash
+id=""; while [[ $# -gt 0 ]]; do [[ "$1" == "--id" ]] && id="$2"; shift; done
+git switch -q -c "worker/$id" 2>/dev/null || git switch -q "worker/$id"
+echo "productive-looking output for $id" > "output-$id.txt"
+git add -A && git commit -qm "work that changes nothing the detector reads" >/dev/null
+git switch -q - 2>/dev/null || true
+echo "WORKER_RESULT id=$id branch=worker/$id worktree=. engine=claude exit=0 commits=1"
+exit 0
+STUB
+chmod +x "$WORK/bin/spawn-worker-busy"
+: > "$PRLOG"
+out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-busy" \
+        STUB_MERGED_REFS="$BUILT" PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" \
+        -- --max-iterations 9)"
+expect_rc "the same ask a third time stops the run (ESC-220)" 5 $?
+expect_contains "and the stop names the shape" "$out" \
+  "asked for the same work a third time"
+disp220="$(grep -c "dispatch oracle worker" <<<"$out")"
+if [[ "$disp220" -eq 2 ]]; then
+  ok "exactly two dispatches were spent learning it, not nine"
+else
+  no "exactly two dispatches were spent learning it, not nine" "$disp220 dispatches"
+fi
+git -C "$R" switch -q main
+git -C "$R" reset -q --hard "$PRE_SEED220"
+git -C "$R" update-ref refs/remotes/origin/main "$PRE_SEED220"
+git -C "$R" branch --list 'worker/*' --format='%(refname:short)' \
+  | xargs -r git -C "$R" branch -qD 2>/dev/null || true
+
 # ---- ESC-75: a stop the run did not choose is never reported as success
 # Round 3.3 died five minutes in with its only worker's engine dead, and the
 # landed report said "exit code 0" — the success code — with no reason, under

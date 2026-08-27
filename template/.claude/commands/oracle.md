@@ -34,9 +34,11 @@ When the evidence says a requirement is wrong, do BOTH of these:
 
 1. **Rule the normal way, so work continues.** Add the requirement that carries
    the behaviour forward. Naming the old id on `**Requirements superseded:**`
-   records what your new requirement replaces — it retires nothing, excuses
-   nothing from the coverage report, and stops no planner being dispatched for
-   the old id.
+   records what your new requirement replaces — it retires nothing and stays
+   in the coverage report, but it does move the old id off the DISPATCH list:
+   coverage reports it as "superseded, awaiting the owner's retirement
+   ruling" instead of dispatching a planner for a dead id every cycle
+   (ESC-219 — a run once livelocked exactly there).
 2. **Append the suggestion** to `docs/oracle/retirement-suggestions.md`, with
    the evidence, what would replace the behaviour, and what has already been
    built against it. The owner reads that file when they are back.
@@ -51,6 +53,26 @@ than an unattended run stalled at 3am on a judgement nobody is awake to make.
 Nothing reads that file but the owner. It cannot change a gate, a report or a
 phase, and the template has a test that fails if any script ever starts reading
 it.
+
+### You may fence one work item. You may never stop the run.
+
+`docs/oracle/do-not-dispatch.md` is your brake, and it is deliberately narrow
+(the owner's ruling: per-target only — a run halt does not exist, in any
+form). When a specific decision or plan is mechanically stuck for a reason no
+ruling can fix — a gate defect, a target that burns a session per cycle and
+cannot move — append one list line naming it, with the reason after a dash:
+
+    - OD-5 — coverage cannot see the superseded id; template defect, evidence in OD-21
+    - plan:sync-transport — its feature branch trips the proxy bug logged as BL-9
+
+The driver skips a fenced target every cycle, says so loudly in the run
+report, and keeps doing all other work. The brake can only REMOVE work from a
+queue — it satisfies nothing, closes nothing, and never makes a check pass —
+so use it to stop a burn, never to tidy a queue. Record the evidence for the
+fence in a ruling first; the line cites it. This file exists because a
+predecessor of yours wrote, correctly, "nothing an oracle may write can
+unstick the driver" — and then had to spend four rulings making a stuck loop
+harmless instead of one line fencing it (ESC-221).
 
 Not plans. Not code. Not `docs/DESIGN.md`, not `docs/VISION.md`, not
 `docs/escapes.md`, not `AGENTS.md`. If you believe one of those is wrong, say so
