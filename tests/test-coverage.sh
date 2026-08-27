@@ -391,15 +391,26 @@ oracle <<'EOF'
 EOF
 plan everything "R1, R1000, R1008"
 
-# THE DECISION ALONE RETIRES NOTHING. This is the half two earlier designs got
-# wrong: a landed decision naming an id on `**Requirements superseded:**` says
-# what its new requirement replaces, and nothing more. Until the owner acts, the
-# requirement is still required, still a gap, and still gets planned — which is
-# what keeps an unattended run moving instead of waiting for a person.
+# THE DECISION ALONE RETIRES NOTHING — and it is not a dispatchable gap either
+# (ESC-219). The first half is ESC-203, unchanged: only the owner's line in
+# docs/DESIGN.oracle.retired.md removes an id from the universe. The second
+# half is what the 2026-08-20 experiment corrected: this block used to assert
+# that a superseded id "is still a gap, and still gets planned — which is what
+# keeps an unattended run moving", and the observed run proved the opposite.
+# The gap dispatched a planner for the dead id every cycle, every dispatch
+# produced a pull request carrying nothing, and the loop livelocked for an
+# hour — a quarter of that project's ledger exists only to describe the
+# stuckness. So a superseded id now moves to its own REPORTED class,
+# "awaiting the owner's retirement ruling": off the dispatch list, on the
+# owner's desk, never silently gone.
 out="$(run)"
-expect_rc "a decision naming an id does not retire it" 1 $?
-expect_contains "the id is still a live gap" "$out" "R1001 NOT PLANNED"
-expect_contains "and still counts as work outstanding" "$out" "requirement(s) with no plan"
+expect_rc "a superseded id is not a dispatchable gap" 0 $?
+expect_not_contains "it is not reported as unplanned" "$out" "R1001 NOT PLANNED"
+expect_contains "it is reported as its own class, by superseding decision" "$out" \
+  "R1001 (by OD-2)"
+expect_contains "which waits on the owner, not on a plan" "$out" \
+  "awaiting the owner's retirement ruling"
+expect_not_contains "and is not counted covered" "$out" "Covered: 4/4"
 
 # The owner's line is what removes it.
 retired <<'EOF'
