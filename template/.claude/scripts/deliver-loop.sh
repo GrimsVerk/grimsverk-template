@@ -64,6 +64,10 @@
 #      exit code 0, the success code, with no reason given (anvil local F20).
 #      Success is a thing the driver has to EARN by reaching a stop that says
 #      its own name; it is never what is left over.
+#   9  the template version changed mid-run (ESC-228): a run is an experiment
+#      on ONE version — four bumps in one day forced three restarts downstream
+#      and nothing recorded which version a round even ran. Upgrade between
+#      runs; the stop lands the evidence and says both versions
 #   8  EVIDENCE NOT LANDED: the run's evidence branch could not be VERIFIED on
 #      the remote — the push failed, or claimed success while `git ls-remote`
 #      never saw the ref move (ESC-204: a trap once announced the evidence
@@ -667,10 +671,44 @@ if [[ -s "$STATE_DIR/run.md" ]]; then
   cat "$STATE_DIR/run.md" >> "$STATE_DIR/unlanded-${PREV_RUN:-unknown}.md" \
     && rm -f "$STATE_DIR/run.md"
 fi
+# The machine record rotates with it (ESC-224): a dead run's event stream is
+# evidence, and the unlanded-* glob below ships it beside the rotated report.
+if [[ -s "$STATE_DIR/events.jsonl" ]]; then
+  cat "$STATE_DIR/events.jsonl" >> "$STATE_DIR/unlanded-${PREV_RUN:-unknown}-events.jsonl" \
+    && rm -f "$STATE_DIR/events.jsonl"
+fi
 { echo "# Delivery run $RUN_ID"; echo
   echo "Started $RUN_STARTED_AT."
   echo "Base branch: $RUN_BASE${LANE:+ (branch suffix '$LANE')}."; echo
 } >> "$STATE_DIR/run.md"
+
+# ------------------------------------------ the machine record (ESC-224)
+# One JSON line per loop event, written through as it happens, landed beside
+# run.md at the stop. The post-mortem that motivated it could not join
+# dispatches to pull requests or rulings to bytes because nothing wrote the
+# fields; the emitter refuses an event missing its required ones, and that
+# refusal is LOGGED, never fatal — a recorder that kills the run it records
+# has inverted its job.
+EVENTS_FILE="$STATE_DIR/events.jsonl"
+emit() { # emit <kind> [k=v ...] — best-effort, loud when refused
+  local err
+  if ! err="$(EVENTS_FILE="$EVENTS_FILE" RUN_ID="$RUN_ID" RUN_BASE="$RUN_BASE" \
+        .claude/scripts/emit-event.sh "$@" 2>&1)"; then
+    log "event NOT recorded (${1:-?}): ${err:-emit-event failed} — the machine record has a hole here (ESC-224)"
+  fi
+  return 0
+}
+# THE RUN PINS ITS TEMPLATE VERSION (ESC-228). Read once here; a change
+# mid-run is a typed stop in the loop below. Generated projects carry it in
+# their copier answers file; a repository without one is 'unversioned', which
+# still pins ("unversioned -> unversioned" never stops).
+template_version() {
+  sed -n 's/^_commit:[[:space:]]*//p' .copier-answers.yml 2>/dev/null \
+    | head -1 | tr -d "'\" "
+}
+TEMPLATE_VERSION_AT_START="$(template_version)"
+[[ -n "$TEMPLATE_VERSION_AT_START" ]] || TEMPLATE_VERSION_AT_START=unversioned
+[[ "$DRY_RUN" -eq 1 ]] || emit start template_version="$TEMPLATE_VERSION_AT_START"
 fi
 
 # ------------------------------------------------- the evidence, at every stop
@@ -776,6 +814,14 @@ land_evidence() {
     fi
   } > "$RUN_DIR/run.md"
 
+  # The machine record lands beside the human one (ESC-224). Its stop event
+  # is written first, directly — emit() logs into a report buffer that has
+  # already been flushed — so the stream's last line says how the run ended.
+  EVENTS_FILE="$STATE_DIR/events.jsonl" RUN_ID="$RUN_ID" RUN_BASE="$RUN_BASE" \
+    .claude/scripts/emit-event.sh stop exit_code="$rc" \
+    reason="${STOP_REASON:-ended without reaching a documented stop}" 2>/dev/null || true
+  [[ -f "$STATE_DIR/events.jsonl" ]] && cp "$STATE_DIR/events.jsonl" "$RUN_DIR/events.jsonl"
+
   # A previous run's set-aside buffer (the run-start rotation above) travels
   # with this run's evidence, under unlanded/ rather than inside this run's
   # report — preserved, and labeled as what it is. The glob is unlanded-*, not
@@ -859,6 +905,7 @@ land_evidence() {
       # the mirror image of ESC-44. Kept when the commit failed, because then
       # the buffer is still the only copy.
       : > "$STATE_DIR/run.md"
+      : > "$STATE_DIR/events.jsonl"
       rm -f "$STATE_DIR"/unlanded-* 2>/dev/null
       # PUSHED MEANS VERIFIED ON THE REMOTE, NOT ANNOUNCED (ESC-204). This trap
       # once reported a run's evidence landed while `git ls-remote` had never
@@ -1150,6 +1197,9 @@ UNATTENDED CONTRACT — read this before you finish.
 run_worker() { # run_worker <id> <role> <prompt> <docs-ref> <pr-title>
   local id="$1" role="$2" prompt="$3" ref="$4" title="$5"
   log "dispatch $role worker ($id)"
+  local psha; psha="$(printf '%s' "$prompt" | sha1sum | awk '{print $1}')"
+  emit dispatch iteration="${ITER:-0}" phase="${PHASE:-unknown}" worker="$id" \
+    role="$role" prompt_sha="$psha"
   local out_file="$STATE_DIR/worker-$id.out"
   local wrc=0
   timeout "$SESSION_TIMEOUT" "$SPAWN" --id "$id" --role "$role" \
@@ -1196,6 +1246,7 @@ run_worker() { # run_worker <id> <role> <prompt> <docs-ref> <pr-title>
       LAST_WORKER_FAILURE="the $role worker ($id) failed with exit code $wrc — its engine did not finish"
     fi
     log "$LAST_WORKER_FAILURE — see .claude/orchestration-logs/$id.log"
+    emit result iteration="${ITER:-0}" worker="$id" exit_code="$wrc"
     return 1
   fi
   cat "$out_file" >> "$STATE_DIR/run.md"
@@ -1211,7 +1262,10 @@ run_worker() { # run_worker <id> <role> <prompt> <docs-ref> <pr-title>
     log "the worker's work is on '$src', not 'worker/$id' — pushing what it reported"
   fi
   [[ -n "$src" ]] || src="worker/$id"
-  mechanical_pr "$src" "$ref" "$title"
+  local prc=0
+  mechanical_pr "$src" "$ref" "$title" || prc=$?
+  emit result iteration="${ITER:-0}" worker="$id" exit_code=0 branch="$src"
+  return "$prc"
 }
 
 # Consecutive dispatches that produced no pull request. A run whose worker
@@ -1247,12 +1301,17 @@ note_dispatch_outcome() { # note_dispatch_outcome <rc-from-run_worker> [scope id
 
 run_session() { # run_session <label> <prompt>
   log "dispatch $1 session"
+  local psha; psha="$(printf '%s' "$2" | sha1sum | awk '{print $1}')"
+  emit dispatch iteration="${ITER:-0}" phase="${PHASE:-session}" \
+    worker="session-$1" role="$1" prompt_sha="$psha"
   local -a cmd
   mapfile -t cmd < <(orch_cmd "$2")
   if ! timeout "$SESSION_TIMEOUT" "${cmd[@]}" >> "$STATE_DIR/run.md" 2>&1; then
     log "$1 session failed or timed out"
+    emit result iteration="${ITER:-0}" worker="session-$1" exit_code=1
     return 1
   fi
+  emit result iteration="${ITER:-0}" worker="session-$1" exit_code=0
 }
 
 record_dismissed_evidence() {
@@ -1289,7 +1348,13 @@ wait_on_pr() { # wait_on_pr <number> <headref>
     local waited=0
     while [[ "$waited" -lt 600 ]]; do
       state="$("$GH" pr view "$pr" --json state --jq .state 2>/dev/null)"
-      [[ "$state" == "MERGED" ]] && { log "PR #$pr merged"; return 0; }
+      [[ "$state" == "MERGED" ]] && {
+        log "PR #$pr merged"
+        # The factory's own output becomes evidence (ESC-223): the merge is
+        # recorded the moment it is known, never reconstructed later.
+        emit merge pr="$pr" headref="$headref"
+        return 0
+      }
       [[ "$state" == "CLOSED" ]] && { log "PR #$pr closed unmerged — investigate"; return 0; }
       sleep 30; waited=$((waited + 30))
     done
@@ -1379,6 +1444,16 @@ while :; do
     log "owner edited the design layer — re-deriving everything, resetting failure counters"
     STEER_DESIGN="$(design_sha)"; STEER_VISION="$(vision_sha)"
     : > "$SIG_FILE"
+  fi
+
+  # A template bump mid-run ends the run, typed (ESC-228): the run is an
+  # experiment on one version, and continuing across a bump makes its
+  # evidence unreadable — downstream, three restarts in one day were forced
+  # exactly here, and no record said which version any round ran.
+  TV_NOW="$(template_version)"; [[ -n "$TV_NOW" ]] || TV_NOW=unversioned
+  if [[ "$TV_NOW" != "$TEMPLATE_VERSION_AT_START" ]]; then
+    log "the template version changed mid-run ($TEMPLATE_VERSION_AT_START -> $TV_NOW) — stopping"
+    stop 9 "the template version changed mid-run ($TEMPLATE_VERSION_AT_START -> $TV_NOW) — a run is an experiment on one version; upgrade between runs (ESC-228)"
   fi
 
   # Ceilings. Each applies only if the owner set it — zero means "not a limit",
@@ -1479,6 +1554,10 @@ while :; do
   if [[ -n "$BRAKED" ]]; then
     log "BRAKE: the oracle has fenced [$BRAKED] in docs/oracle/do-not-dispatch.md — routing around it; the reason is in that file"
   fi
+  emit detect iteration="$ITER" phase="$PHASE" reason="$REASON" \
+    ids="$(echo $UNRULED $UNCITED $ODS)" plan="$SLUG" reqs="$REQS" \
+    open_decisions="$OPEN_DECISIONS" unbuilt_plans="$UNBUILT_PLANS" \
+    evidence="$EVIDENCE" braked="$BRAKED"
   # THE REPETITION GUARD (ESC-220). The livelock the other guards cannot see:
   # a dispatch that opens a pull request — a backlog filing, a re-derived
   # ruling — resets the no-progress counter, fails no check and repeats no

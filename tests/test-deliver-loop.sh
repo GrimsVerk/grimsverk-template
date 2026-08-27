@@ -128,6 +128,7 @@ mkdir -p "$R/.claude/scripts" "$R/.claude/commands" "$R/.github/scripts" \
 cp "$TEMPLATE/.claude/scripts/deliver-loop.sh" \
    "$TEMPLATE/.claude/scripts/deliver-phase.sh" \
    "$TEMPLATE/.claude/scripts/budget-probe.sh" \
+   "$TEMPLATE/.claude/scripts/emit-event.sh" \
    "$TEMPLATE/.claude/scripts/spawn-worker.sh" "$R/.claude/scripts/"
 cp "$TEMPLATE/.claude/commands/oracle.md" "$TEMPLATE/.claude/commands/steward.md" \
    "$TEMPLATE/.claude/commands/plan.md" "$R/.claude/commands/"
@@ -993,6 +994,17 @@ if [[ "$disp220" -eq 2 ]]; then
   ok "exactly two dispatches were spent learning it, not nine"
 else
   no "exactly two dispatches were spent learning it, not nine" "$disp220 dispatches"
+fi
+# The machine record rode along (ESC-224): every emit was accepted — a
+# refusal would log a hole — and the landed evidence carries the stream.
+expect_not_contains "no event was refused during the run" "$out" "event NOT recorded"
+evref="$(git -C "$R" branch --list 'docs/run-*' --format='%(refname:short)' | tail -1)"
+evfile="$(git -C "$R" ls-tree -r --name-only "$evref" 2>/dev/null | grep -m1 'events\.jsonl' || true)"
+if [[ -n "$evfile" ]] && git -C "$R" show "$evref:$evfile" | grep -q '"event":"stop"'; then
+  ok "the landed evidence carries events.jsonl, ending in the stop event"
+else
+  no "the landed evidence carries events.jsonl, ending in the stop event" \
+     "ref=$evref file=$evfile"
 fi
 git -C "$R" switch -q main
 git -C "$R" reset -q --hard "$PRE_SEED220"
