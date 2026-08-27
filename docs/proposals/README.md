@@ -15,4 +15,7 @@ leaves this directory in one of two ways: the owner moves it into a plan under
 
 | File | Date | What it proposes |
 | --- | --- | --- |
-| [`design-hardening-loop.md`](design-hardening-loop.md) | 2026-08-20 | Three extra stages between the design doc and the first plan: an adversarial review of the concept, a pseudocode implementation, and an adversarial review of that implementation. |
+
+Graduated: `design-hardening-loop.md` (2026-08-20) became
+[`docs/plans/design-hardening-loop.md`](../plans/design-hardening-loop.md) on
+2026-08-27, with the owner's rulings recorded in that plan.
