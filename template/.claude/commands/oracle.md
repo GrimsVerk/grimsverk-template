@@ -147,6 +147,22 @@ under all three you spawn nothing and write only your two paths.
    58 decisions created no visible work and simply evaporated, and nobody
    could tell the leaks from the judgments (ESC-217).
 
+   **Declare what the decision fastens to.** When a ruling binds a
+   requirement to a concrete artifact — a script, a fixture, a dataset, a
+   file a worker will reach for — declare it:
+
+       - **Binds:** path:acceptance/S1.sh, ordered:fixtures/variants.csv
+
+   `path:` means it exists in a commit NOW (the gate resolves it at the base
+   commit and fails a phantom). `ordered:` means the decision ORDERS its
+   creation, which is work a plan must deliver. Two rulings downstream bound
+   requirements to a fixture in no commit and a string in a gitignored file;
+   each phantom cost a full session plus the rulings that declared
+   reconstructions (ESC-222). If the artifact is describable but not a path
+   ("the measured 52-variant set"), say IN THE RULING where it lives or that
+   it must first be created — the gate cannot see prose, so the honesty duty
+   is yours there.
+
 4. **Write the handoff.** `docs/oracle/handoff-<date>-<n>.md`: which decisions
    need planning, which existing plans each one touches, and anything the
    orchestrator should NOT act on yet and why. Write it once. If you need to
