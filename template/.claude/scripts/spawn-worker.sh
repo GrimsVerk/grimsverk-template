@@ -14,7 +14,13 @@
 #   spawn-worker.sh --id <name> (--prompt <string> | --prompt-file <path>)
 #                   [--role <role>] [--engine codex|claude] [--model <m>]
 #                   [--effort <level>] [--base <branch>]
+#                   [--strip-internals <plan-path>]
 #                   [--bypass-sandbox] [--skip-preflight] [--print-command]
+#
+# --strip-internals (test-writer role only) replaces <plan-path> — repo-relative
+# — in the worker's worktree with plan-contracts.sh output, so a pseudocode
+# plan's ### Internals sections are structurally out of the blind test-writer's
+# reach. The replacement stays uncommitted in the worktree.
 #
 # --role selects the defaults for that kind of work: which model, how much
 # reasoning effort, and which tools it may reach. See "ROLES" below. An explicit
@@ -118,6 +124,7 @@ BASE=""
 BYPASS=0
 SKIP_PREFLIGHT=0
 PRINT_COMMAND=0
+STRIP_INTERNALS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -128,6 +135,7 @@ while [[ $# -gt 0 ]]; do
     --model)           MODEL="${2:-}"; shift 2 ;;
     --effort)          EFFORT="${2:-}"; shift 2 ;;
     --role)            ROLE="${2:-}"; shift 2 ;;
+    --strip-internals) STRIP_INTERNALS="${2:-}"; shift 2 ;;
     --base)            BASE="${2:-}"; shift 2 ;;
     --bypass-sandbox)  BYPASS=1; shift ;;
     --skip-preflight)  SKIP_PREFLIGHT=1; shift ;;
@@ -138,6 +146,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 die() { echo "spawn-worker: $*" >&2; exit 2; }
+
+# The contract/internals strip exists for exactly one reader. A pseudocode
+# plan's ### Internals sections are the implementation in outline, and the
+# test-writer's whole value is not having seen the implementation — so the
+# strip is refused for every other role rather than silently allowed, because
+# a coder spawned on a stripped plan would build from half a document and
+# nothing would say so.
+if [[ -n "$STRIP_INTERNALS" && "$ROLE" != "test-writer" ]]; then
+  die "--strip-internals is only for --role test-writer — the strip exists to
+keep pseudocode internals out of the blind test-writer's worktree, and any
+other role NEEDS them. Drop the flag, or spawn a test-writer."
+fi
 
 [[ -n "$ID" ]] || die "missing --id"
 [[ "$ENGINE" == "codex" || "$ENGINE" == "claude" ]] \
@@ -520,6 +540,24 @@ fi
 mkdir -p "$LOG_DIR"
 git -C "$REPO_ROOT" worktree add -b "$BRANCH" "$WORKTREE" "$BASE_SHA" \
   >>"$LOG_FILE" 2>&1 || die "git worktree add failed (see $LOG_FILE)"
+
+# Strip the plan's ### Internals sections from the test-writer's copy, BEFORE
+# the engine runs — after would be a lie, the worker reads at start. The edit
+# is deliberately left uncommitted in the worktree: committing it would carry
+# a gutted plan back through the branch, and the strip is a viewing condition,
+# not a change to the plan. Still inside setup, so a bad path cleans up the
+# worktree like any other setup fault.
+if [[ -n "$STRIP_INTERNALS" ]]; then
+  TARGET="$WORKTREE/$STRIP_INTERNALS"
+  [[ -f "$TARGET" ]] || die "--strip-internals: no such file in the worktree: $STRIP_INTERNALS"
+  HERE="$(cd "$(dirname "$0")" && pwd)"
+  CONTRACTS="$HERE/../../.github/scripts/plan-contracts.sh"
+  [[ -x "$CONTRACTS" ]] || die "--strip-internals: plan-contracts.sh not found beside this script's tree ($CONTRACTS)"
+  STRIP_TMP="$(mktemp)"
+  "$CONTRACTS" < "$TARGET" > "$STRIP_TMP" \
+    || { rm -f "$STRIP_TMP"; die "--strip-internals: plan-contracts.sh refused $STRIP_INTERNALS — see its stderr above"; }
+  mv "$STRIP_TMP" "$TARGET"
+fi
 
 # Worktree is live; from here failures belong to the worker, not to setup.
 SETUP_OK=1
