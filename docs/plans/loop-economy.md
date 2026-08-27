@@ -1,6 +1,6 @@
 ---
 slug: loop-economy
-status: in-flight
+status: merged
 created: 2026-08-27
 design: docs/DESIGN.md §5 R4/R6/R9 — the oracle ledger, the driver, durable evidence; Stage 1 of docs/postmortem-2026-08-20-plan.md
 covers: [R4, R6, R9]
