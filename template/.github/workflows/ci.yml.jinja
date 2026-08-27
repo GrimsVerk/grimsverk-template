@@ -121,6 +121,16 @@ jobs:
           LEDGERS="docs/DESIGN.oracle.done.md docs/DESIGN.oracle.retired.md" \
           ID_PATTERN="R[0-9]+" \
             .github/scripts/backlog-append-only.sh
+      - name: Landed run evidence is never rewritten
+        # docs/runs/ is what every later analysis stands on. Downstream, a
+        # cleanup commit edited three run reports in place four days after the
+        # runs, so a branch-tip reader silently got post-hoc text where primary
+        # evidence used to be (ESC-223). Append-only at file granularity: new
+        # files land freely, landed ones are immutable, corrections are new
+        # files that cite the old.
+        run: |
+          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
+            .github/scripts/runs-append-only.sh
       - name: Oracle decisions are append-only and evidence-backed
         # docs/DESIGN.oracle.md is the one design document an agent may write
         # unattended, so it is deliberately NOT behind CODEOWNERS — ownership
