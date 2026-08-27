@@ -45,10 +45,17 @@ set -uo pipefail
 
 die() { echo "emit-event: $*" >&2; exit 2; }
 
+# The event vocabulary is the lexicon's, not this file's (ESC-225).
+# shellcheck source=template/.claude/scripts/lexicon.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lexicon.sh"
+
 [[ -n "${EVENTS_FILE:-}" ]] || die "EVENTS_FILE is not set — every event needs a stream to land in"
 [[ $# -ge 1 ]] || die "usage: emit-event.sh <kind> [key=value ...]"
 
 KIND="$1"; shift
+
+grep -qw -- "$KIND" <<<"$LOOP_EVENT_KINDS" \
+  || die "unknown event kind '$KIND' — the vocabulary is: $LOOP_EVENT_KINDS (lexicon.sh)"
 
 case "$KIND" in
   start)    REQUIRED="template_version" ;;
@@ -57,7 +64,7 @@ case "$KIND" in
   result)   REQUIRED="iteration worker exit_code" ;;
   merge)    REQUIRED="pr" ;;
   stop)     REQUIRED="exit_code reason" ;;
-  *)        die "unknown event kind '$KIND' — the vocabulary is: start detect dispatch result merge stop" ;;
+  *)        die "kind '$KIND' is in the lexicon but this emitter has no schema for it — add its required fields here" ;;
 esac
 
 # JSON string escaping, dependency-free (R15: the suite runs offline, bash

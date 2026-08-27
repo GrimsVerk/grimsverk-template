@@ -157,6 +157,10 @@
 
 set -uo pipefail
 
+# The loop's vocabularies come from one place (ESC-225).
+# shellcheck source=template/.claude/scripts/lexicon.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lexicon.sh"
+
 # Every ceiling starts at zero — meaning "not set" — because the owner's ruling
 # is that no limit applies unless they chose it, and the run asks for one before
 # it starts. The previous defaults (25 points, 10 PRs, 8 hours) were invented by
@@ -1560,6 +1564,8 @@ while :; do
     exit 0
   fi
 
+  grep -qw -- "$PHASE" <<<"$LOOP_PHASES" \
+    || die "the detector emitted phase '$PHASE', which the lexicon does not define — fix whichever of the two is wrong, never both silently (ESC-225)"
   log "iteration $ITER: phase $PHASE"
   # The economy scoreboard (ESC-218): the three counters the detector computes,
   # logged EVERY iteration so a run that is all design and no build reads that
