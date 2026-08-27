@@ -1020,6 +1020,11 @@ out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-busy" \
         STUB_MERGED_REFS="$BUILT" PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" \
         -- --max-iterations 9)"
 expect_rc "the same ask a third time stops the run (ESC-220)" 5 $?
+if ! grep -q "asked for the same work a third time" <<<"$out"; then
+  echo "  ---- full driver output (the stop that DID fire) ----"
+  sed 's/^/  | /' <<<"$out"
+  echo "  ---- end driver output ----"
+fi
 expect_contains "and the stop names the shape" "$out" \
   "asked for the same work a third time"
 disp220="$(grep -c "dispatch oracle worker" <<<"$out")"
@@ -1574,8 +1579,19 @@ rm -rf "$R/.claude/deliver-loop" "$R/.worktrees"
 # This scenario identifies its landing branch as the last docs/run-* by sort,
 # so earlier scenarios' landings must not be lying around to out-sort it — a
 # same-second collision suffix (-2, -recovered) sorts after its own parent.
+# Deleted on the ORIGIN too, not just locally. The driver's run-id de-dup
+# reads the local dir and the local branch; with the local branch gone, a
+# landing in the same SECOND as an earlier scenario's reuses its id, the
+# evidence push is non-fast-forward, and the driver queues the push failure
+# into the report buffer (ESC-204, by design) — which reads here as "a landed
+# buffer is cleared" failing on a slow runner. Observed on CI twice-adjacent
+# timestamps; reproduced deterministically by pre-seeding origin with
+# docs/run-<next-second> refs.
 git -C "$R" for-each-ref --format='%(refname:short)' 'refs/heads/docs/run-*' \
-  | while read -r b; do git -C "$R" branch -qD "$b" 2>/dev/null || true; done
+  | while read -r b; do
+      git -C "$R" branch -qD "$b" 2>/dev/null || true
+      git -C "$R" push -q origin --delete "$b" 2>/dev/null || true
+    done
 mkdir -p "$R/.claude/deliver-loop"
 printf '# Delivery run OLDRUN\n\n- 00:00:00Z the run that never landed\n' \
   > "$R/.claude/deliver-loop/run.md"
