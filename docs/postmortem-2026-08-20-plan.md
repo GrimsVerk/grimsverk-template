@@ -358,9 +358,10 @@ to make "this does not exist yet" explicit and cheap, not to forbid it.
   stop; anomalies are signals) are respected by making the brake *per
   target*: the oracle may mark a specific OD / plan / PR as
   "do-not-redispatch: <reason>", the driver honours it each cycle, routes
-  around it, and reports it loudly in `run.md`. Whether a full run-halt file
-  should also exist is put to the owner as open question Q1 — it contradicts
-  R10 as ruled, so it is not assumed here.
+  around it, and reports it loudly in `run.md`. **Ruled (Q1, 2026-08-27):
+  per-target brake only.** No run-halt authority for the oracle, in any
+  form; whole-run stops stay mechanical (the typed-stop guards in this
+  workstream), which keeps R10 and V3 exactly as ruled.
 - **Complete the typed-stop taxonomy where F-F showed it leaks.** Exits 3, 4
   and 5 already exist; what is missing is the guard the mobo livelock walked
   through: the detector emitting the **same phase with the same scope** N
@@ -578,8 +579,13 @@ to protect, which is why W7's fixture project should be drafted *with* Stage
 - **Q3 — ruled.** The owner accepted the recommendation: closure state lives
   inside `docs/DESIGN.oracle.md` entries, append-only, read by the detector.
   No new ledger.
-- **Q1 — open, under discussion.** The owner asked for the per-target brake
-  and the halt question to be laid out in full before ruling.
+- **Q1 — ruled.** After the full layout (brake mechanics; the mobo oracle's
+  position; V5/V1 versus R10/V3; an opt-in run-halt as a middle path), the
+  owner chose **per-target brake only**. The oracle may fence a single work
+  item with a committed, reasoned do-not-dispatch line; it may never stop a
+  run. Whole-run stops remain mechanical: the W3 typed-stop guards, which
+  cover the observed livelock class once implemented. R10 and V3 stand
+  unamended.
 
 ---
 
