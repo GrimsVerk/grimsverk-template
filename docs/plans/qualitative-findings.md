@@ -1,6 +1,6 @@
 ---
 slug: qualitative-findings
-status: in-flight
+status: merged
 created: 2026-08-27
 design: docs/DESIGN.md §5 R4/R6 — the oracle ledger and the driver; the owner's rulings on docs/postmortem-2026-08-20-plan.md Appendix E
 covers: [R4, R6]
