@@ -377,6 +377,43 @@ next — so a sentence they never wrote makes the lever a decoration."
 
   fi  # end of the non-HALT schema
 
+  # A DECISION DECLARES WHAT IT FASTENS WORK TO, AND THE GATE RESOLVES IT
+  # (ESC-222). Downstream, one ruling bound a requirement to a fixture in no
+  # commit and another to a string in a gitignored file; each phantom cost a
+  # full unattended session plus further rulings declaring reconstructions —
+  # the two longest rulings in that ledger exist only to untangle them. The
+  # optional field:
+  #
+  #     - **Binds:** path:acceptance/S1.sh, ordered:fixtures/variants.csv
+  #
+  # `path:` entries must exist at the BASE COMMIT — the same tree every other
+  # citation here resolves against. `ordered:` entries are the honest other
+  # case: the artifact does not exist yet and the decision ORDERS it, which
+  # is work a plan must deliver, said out loud instead of discovered by the
+  # session that reaches for a file that is not there. The field is optional
+  # because not every decision fastens to an artifact; the PROMPT carries the
+  # duty to declare (oracle.md), and this gate verifies what is declared.
+  binds_line="$(printf '%s\n' "$block" \
+    | sed -n 's/^[[:space:]]*[-*][[:space:]]*\*\*Binds:\*\*[[:space:]]*//p' | head -1)"
+  if printf '%s\n' "$block" | grep -qF "**Binds:**"; then
+    if [[ -z "$binds_line" ]]; then
+      fail "$id has an empty **Binds:** field — name what the decision fastens to (path:<existing> / ordered:<to-create>), or drop the field"
+    fi
+    for entry in ${binds_line//,/ }; do
+      [[ -n "$entry" ]] || continue
+      case "$entry" in
+        path:*)
+          bp="${entry#path:}"
+          if ! git -C "$ROOT" cat-file -e "${BASE_SHA}:${bp}" 2>/dev/null; then
+            fail "$id binds path:$bp, which exists in no commit at the base — a ruling fastened to a phantom referent cost a session per phantom downstream (ESC-222). If the decision ORDERS its creation, write 'ordered:$bp' and let a plan deliver it"
+          fi ;;
+        ordered:*) : ;;
+        *)
+          fail "$id has a Binds entry '$entry' with no prefix — every entry is 'path:<existing-at-base>' or 'ordered:<to-be-created>' (ESC-222)" ;;
+      esac
+    done
+  fi
+
   # 1. Evidence must exist at the base commit. Both shapes cite it: a halt is a
   # record of evidence the oracle READ and declined to act on, which is exactly
   # the thing that used to vanish.
