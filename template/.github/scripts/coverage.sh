@@ -462,6 +462,26 @@ if [[ ${#UNKNOWN[@]} -gt 0 ]]; then
   echo "  (a renumbered requirement or a typo — one of the two is wrong)"
 fi
 
+# A requirement claimed by TWO plans passed silently (ESC-236): downstream,
+# two rulings bound the same oracle requirement to two different plans and
+# nothing drew attention to the collision. A note, never a failure, like the
+# other adequacy notes — two plans can legitimately share an id mid-handover,
+# and a gate would teach authors to hide the overlap instead.
+declare -a MULTI_CLAIMED=()
+for id in "${REQS[@]}"; do
+  if [[ "${CLAIMED[$id]:-}" == *" "* ]]; then
+    MULTI_CLAIMED+=("$id (${CLAIMED[$id]})")
+  fi
+done
+if [[ ${#MULTI_CLAIMED[@]} -gt 0 ]]; then
+  echo
+  echo "Claimed by more than one plan:"
+  printf '  %s\n' "${MULTI_CLAIMED[@]}"
+  echo "  Two plans delivering one requirement usually means a stale claim or"
+  echo "  an id doing double duty — one of them should drop it or the id"
+  echo "  should split. Reported, never red."
+fi
+
 # ------------------------------------------------------- plan adequacy (NOTE)
 # Reported, never failed, on the owner's ruling — "yes, note, not red." A
 # requirement legitimately owned by no single slice is common enough that a
