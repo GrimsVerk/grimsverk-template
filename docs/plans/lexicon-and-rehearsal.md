@@ -1,6 +1,6 @@
 ---
 slug: lexicon-and-rehearsal
-status: in-flight
+status: merged
 created: 2026-08-27
 design: docs/DESIGN.md §5 R4/R6/R11 — one vocabulary, a loop that is rehearsed before it is trusted; Stage 3 of docs/postmortem-2026-08-20-plan.md
 covers: [R4, R6, R11]

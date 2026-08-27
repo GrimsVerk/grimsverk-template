@@ -126,6 +126,7 @@ init_repo "$R"
 mkdir -p "$R/.claude/scripts" "$R/.claude/commands" "$R/.github/scripts" \
          "$R/docs/plans/oracle" "$R/docs/oracle"
 cp "$TEMPLATE/.claude/scripts/deliver-loop.sh" \
+   "$TEMPLATE/.claude/scripts/lexicon.sh" \
    "$TEMPLATE/.claude/scripts/deliver-phase.sh" \
    "$TEMPLATE/.claude/scripts/budget-probe.sh" \
    "$TEMPLATE/.claude/scripts/emit-event.sh" \
@@ -1041,6 +1042,47 @@ fi
 git -C "$R" switch -q main
 git -C "$R" reset -q --hard "$PRE_SEED220"
 git -C "$R" update-ref refs/remotes/origin/main "$PRE_SEED220"
+git -C "$R" branch --list 'worker/*' --format='%(refname:short)' \
+  | xargs -r git -C "$R" branch -qD 2>/dev/null || true
+
+# ---- ESC-228: a template bump mid-run ends the run, typed
+# Four version bumps in one day forced three restarts downstream, and no
+# record said which version any round even ran. The run pins its version at
+# start (the copier answers file's _commit) and a change mid-run is exit 9.
+reset_pr_run
+PRE_SEED228="$(git -C "$R" rev-parse main)"
+printf '_commit: v0.5.0\n' > "$R/.copier-answers.yml"
+cat >> "$R/docs/BACKLOG.md" <<'EOF'
+
+## Uncertainties awaiting oracle ruling
+
+- **BL-80** — cache shape? — proposed: flat — HIGH: changes slice boundaries.
+EOF
+git -C "$R" add -A && git -C "$R" commit -qm "seed a version pin and an unruled HIGH"
+git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse main)"
+# A worker that bumps the template version mid-run — the copier update a
+# session should never run inside a live run.
+cat > "$WORK/bin/spawn-worker-bump" <<'STUB'
+#!/usr/bin/env bash
+id=""; while [[ $# -gt 0 ]]; do [[ "$1" == "--id" ]] && id="$2"; shift; done
+printf '_commit: v0.6.0\n' > .copier-answers.yml
+git switch -q -c "worker/$id" 2>/dev/null || git switch -q "worker/$id"
+echo "bump" > "bumped-$id.txt"
+git add -A && git commit -qm "work plus a version bump" >/dev/null
+git switch -q - 2>/dev/null || true
+echo "WORKER_RESULT id=$id branch=worker/$id worktree=. engine=claude exit=0 commits=1"
+exit 0
+STUB
+chmod +x "$WORK/bin/spawn-worker-bump"
+out="$(run_loop DELIVER_SPAWN="$WORK/bin/spawn-worker-bump" \
+        STUB_MERGED_REFS="$BUILT" PR_CREATE_LOG="$PRLOG" CLAUDE_LOG="$ORCHLOG" \
+        -- --max-iterations 9)"
+expect_rc "a version change mid-run is its own typed stop" 9 $?
+expect_contains "naming both versions" "$out" "v0.5.0 -> v0.6.0"
+git -C "$R" switch -q main
+git -C "$R" reset -q --hard "$PRE_SEED228"
+git -C "$R" update-ref refs/remotes/origin/main "$PRE_SEED228"
+rm -f "$R/.copier-answers.yml" "$R"/bumped-*.txt
 git -C "$R" branch --list 'worker/*' --format='%(refname:short)' \
   | xargs -r git -C "$R" branch -qD 2>/dev/null || true
 
