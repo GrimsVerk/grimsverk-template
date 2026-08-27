@@ -1,6 +1,6 @@
 ---
 slug: grounding-and-evidence
-status: in-flight
+status: merged
 created: 2026-08-27
 design: docs/DESIGN.md §5 R4/R9/R11 — decisions cite reality, evidence survives, ledgers hold; Stage 2 of docs/postmortem-2026-08-20-plan.md
 covers: [R4, R9, R11]
