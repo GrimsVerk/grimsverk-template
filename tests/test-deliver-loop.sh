@@ -1065,11 +1065,14 @@ git -C "$R" update-ref refs/remotes/origin/main "$(git -C "$R" rev-parse main)"
 cat > "$WORK/bin/spawn-worker-bump" <<'STUB'
 #!/usr/bin/env bash
 id=""; while [[ $# -gt 0 ]]; do [[ "$1" == "--id" ]] && id="$2"; shift; done
-printf '_commit: v0.6.0\n' > .copier-answers.yml
 git switch -q -c "worker/$id" 2>/dev/null || git switch -q "worker/$id"
 echo "bump" > "bumped-$id.txt"
-git add -A && git commit -qm "work plus a version bump" >/dev/null
-git switch -q - 2>/dev/null || true
+git add "bumped-$id.txt" && git commit -qm "ordinary work" >/dev/null
+git switch -q - 2>/dev/null || git switch -q main 2>/dev/null || true
+# The bump lands AFTER the switch back, as an uncommitted change on the run's
+# base checkout — a committed bump on the worker branch would be undone by
+# the checkout itself, racing the assertion (observed flaky).
+printf '_commit: v0.6.0\n' > .copier-answers.yml
 echo "WORKER_RESULT id=$id branch=worker/$id worktree=. engine=claude exit=0 commits=1"
 exit 0
 STUB
