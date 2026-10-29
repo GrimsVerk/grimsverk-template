@@ -47,6 +47,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Pin Xcode so runner image updates don't change the toolchain under us.
+      - run: sudo xcode-select -s /Applications/Xcode_16.4.app
       - run: brew install xcodegen
       - run: xcodegen generate
       - name: Build and test
