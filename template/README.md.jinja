@@ -19,10 +19,12 @@ xcodegen generate                # makes {{ app_name }}.xcodeproj from project.y
 open {{ app_name }}.xcodeproj
 pre-commit install               # checks on every commit
 ```
+
+CI pins swiftformat 0.64.4: check `swiftformat --version` matches, or use the Docker image `ghcr.io/nicklockwood/swiftformat:0.64.4`.
 {% endif %}
 ## Set up GitHub (once)
 
-After the first commit, `scripts/setup-github.sh --public` creates the repo, pushes, and protects `main`.
+After the first commit, the repo owner (admin) runs `scripts/setup-github.sh --public`: it creates the repo, pushes, and sets merge settings and `main` protection.
 Pick a license first; this template adds none.
 
 ## Template updates

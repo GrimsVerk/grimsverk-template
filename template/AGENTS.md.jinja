@@ -34,6 +34,8 @@ xcodegen generate && xcodebuild test -project {{ app_name }}.xcodeproj -scheme {
   -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO   # macOS only
 ```
 
+CI pins swiftformat 0.64.4: check `swiftformat --version` matches (else use `ghcr.io/nicklockwood/swiftformat:0.64.4`).
+
 `{{ app_name }}.xcodeproj` is generated from `project.yml`; edit `project.yml`, never the project. Xcode builds run nightly in CI.
 {% endif %}
 ## Tests
