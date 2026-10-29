@@ -1,251 +1,112 @@
 name: Template CI
 
-# CI for the TEMPLATE REPOSITORY itself — not for generated projects (those get
-# their own workflows under template/.github/workflows/).
-#
-# This exists because the template ships seven bash scripts that gate other
-# people's pull requests, and until this workflow there was nothing running any
-# of them: the first execution of plan-resolve.sh happened on a user's first PR.
-# A repository whose entire argument is "gates catch what humans won't read"
-# had no gates on itself.
-
+# Checks for this template repo itself, then tags the release. Copier uses the
+# latest v* tag, not main, so an untagged merge reaches no project. Bump: patch
+# by default; subject "feat:" -> minor; "feat!:" or "BREAKING CHANGE" -> major.
+# Generated projects get their own workflows from template/.github/workflows/.
 on:
   push:
-  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
-# Only the newest run per ref matters; the older one is reviewing a diff that no
-# longer exists.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: template-ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  shellcheck:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: copier.yml
+      - run: uv tool install copier==9.19.1
+      - name: Install actionlint
+        run: |
+          curl -sSfL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP" actionlint
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: shellcheck
+        run: shellcheck template/scripts/*.sh tests/*.sh
+      - name: actionlint (this repo)
+        run: actionlint
+      - name: Render both project types and check them
+        run: tests/test-render.sh
+
+  tag:
+    needs: check
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - name: Lint every shipped script
-        # --severity=warning, not the default of everything: at info level the
-        # only findings are false positives — markdown backticks inside the
-        # single-quoted plan fixtures (SC2016), and functions invoked through
-        # EXIT traps that shellcheck cannot see being called (SC2329). Failing
-        # the build on those trains people to ignore it, which costs more than
-        # the checks are worth. Warnings and errors still fail.
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck --severity=warning \
-                     template/.github/scripts/*.sh \
-                     template/.claude/scripts/*.sh \
-                     template/scripts/*.sh \
-                     scripts/*.sh \
-                     tests/*.sh
-
-  # ESC-36. `auto-merge.yml` referenced the `secrets` context in a step `if:`,
-  # which is not allowed in any `if:`. The file failed VALIDATION — the run was
-  # created with zero jobs, so arming, branch deletion and the nightly sweep all
-  # died together — and it shipped in three releases.
-  #
-  # Nothing here could have seen it. `auto-merge.yml` is the one shipped
-  # workflow this repository does not run on itself, and the check it kills is
-  # reported BY the dead workflow, so its absence reads as "not applicable"
-  # rather than "the file is broken". A required-checks list cannot notice a
-  # check that never reports.
-  #
-  # The linter renders a project first, because template/'s workflows are not
-  # YAML until copier has been through them: `ci.yml.jinja` is a template, and
-  # the auto-merge file's NAME is a Jinja expression, so any tool globbing for
-  # *.yml skips exactly the file that broke.
-  actionlint:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: uv tool install copier
-      # Pinned. An unpinned linter is a build that can go red on a morning when
-      # nothing here changed, and this one gates every pull request.
-      - name: Install actionlint
-        # $HOME/go/bin on PATH explicitly: whether the runner image already has
-        # it varies, and the linter refuses (exit 2) rather than skipping when
-        # it cannot find actionlint — so a missing PATH entry is a red build,
-        # not a silent pass. Making it explicit keeps that refusal meaning
-        # "actionlint is genuinely absent".
-        run: |
-          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
-      - name: Lint every workflow, shipped and self-hosted
-        run: scripts/lint-workflows.sh
-
-  tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: uv tool install copier
-      - name: Run the template's own test suite
-        run: tests/run.sh
-
-  # ---------------------------------------------------------------- self-host
-  #
-  # The template's own development, governed by the template. Until this job
-  # existed, everything under template/ only became live once a project was
-  # RENDERED, so plans-before-code, blind tests and the append-only ledgers all
-  # applied downstream and not here.
-  #
-  # THE SCRIPTS ARE INVOKED FROM template/, NOT FROM A COPY. Every gate script
-  # is plain bash with no Jinja, so there is one copy — the one that ships — and
-  # drift is impossible by construction rather than by checking. A broken gate
-  # reddens this repository's own pipeline before it can reach a generated
-  # project.
-  #
-  # Only the JINJA files are rendered to the root, by scripts/render-governance.sh,
-  # and the first step below re-renders and diffs them.
-  governance:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # Full history: every check below reads its standard at the merge base,
-          # never from the copy this pull request is proposing.
-          fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
-      - run: uv tool install copier
-      - name: The root governance files still match what template/ renders
-        # AGENTS.md, .github/CODEOWNERS, .claude/settings.json and the two agent
-        # definitions are RENDERED. Editing one at the root fixes this
-        # repository and ships nothing, and the two drift apart in the direction
-        # nobody notices.
-        run: scripts/render-governance.sh --check
-      - name: Every plan in the tree must parse
-        run: template/.github/scripts/plan-lint.sh
-      - name: Escape citations resolve at the base commit
-        run: |
-          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
-            template/.github/scripts/escape-refs.sh
-      - name: The escape ledger is append-only
-        run: |
-          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
-            template/.github/scripts/escapes-append-only.sh
-      - name: The backlog and its ledgers are append-only
-        # This repository has no docs/BACKLOG.md yet, and the check says so
-        # rather than passing silently — "nothing to protect yet" is a different
-        # report from "everything intact", and it is the honest one here.
-        run: |
-          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
-            template/.github/scripts/backlog-append-only.sh
-      - name: Landed run evidence is never rewritten
-        run: |
-          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
-            template/.github/scripts/runs-append-only.sh
-      - name: Oracle decisions are append-only and evidence-backed
-        run: |
-          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
-            template/.github/scripts/oracle-decisions.sh
-      - name: The design and the vision are landed by their owner
-        env:
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: |
-          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
-          HEAD_SHA="$(git rev-parse HEAD)" \
-            template/.github/scripts/owner-authored.sh
-      - name: The vision must be finished before work is planned
-        run: |
-          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
-          HEAD_SHA="$(git rev-parse HEAD)" \
-            template/.github/scripts/vision-complete.sh
-      - name: Requirement coverage (advisory)
-        # NEVER RED, and the `|| true` is the whole policy. Most requirements in
-        # docs/DESIGN.md describe machinery that landed before that document
-        # existed, so they report as uncovered and will keep doing so — see §5
-        # there. A check that is permanently red is a check people stop reading.
-        run: template/.github/scripts/coverage.sh || true
-      - name: Every scripted success criterion still holds
-        run: |
-          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
-            template/.github/scripts/acceptance-criteria.sh
-
-  # The ratchet's one seeded check, applied to the template itself.
-  #
-  # SEPARATE JOB, because it rewrites the working tree — it reverts template/ to
-  # the base commit and re-runs the suite — and a job that does that must not
-  # share a checkout with the checks above.
-  #
-  # THE DIRECTORIES ARE NAMED EXPLICITLY. test-the-tests.sh picks src/tests or
-  # Sources/Tests from a manifest file and SKIPS when it finds neither, and a
-  # skip exits 0, which GitHub reports as a PASSING required check. This
-  # repository has neither manifest, so without these three variables the one
-  # check that makes a coder's tests worth anything would report green on every
-  # pull request while never running.
-  #
-  # One honest limit, stated rather than discovered later: the tests that render
-  # a project use `copier copy --vcs-ref=HEAD`, which reads the git commit and
-  # not the working tree, so those particular tests still see the head template
-  # after the revert. The tests that invoke the shipped scripts directly — most
-  # of the suite — see the reverted ones, and one failing file fails the suite,
-  # so the check works. It is weaker than it looks for the render-based tests.
-  self-test-the-tests:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
-      - run: uv tool install copier
-      - name: The suite must fail without the implementation
-        env:
-          TEST_THE_TESTS_IMPL_DIR: template
-          TEST_THE_TESTS_TEST_DIR: tests
-          TEST_THE_TESTS_SUITE: tests/run.sh
-        run: |
-          BASE_SHA="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)" \
-          HEAD_SHA="$(git rev-parse HEAD)" \
-          HEAD_REF="$GITHUB_HEAD_REF" \
-            template/.github/scripts/test-the-tests.sh
 
-  render:
-    # Both languages are RENDER-checked here; only python is built and tested.
-    #
-    # Deliberate gap: nothing runs `xcodegen generate` or `xcodebuild` on the
-    # rendered swift project, because that needs a macOS runner at ~10x the
-    # minute cost for a template repo that changes rarely. So a project.yml
-    # error that survives YAML parsing will reach a generated project. If that
-    # ever actually happens, it is an escape — add the macOS job then, and not
-    # before.
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [python, swift-ios]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: uv tool install copier
-      - name: Render a project
-        # The destination directory name IS the project name — it feeds the
-        # Python package and the Swift type — so it is chosen deliberately here
-        # rather than passed as an answer.
+      - name: Compute and push the next tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # --vcs-ref=HEAD or this renders the latest TAG, meaning CI would
-          # validate the previous release on every pull request and never the
-          # change being proposed.
-          copier copy --defaults --trust --vcs-ref=HEAD \
-            --data language="${{ matrix.language }}" \
-            --data description="Rendered by template CI" \
-            --data code_owner="@grimsverk" \
-            . /tmp/my_second_app
-      - name: The rendered project must pass its own gate
-        if: matrix.language == 'python'
-        working-directory: /tmp/my_second_app
-        run: |
-          uv sync
-          uv run ruff check .
-          uv run ruff format --check .
-          uv run mypy
-          uv run pytest
+          set -euo pipefail
+
+          if existing="$(git tag --points-at HEAD --list 'v*' | head -1)" && [ -n "$existing" ]; then
+            echo "HEAD is already tagged as $existing."
+            if gh release view "$existing" >/dev/null 2>&1; then
+              echo "Release $existing already exists — nothing to do."
+            else
+              echo "Tag $existing has no release; creating it."
+              gh release create "$existing" \
+                --title "$existing" \
+                --generate-notes \
+                --latest=true
+            fi
+            exit 0
+          fi
+
+          latest="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+          if [ -z "$latest" ]; then
+            next="v0.1.0"
+            echo "No existing tags; starting at $next."
+          else
+            subject="$(git log -1 --pretty=%s)"
+            body="$(git log -1 --pretty=%B)"
+            echo "Latest tag: $latest"
+            echo "Head subject: $subject"
+
+            major="$(echo "${latest#v}" | cut -d. -f1)"
+            minor="$(echo "${latest#v}" | cut -d. -f2)"
+            patch="$(echo "${latest#v}" | cut -d. -f3)"
+
+            if echo "$subject" | grep -qE '^[a-z]+(\([^)]*\))?!:' \
+               || echo "$body" | grep -qE 'BREAKING[ -]CHANGE'; then
+              major=$((major + 1)); minor=0; patch=0; bump="major"
+            elif echo "$subject" | grep -qE '^feat(\([^)]*\))?:'; then
+              minor=$((minor + 1)); patch=0; bump="minor"
+            else
+              patch=$((patch + 1)); bump="patch"
+            fi
+            next="v${major}.${minor}.${patch}"
+            echo "Bump: $bump -> $next"
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$next" -m "Release $next
+
+          $(git log -1 --pretty=%s)"
+          git push origin "$next"
+
+          gh release create "$next" \
+            --title "$next" \
+            --generate-notes \
+            --latest=true
+
+          echo "Tagged and released $next" >> "$GITHUB_STEP_SUMMARY"
+
