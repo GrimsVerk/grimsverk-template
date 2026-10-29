@@ -1,155 +1,16 @@
-# Vision — {{ project_name }}
+# Vision: {{ project_name }}
 
-**Not requirements.** `docs/DESIGN.md` says what gets built; this file says what
-matters when two reasonable designs disagree. It is the tiebreaker an agent
-reaches for when the evidence is genuinely ambiguous and nobody is awake to ask.
+What matters when two reasonable choices disagree. Not requirements (those are in `DESIGN.md`).
+Write each line so an agent could cite it to pick one option over another.
 
-`CODEOWNERS` puts this file behind the owner, and that is not a restriction
-bolted on — it is the mechanism. The oracle names, in every decision it writes,
-the statement here that it leaned on (`docs/DESIGN.oracle.md`). When a decision
-comes out wrong, the owner edits the statement rather than arguing with the
-decision, and every future decision moves with it.
+## What this is for
 
-**An agent may WRITE this file. Only the owner LANDS it.** `/design` interviews
-the owner and writes their answers into a branch, which is most of the work —
-and then stops. The owner opens the pull request themselves, reads the diff, and
-merges. That is checked, not asked for: `.github/scripts/owner-authored.sh`
-fails any pull request touching this file that the owner did not open.
-
-The reason is one line long. **If any agent can land the design, there is no
-reason for `docs/DESIGN.oracle.md` to exist** — an agent that can edit the
-design does not need an evidence ledger, it just edits the design. That second
-document is how an agent corrects the design from real evidence while nobody is
-awake, and it only means anything while this one is out of reach.
-
-`CODEOWNERS` on its own would not draw that line. It requires the owner's
-approval, which is a click on a diff someone else composed and opened. The check
-requires their authorship of the pull request, which is a different claim: it
-means the owner has actually read what these two documents say.
-
-So write it for that use. A sentence here is worth having if a reasonable agent
-could cite it to justify one choice over another. A sentence nobody could ever
-cite is decoration.
-
-**Give every statement an id — `V1`, `V2`, `V3` — running continuously across
-every section of this file, and never renumber one; append instead.** The ids
-are not bookkeeping. Each oracle decision names the statement it relied on, and
-`.github/scripts/oracle-decisions.sh` now checks that the quoted sentence really
-appears here — so an id turns your check of a ruling into one `grep` instead of
-a memory test across five sections. It also makes a *new* statement visible: an
-id you do not recognise, in a diff you must open, is an agent having written
-something you never said.
-
-**Deleting this whole file opts the project out of the tiebreaker, not out of
-the oracle.** The oracle still runs, still rules on logged evidence, and still
-writes decisions — it simply rules with nothing to weigh them against, and each
-decision then says so with `(no vision statement decided this)`. If what you
-want is for no agent to amend the design unattended, that is a different thing
-and it is achieved by not starting the delivery driver.
-
-## What this project is for
-
-<!-- One paragraph. The outcome, in the owner's words. Not a feature list —
-     the thing that would be true if this worked. -->
+<!-- One paragraph, in the owner's words: what would be true if this worked. -->
 
 ## Priorities, in order
 
-<!-- Ordered, and the order is the useful part. "Correctness, then cost, then
-     speed" answers a real question; an unordered list of virtues does not.
-     Ids run continuously across the whole file — carry on from wherever the
-     previous section stopped. -->
+<!-- e.g. 1. Never lose user data. 2. Fast to use. 3. Cheap to run. -->
 
-- **V1** —
-- **V2** —
-- **V3** —
+## Not doing
 
-## What I would trade away
-
-<!-- The half that actually decides things. Name what is expendable: features,
-     completeness, generality, polish, latency, breadth of support. An agent
-     that knows what may be sacrificed can make a call; one that only knows
-     what matters cannot.
-
-     Ids continue from the section above.
-
-     DELETING THIS SECTION IS A LEGITIMATE ANSWER, and it is the one people most
-     want to skip. If you mean it, do not delete the heading — replace the body
-     with a stated "None." A missing heading is a fact about the file; a stated
-     "none" is a decision you can find again in six weeks. -->
-
-- **V4** —
-
-## Core tenets
-
-<!-- The stops. A decision that would violate one of these is not made at all:
-     the oracle writes a HALT entry in docs/DESIGN.oracle.md instead of a
-     decision, and the run carries on to the next phase. Keep this list SHORT;
-     a long one turns every decision into an escalation and unattended work
-     stops entirely, which is the failure this whole arrangement exists to
-     prevent. Two or three.
-
-     WRITE EACH ONE AS A PROPERTY A SPECIFIC CHANGE COULD VIOLATE, not as a
-     value you hold. "No configuration option may weaken a security property"
-     names something a diff can be observed doing; "we care about security"
-     does not, and an agent asking "would this decision violate it?" can only
-     answer the first. The test is whether a reader holding only this sentence
-     and a diff could DISAGREE with how the oracle applied it. If they could
-     not, the sentence is decoration however true it is.
-
-     DELETING THIS SECTION IS ALSO LEGITIMATE — plumbing may genuinely have no
-     stops — and it means the oracle has no halt condition and will decide
-     everything the evidence reaches. If that is what you want, keep the
-     heading and write "None. This project has no decision that should stop
-     for me." Same reason as above: an absent heading is a fact about the file,
-     a stated "none" is a decision. -->
-
-- **V5** —
-
-## Durable evidence is a requirement, not a nicety
-
-**This section is not a question for you to answer.** It is a statement about
-how unattended operation works here, kept in the vision file for one reason:
-the oracle must be able to *cite* it. A decision to add a measurement needs
-something in this document standing behind it, and without this section there
-is nothing.
-
-The owner's ruling, in their words:
-
-> the data needs to be collected in a sensible way so that future runs can be
-> improved by not repeating mistakes… if a change is necessary in an unattended
-> run that goes outside or misses built in data collection mechanisms, then new
-> data collection mechanisms need to be added to track the performance of the
-> changes that are downstream of the oracle's ruling.
-
-What follows from it, and what is already built:
-
-- **A run leaves a record.** `docs/runs/<timestamp>/run.md` — committed, on its
-  own pull request, at every stop whatever the reason. The run log used to be
-  gitignored, and in a web session it lived in a container that is reclaimed, so
-  the evidence that would tell the next run what went wrong was destroyed by
-  default.
-- **The review gate keeps what it was shown and what it said.**
-  `docs/runs/<timestamp>/reviews/` holds the payload and the reply for every
-  review in that run. It is the only load-bearing gate with no fixtures, and it
-  was also the only one leaving no trace to build fixtures from.
-- **A change nothing can observe is a change nobody can evaluate.** When a
-  decision alters behaviour that no existing check, test, run report or review
-  artifact would notice, adding the thing that notices is part of the decision —
-  not a follow-up, and not optional. This is what the owner's ruling means by
-  measurements "downstream of the oracle's ruling", and an oracle decision may
-  cite this statement to justify adding one.
-
-**On space.** Committed evidence grows, and the owner has weighed that
-deliberately: *"i would rather risk gathering too much data and deal with space
-issues, than getting stuck without the info to get out of it."* A space problem
-is visible, bounded and fixable later; missing evidence is none of those. If it
-becomes a problem the answer is a retention rule — prune payloads older than N
-runs, keep every verdict — and never a return to discarding them.
-
-<!-- Delete this section only if this project genuinely never runs unattended.
-     Editing it is how you change what the oracle may cite. -->
-
-## What makes an answer unacceptable
-
-<!-- Failure described from the outside: what the owner would look at and
-     reject regardless of how it was built or how well it performs. -->
+<!-- What we deliberately trade away or leave out. -->
