@@ -8,7 +8,7 @@ and a short `AGENTS.md` the agents follow.
 
 ```sh
 uv tool install copier                      # once per machine
-copier copy --trust https://github.com/GrimsVerk/grimsverk-template.git my_project
+copier copy https://github.com/GrimsVerk/grimsverk-template.git my_project
 cd my_project
 git init && git add -A && git commit -m "Start from grimsverk-template"
 scripts/setup-github.sh --public            # or leave out --public for private

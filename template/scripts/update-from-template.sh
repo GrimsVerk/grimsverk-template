@@ -17,7 +17,7 @@ command -v copier >/dev/null || { echo "update-from-template: run 'uv tool insta
 
 git switch main
 git pull --ff-only || true
-copier update --defaults --trust ${REF[@]+"${REF[@]}"}
+copier update --defaults ${REF[@]+"${REF[@]}"}
 
 if [[ -z "$(git status --porcelain)" ]]; then
   echo "update-from-template: already up to date."
