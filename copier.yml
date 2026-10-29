@@ -1,119 +1,48 @@
-# Copier configuration for the GrimsVerk project template.
-# Only the contents of `template/` are rendered into generated projects.
-
+# Copier configuration. Only template/ is rendered; only *.jinja files are templated.
 _min_copier_version: "9.4.0"
 _subdirectory: template
-# Only files ending in `.jinja` are rendered; everything else is copied
-# verbatim. Set explicitly (it matches Copier's default) so that files
-# carrying literal brace-like text — e.g. docs/idea-to-design-doc.md — are
-# copied untouched rather than parsed as templates.
 _templates_suffix: .jinja
+# Owned by the project after the first render: `copier update` leaves them alone.
+_skip_if_exists:
+  - next-steps.md
+  - README.md
+  - docs/VISION.md
+  - docs/DESIGN.md
+  - docs/DECISIONS.md
+  - docs/BACKLOG.md
 
-# THE PROJECT NAME IS NOT ASKED FOR. It is the destination directory you already
-# named on the command line:
-#
-#     copier copy <template-url> find_best_mobo
-#
-# That single word is the directory, the repo, the Python package, and the only
-# name the owner ever uses. Asking for it again — twice, as this template used to
-# — is pure friction, and it invites the three names to drift apart. There is
-# deliberately no title-cased "display name": adding one back reintroduces the
-# question that was removed.
-#
-# `_copier_conf.dst_path` is the destination Copier was given; `.name` is its
-# last component. Verified against Copier 9.17.1.
+# Defaults to the folder name you gave copier. It is asked (not computed) because
+# copier only records asked answers, and `copier update` renders into a temp dir
+# whose name would otherwise replace the project name.
 project_name:
   type: str
-  help: Project name? (press Enter to accept the folder name)
-  # Defaults to the directory you named on the command line, so generating with
-  # `copier copy <url> find_best_mobo` means pressing Enter — you never type the
-  # name twice.
-  #
-  # It IS asked, though, and that is not an oversight. An earlier version made it
-  # a computed value with `when: false`, which reads better and is broken:
-  # copier does not record computed values in .copier-answers.yml, because it
-  # expects to re-derive them. But `copier update` renders into a scratch
-  # directory of its own and applies the diff afterwards — so on update the
-  # "folder name" is something like `copier._main.new_copy.2m403sv0`, and every
-  # heading, the package path and pyproject's name would be rewritten to that.
-  # A recorded answer is the only version that survives an update, and only
-  # asked questions get recorded.
-  #
-  # The default goes blank if the folder name looks like one of those scratch
-  # directories. That happens exactly once per existing project — on the update
-  # that introduces this question, when there is no recorded answer to fall back
-  # on — and a blank prompt asking for the name beats a prefilled wrong one.
+  help: Project name? (Enter = folder name)
   default: >-
     {{ _copier_conf.dst_path.name
        if not _copier_conf.dst_path.name.startswith('copier.')
        else '' }}
-  # The name becomes the Python package name, so an invalid one renders a
-  # pyproject.toml that cannot build and an __init__.py that cannot be imported —
-  # a failure that would otherwise surface on the project's first CI run rather
-  # than here, before anything is written.
   validator: >-
-    {% if not project_name %}
-    A project name is required — it becomes the repository name, the Python
-    package, and the name in every generated document.
-    {% elif not project_name | regex_search('^[a-z][a-z0-9]*([_-][a-z0-9]+)*$') %}
-    "{{ project_name }}" cannot be a Python package name. Use lowercase letters,
-    digits, underscores and dashes, starting with a letter — e.g. find_best_mobo
-    or find-best-mobo.
+    {% if not project_name | regex_search('^[a-z][a-z0-9]*([_-][a-z0-9]+)*$') %}
+    "{{ project_name }}" must be lowercase letters, digits, _ or -, starting with
+    a letter (it becomes the Python package name), e.g. find_best_mobo.
     {% endif %}
 
 language:
   type: str
-  help: Which language? (python or swift-ios)
+  help: Which language?
   choices:
     - python
     - swift-ios
 
 description:
   type: str
-  help: One-line description of the project?
+  help: One-line description?
   default: ""
 
-# NOTE — there is deliberately no `license` question, and this is not an
-# oversight to be "fixed". Generated projects ship no LICENSE file and no
-# `license` field in package metadata: every project is assessed on its own
-# terms, by the owner, at the point licensing actually matters (publication,
-# distribution, accepting outside contributions). A template-chosen default
-# would silently attach terms to every project that never revisits the choice,
-# which is worse than shipping nothing. Do not re-add this question or emit a
-# license anywhere. The same rule is stated for coding agents in
-# template/AGENTS.md.jinja under "Licensing".
+# No license question on purpose: the owner picks a license per repo
+# (see ~/code/CLAUDE.md). Generated projects ship no LICENSE.
 
-# The two help strings below are short on purpose. Longer ones were truncated
-# mid-word in a real terminal, which made the prompt unreadable; the full
-# explanation lives in the README's question table instead.
-auto_merge:
-  type: bool
-  help: Auto-merge pull requests once every check is green?
-  default: true
-
-code_owner:
-  type: str
-  help: Which GitHub handle owns the merge gates?
-  default: "@GrimsVerk"
-  # GitHub silently ignores CODEOWNERS lines whose owner does not parse — the
-  # file stays valid, the rule simply never binds, and the gate paths quietly
-  # become writable by anything that passes CI. A shape check cannot confirm the
-  # handle exists, but it catches the common misses: a bare username with no @,
-  # an email address, a trailing slash.
-  validator: >-
-    {% if not code_owner %}
-    code_owner is required: the CODEOWNERS gate is ignored by GitHub without a
-    real @user or @org/team.
-    {% elif not code_owner | regex_search('^@[A-Za-z0-9](-?[A-Za-z0-9])*(/[A-Za-z0-9._-]+)?$') %}
-    code_owner must look like @user or @org/team (leading @, no trailing slash).
-    Got: "{{ code_owner }}". GitHub ignores CODEOWNERS entries it cannot resolve,
-    which disables the gate silently rather than erroring.
-    {% endif %}
-
-# Computed values — never asked, derived from the directory name above. Dashes
-# and underscores are both accepted in a directory name, so both are normalised
-# here: to underscores for the Python package, and away entirely for the Swift
-# type.
+# Computed, never asked.
 package_name:
   type: str
   when: false

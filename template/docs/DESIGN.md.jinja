@@ -1,190 +1,23 @@
----
-title: {{ project_name }}
-status: draft            # draft | in-review | approved
-created: <YYYY-MM-DD>
-related: []              # links to other design docs, issues, prior art
----
+# Design: {{ project_name }}
 
-# {{ project_name }} — Design Doc
+What we are building. Write it from plan mode with the owner; keep it current.
 
-<!-- Guidance comments (like this) tell you and the elicitation agent what each
-section is for. Delete them in the final doc, or leave them; they don't render. -->
+## Summary
 
-## 1. Summary
-<!-- One short paragraph. What is this, in plain language? If you could only keep
-one paragraph, this is it. A stranger should grasp the idea from this alone. -->
+<!-- Two or three sentences. -->
 
-## 2. Problem & motivation
-<!-- What problem does this solve, for whom, and why is it worth doing now?
-What's painful or missing today? Keep it about the problem, not the solution. -->
+## Users and core flows
 
-## 3. Goals and non-goals
-<!-- Goals: what success looks like, as a short list.
-Non-goals: things this explicitly does NOT try to do. Non-goals matter as much as
-goals — they're how scope stays honest and the build agent doesn't wander. -->
+<!-- Who uses it and the few flows that must always work. -->
 
-**Goals**
--
+## Approach
 
-**Non-goals**
--
+<!-- How it works at a high level: main parts, data, external services. -->
 
-## 4. Users & core use cases
-<!-- Who uses this and what are the handful of key scenarios? Write them as short
-"as a <user>, I want to <do X> so that <Y>" or plain narrative. Cover the main
-path and the one or two edge cases that actually shape the design. -->
+## Milestones
 
-## 5. Requirements
-<!-- Functional: what it must DO. Non-functional: the qualities it must have.
+<!-- Each one usable end to end on its own. -->
 
-Give every requirement a stable id (R1, R2, ...). Plans declare which ids they
-implement in their `covers:` field, which is what makes "is the design actually
-built?" a question a script can answer instead of a feeling. Never renumber an
-existing id — append.
+## Open questions
 
-An id is the letter and digits, nothing else. Splitting R2 into R2a and R2b is
-the tempting move and it is rejected: `.github/scripts/coverage.sh` fails on any
-id it cannot parse, because it used to skip them instead — and a skipped id is
-neither counted as covered nor reported as missing, so it reads like a tracked
-requirement while being tracked by nothing. Append R3 and R4 instead. -->
-
-**Functional**
-- **R1** — <what it must do> — *Evidenced by:* S<n>
-
-<!-- Every requirement names the §13 success criterion that would notice its
-absence, and this is not bookkeeping.
-
-`.github/scripts/coverage.sh` reports a requirement as "covered" when some plan
-lists its id in `covers:`. That is a CLAIM, not a delivery, and nothing
-downstream compares the claim to what the plan's slices actually build — a plan
-naming twelve requirements and building three passes every gate green, and the
-run then walks to acceptance reporting "every requirement is covered by a plan".
-
-docs/acceptance.md is the one artifact in an unattended run whose pull request
-requires your review, so it is the single place a failure is guaranteed to reach
-you. An S id here is what turns an over-claimed `covers:` into a visible empty
-evidence cell instead of a green coverage line. A requirement you cannot name a
-criterion for is a requirement nothing will ever check was built. -->
-
-**Non-functional** <!-- fill only those that apply; keep numbering continuous -->
-
-<!-- GIVE THESE IDS TOO, and mark each one *(non-functional)* in the line
-itself. The mark is read by `.github/scripts/coverage.sh` and
-`.github/scripts/plan-metrics.sh`, which report which requirements a plan claims
-in `covers:` while none of its slices ever mentions them — an over-claimed
-covers list is how twenty requirements come to be "covered" by a hundred lines
-of code with every gate green.
-
-A platform or offline requirement is owned by no single slice by nature, so
-without the mark the report would fire on honest plans and teach planners to pad
-slice text with ids. Marked, the absence is listed as EXPECTED and the report
-stays readable. The mark is yours and durable: this document is CODEOWNERS-owned,
-so what counts as expected is decided here rather than by the planner.
-
-Both are notes and neither fails a build. -->
-
-- **R2** — Platform / targets: *(non-functional)* <!-- web, iOS, CLI, service, library, etc. -->
-- Performance / scale:
-- Privacy / security / data handling:
-- Offline / connectivity:
-- Accessibility:
-- Cost / resource limits:
-
-## 6. Constraints & assumptions
-<!-- Fixed constraints (existing systems, budgets, deadlines, tech you must/can't
-use) and assumptions you're making that, if wrong, would change the design. -->
-
-## 7. Proposed approach (high level)
-<!-- Language-agnostic. The main components and how they fit together, described in
-prose or a simple list of "component -> responsibility". How data flows through.
-No code, no premature stack choices unless the choice is itself a requirement. -->
-
-## 8. Key design decisions & alternatives
-<!-- The heart of the doc. For each meaningful decision:
-- Decision:
-- Options considered:
-- Choice & rationale (tradeoffs):
-This is what turns a wish into a design. Capture the "why", so future-you and the
-build agent don't relitigate settled choices or repeat rejected ones. -->
-
-## 9. Data model / key entities
-<!-- Optional. The main things the system stores or manipulates and their
-relationships. Skip if not applicable. -->
-
-## 10. External dependencies & integrations
-<!-- Optional. Third-party services, APIs, libraries, or systems this relies on. -->
-
-## 11. Risks & open questions
-<!-- What could go wrong, what's still undecided, what needs research. It's fine —
-expected — for a draft to leave things open here rather than inventing answers. -->
-
-## 12. Milestones / phasing
-<!-- Break the work into increments, MVP first. For each, a one-line scope and
-acceptance criteria (how you know it's done). The MVP should be the smallest thing
-that's actually useful and testable.
-
-A milestone here is a coarse phase, not an implementable unit. Breaking one down
-into vertical slices — with file paths, signatures, and estimates — happens in a
-plan (`docs/plans/<slug>.md`), one milestone at a time, when you're ready to
-build it. Don't do that work here. -->
-
-**MVP**
-- Scope:
-- Acceptance criteria:
-
-**Later**
--
-
-## 13. Success criteria
-<!-- How you'll know the whole thing worked. Concrete and checkable where possible,
-not "users are happy". Tie back to the goals in section 3.
-
-Give each one a stable id (S1, S2, ...). These are what the acceptance pass
-checks at the end, one row per id in `docs/acceptance.md`, with evidence. Write
-them so that evidence is possible: "startup under 2s on the target device" can be
-shown, "feels fast" cannot. Mark the ones only you can verify — anything needing
-real hardware, real users, or a judgement call — by writing **(owner)** in the
-criterion itself, here, in this file.
-
-THAT MARK IS YOURS AND IT IS DURABLE: docs/DESIGN.md is CODEOWNERS-owned and the
-acceptance pass reads it at the base commit. Every criterion you do NOT mark is
-an agent's to verify with real output, and that is a commitment made now rather
-than a judgement made later.
-
-This matters because the split costs the acceptance agent asymmetrically. An
-"owner" row is one sentence and a clean stop — the driver exits 4, "blocked on
-the owner", which is a documented SUCCESSFUL stop. An "agent" row is a command
-that has to actually run and produce output. Every incentive points one way, and
-it is the way that produces an honest-looking table containing almost no
-verification. A criterion left unmarked here can be reclassified as yours at the
-end, by the party that saves work by doing so, and nothing observes it.
-
-If you cannot decide now whether a criterion is checkable without you, that is
-the criterion to rewrite until you can.
-
-EVERY §5 REQUIREMENT MUST BE NAMED BY AT LEAST ONE CRITERION HERE. Write the
-back-reference: "**S3** — *(covers R4, R10)* ...". A requirement with no
-criterion is invisible to the acceptance pass, which is the only place the built
-system is compared to the design rather than to a plan.
-
-EVERY CRITERION YOU DO NOT MARK **(owner)** BECOMES A SCRIPT: `acceptance/S3.sh`,
-exit 0 for pass, standard output as the evidence.
-`.github/scripts/acceptance-criteria.sh` runs them as a REQUIRED check on every
-pull request, and `acceptance/README.md` says how to write one. That is what
-turns the evidence column of docs/acceptance.md from an agent's sentence about
-itself into a command anyone can run — it was the one place in this whole
-template where narration was admitted as evidence, and it is the last thing you
-read.
-
-So write each unmarked criterion as something a script can decide. "Cold start
-under 2 seconds on the target device" is a script; "feels fast" is not, and
-neither is "the import path is sensible". If you cannot see the script, the
-criterion is not yet written — that is the signal to rewrite it, not to mark it
-(owner) and move on.
-
-The id below is written **S<n>** with the angle brackets on purpose: a literal
-placeholder carries no digit, so the required check does not demand a script for
-a criterion nobody has written yet. Replace it with real ids — S1, S2 — when you
-write them. -->
-
-- **S<n>** — *(covers R<n>)* —
+<!-- Delete each one once answered (the answer goes in DECISIONS.md if it matters later). -->
