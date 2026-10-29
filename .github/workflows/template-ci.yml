@@ -1,8 +1,9 @@
 name: Template CI
 
 # Checks for this template repo itself, then tags the release. Copier uses the
-# latest v* tag, not main, so an untagged merge reaches no project. Bump: patch
-# by default; subject "feat:" -> minor; "feat!:" or "BREAKING CHANGE" -> major.
+# latest v* tag, not main, so an untagged merge reaches no project. Bump, over all
+# commits since the last tag: patch by default; any "feat:" -> minor; any "feat!:"
+# or "BREAKING CHANGE" -> major.
 # Generated projects get their own workflows from template/.github/workflows/.
 on:
   push:
@@ -75,19 +76,20 @@ jobs:
             next="v0.1.0"
             echo "No existing tags; starting at $next."
           else
-            subject="$(git log -1 --pretty=%s)"
-            body="$(git log -1 --pretty=%B)"
+            # Every commit since the last tag counts: a rebase merge lands several.
+            subjects="$(git log --pretty=%s "$latest..HEAD")"
+            bodies="$(git log --pretty=%B "$latest..HEAD")"
             echo "Latest tag: $latest"
-            echo "Head subject: $subject"
+            echo "Commits since: $(git rev-list --count "$latest..HEAD")"
 
             major="$(echo "${latest#v}" | cut -d. -f1)"
             minor="$(echo "${latest#v}" | cut -d. -f2)"
             patch="$(echo "${latest#v}" | cut -d. -f3)"
 
-            if echo "$subject" | grep -qE '^[a-z]+(\([^)]*\))?!:' \
-               || echo "$body" | grep -qE 'BREAKING[ -]CHANGE'; then
+            if echo "$subjects" | grep -qE '^[a-z]+(\([^)]*\))?!:' \
+               || echo "$bodies" | grep -qE 'BREAKING[ -]CHANGE'; then
               major=$((major + 1)); minor=0; patch=0; bump="major"
-            elif echo "$subject" | grep -qE '^feat(\([^)]*\))?:'; then
+            elif echo "$subjects" | grep -qE '^feat(\([^)]*\))?:'; then
               minor=$((minor + 1)); patch=0; bump="minor"
             else
               patch=$((patch + 1)); bump="patch"
