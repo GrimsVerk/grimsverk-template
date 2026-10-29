@@ -17,7 +17,7 @@ root ships.
 - Check before pushing: `tests/test-render.sh` (renders both languages, runs the
   Python project's checks, and runs actionlint if installed) and
   `shellcheck template/scripts/*.sh tests/*.sh`.
-- Every merge to `main` gets the next `v*` tag automatically (`release-tag.yml`);
+- Every merge to `main` gets the next `v*` tag automatically (the `tag` job in `template-ci.yml`);
   `copier copy` and `copier update` use the latest tag. Pin actions to a commit SHA
   with the version in a comment.
 
