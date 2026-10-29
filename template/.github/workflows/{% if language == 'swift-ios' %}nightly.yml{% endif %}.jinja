@@ -1,0 +1,58 @@
+name: Nightly
+
+# Slow checks: the Xcode build and tests on macOS. Nightly (skipped when main
+# has not changed since the last green run), on every v* tag, or by hand.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: {% raw %}nightly-${{ github.ref }}{% endraw %}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  changed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: {% raw %}${{ steps.check.outputs.run }}{% endraw %}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: {% raw %}${{ github.token }}{% endraw %}
+          GH_REPO: {% raw %}${{ github.repository }}{% endraw %}
+        run: |
+          run=true
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            last="$(gh run list --workflow nightly.yml --branch main --status success \
+              --limit 1 --json headSha --jq '.[0].headSha // ""')"
+            if [ "$last" = "$GITHUB_SHA" ]; then
+              echo "main unchanged since the last green run ($last); skipping."
+              run=false
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  xcode:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Build and test
+        run: >
+          xcodebuild test
+          -project {{ app_name }}.xcodeproj
+          -scheme {{ app_name }}
+          -destination 'platform=iOS Simulator,name=iPhone 16'
+          CODE_SIGNING_ALLOWED=NO
