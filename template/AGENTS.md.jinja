@@ -19,7 +19,7 @@
 - Non-trivial work: plan it in plan mode first. `/adversarial-review` attacks a plan before you build it (optional).
 - A feature too big for one context: `/orchestrate`.
 - Work on a branch, never on `main`. Run the checks below locally, then open a PR and merge it (`gh pr merge --rebase --delete-branch`). CI runs only on `main`; a red `main` is the next task.
-- Commit and push your own changes right away, without waiting for a go-ahead (the owner can make exceptions); end each change with one short "Pushed: ..." line. Never stage someone else's uncommitted changes; tell the owner. Nothing of yours is left uncommitted or unpushed when you finish.
+- Commit and push your own changes right away, without waiting for a go-ahead (the owner can make exceptions); end each change with one short "Pushed: ..." line. Never stage someone else's uncommitted changes; tell the owner. If something might not belong on GitHub or the owner might not want it there (personal details, private documents, keys, sensitive logs), ask before pushing. Nothing of yours is left uncommitted or unpushed when you finish.
 - Never force-push, rewrite pushed history, or skip hooks (`--no-verify`).
 - Paths in repo files are relative, so any computer can resume the work. Machine-specific values go in one gitignored local file with a committed `.example`.
 
